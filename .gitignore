@@ -1,0 +1,17 @@
+# Local-only files that must never be committed
+.env.local
+.env.functions.local
+.env.secrets
+node_modules/
+dist/
+supabase/tests/local/.pgdata/
+supabase/tests/local/.pgdata*/
+supabase/tests/local/.advisor-pgdata/
+supabase/tests/local/.advisor2-pgdata/
+supabase/tests/local/.diagdata/
+supabase/tests/local/.probe-pgdata/
+supabase/tests/local/node_modules/
+supabase/tests/local/harness.log
+*.log
+dev-out.txt
+full-run-repeat.txt

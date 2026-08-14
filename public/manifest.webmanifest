@@ -1,0 +1,59 @@
+{
+  "name": "منصة مستر وليد عونى التعليمية",
+  "short_name": "منصة مستر وليد",
+  "description": "منصة مستر وليد عونى التعليمية — متابعة الطلاب والتواصل مع الأستاذ ومتابعة الصفوف الدراسية",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "ar",
+  "theme_color": "#070513",
+  "background_color": "#070513",
+  "categories": ["education"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "لوحة الطالب",
+      "short_name": "لوحة الطالب",
+      "description": "افتح لوحة الطالب مباشرة",
+      "url": "/student/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "لوحة الأستاذ",
+      "short_name": "لوحة الأستاذ",
+      "description": "افتح لوحة الأستاذ مباشرة",
+      "url": "/walid/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "إنشاء حساب",
+      "short_name": "حساب جديد",
+      "description": "سجّل حسابك في المنصة",
+      "url": "/register",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

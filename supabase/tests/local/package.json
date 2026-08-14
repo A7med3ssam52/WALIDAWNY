@@ -1,0 +1,13 @@
+{
+  "name": "walid-platform-local-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local verification harness for Phase 1: applies auth shim + all migrations onto embedded PostgreSQL 18.4 and runs the assertion suites (01_schema .. 05_grants).",
+  "scripts": {
+    "start": "node run-tests.mjs"
+  },
+  "dependencies": {
+    "embedded-postgres": "^18.4.0-beta.17",
+    "pg": "^8.11.0"
+  }
+}
