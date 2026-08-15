@@ -2,8 +2,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../types/database';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ?? 'https://nfusbrktrqfrnaetetmr.supabase.co';
+const supabasePublishableKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? 'sb_publishable_FCxdA2r2MOReIzNfTKEtLA_3AtTiMqp';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 
