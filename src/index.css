@@ -297,6 +297,18 @@
     color: #ffffff;
   }
 
+  /* Native select dropdown panels must stay dark: browsers otherwise
+     render a light panel with light text (unreadable) because the
+     glass select background is translucent. */
+  select {
+    color-scheme: dark;
+  }
+
+  select option {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
   :focus-visible {
     outline: 2px solid rgba(129, 140, 248, 0.7);
     outline-offset: 2px;
