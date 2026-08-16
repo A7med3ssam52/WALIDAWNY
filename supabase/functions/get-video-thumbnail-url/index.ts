@@ -19,15 +19,17 @@
 // the frontend renders thumbnails through this EF exclusively.
 //
 // Access control mirrors get-video-playback-url exactly (same profile,
-// lesson-reachability and subscription gates; SECURITY.md section 4):
+// lesson-reachability and lesson-access gates; SECURITY.md section 4):
 //   * STAFF (admin/mr_walid): may fetch a thumbnail for any non-deleted
 //     video of a live lesson (missing lesson -> lesson_not_found 404,
 //     soft-deleted -> lesson_deleted 422).
-//   * STUDENT: the lesson must be reachable (published, own live grade,
-//     active subscription — A33) and the video must be the READY PRIMARY
-//     row (the 0009 lesson_videos SELECT policy yields exactly that set;
-//     an explicit status/is_primary filter is applied as well). Any
-//     failure -> access_denied 403.
+//   * STUDENT: the lesson must be reachable (published, own live grade)
+//     and the student must have access to the lesson — a lifetime unit
+//     purchase OR an active trial lesson (public.get_my_lesson_access,
+//     0028; replaces the old A33 access gate); the video must be
+//     the READY PRIMARY row (the 0009 lesson_videos SELECT policy yields
+//     exactly that set; an explicit status/is_primary filter is applied
+//     as well). Any failure -> access_denied 403.
 //
 // Error envelope: { error: { code, message } } with stable codes:
 //   unauthorized                 -> 401
@@ -37,12 +39,12 @@
 //   video_not_found              -> 404 (missing/soft-deleted video)
 //   lesson_not_found             -> 404 (staff only)
 //   lesson_deleted               -> 422 (staff only; student sees 403)
-//   access_denied                -> 403 (student gate: lesson/subscription)
+//   access_denied                -> 403 (student gate: lesson access)
 //   client_ip_unavailable        -> 500 (no cf-connecting-ip / x-forwarded-for)
 //   internal_error               -> 500 (query/URL-build failures; raw
 //                                   message never echoed)
 //
-// Success: { thumbnail_url, video_id, lesson_id, expires_at }.
+// Success: { thumbnail_url, video_id, lesson_id }.
 //
 // No secrets are logged anywhere in this module.
 // =====================================================================
@@ -82,6 +84,10 @@ export interface SvcClient {
     }>;
   };
   from(table: string): SvcFrom;
+  rpc(
+    fn: string,
+    args?: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: DbError | null }>;
 }
 
 export interface Deps {
@@ -255,28 +261,26 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // --- 6) Student subscription gate (A33; staff previews skip it) ---
+  // --- 6) Student lesson-access gate (lifetime purchase OR trial lesson;
+  // staff previews skip it) ---
   if (!isStaff) {
-    const { data: subscription, error: subError } = await client
-      .from('subscriptions')
-      .select('id')
-      .eq('student_id', user.id)
-      .eq('status', 'active')
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
-    if (subError) {
+    const { data: access, error: accessError } = await client.rpc('get_my_lesson_access', {
+      p_lesson_id: videoRow.lesson_id,
+    });
+    if (accessError) {
       console.error(
-        'get-video-thumbnail-url: subscription query failed',
-        subError.code ?? 'unknown',
+        'get-video-thumbnail-url: lesson access check failed',
+        accessError.code ?? 'unknown',
       );
       return jsonResponse(
-        { error: { code: 'internal_error', message: 'Failed to validate subscription.' } },
+        { error: { code: 'internal_error', message: 'Failed to validate lesson access.' } },
         500,
       );
     }
-    if (!subscription) {
+    const accessInfo = access as { has_access: boolean } | null;
+    if (!accessInfo || accessInfo.has_access !== true) {
       return jsonResponse(
-        { error: { code: 'access_denied', message: 'An active subscription is required.' } },
+        { error: { code: 'access_denied', message: 'Lesson access is required.' } },
         403,
       );
     }
@@ -297,7 +301,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         500,
       );
     }
-    const { url, expires } = await buildSignedObjectUrl({
+    const { url } = await buildSignedObjectUrl({
       hostname: deps.bunnyHostname,
       signingKey: deps.bunnySigningKey,
       videoId: videoRow.bunny_video_id,
@@ -311,7 +315,6 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         thumbnail_url: url,
         video_id: videoRow.id,
         lesson_id: videoRow.lesson_id,
-        expires_at: new Date(expires * 1000).toISOString(),
       },
       200,
     );

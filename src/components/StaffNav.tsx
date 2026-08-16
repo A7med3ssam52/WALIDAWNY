@@ -6,7 +6,8 @@ const items = [
   { to: '/walid/grades', label: 'الصفوف' },
   { to: '/walid/curriculum', label: 'المنهج' },
   { to: '/walid/exams', label: 'الإختبارات' },
-  { to: '/walid/codes', label: 'الأكواد' },
+  { to: '/walid/pricing', label: 'أسعار الوحدات' },
+  { to: '/walid/codes', label: 'أكواد الوحدات' },
 ];
 
 export function StaffNav() {

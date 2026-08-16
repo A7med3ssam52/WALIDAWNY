@@ -3,5 +3,3 @@ project_id = "nfusbrktrqfrnaetetmr"
 [functions]
 enabled = true
 
-[functions.expire-subscriptions]
-verify_jwt = false

@@ -28,16 +28,6 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
         rows: [{ id: USER_STUDENT.id, role: 'student', status: 'active', deleted_at: null }],
       },
       lessons: { rows: [{ id: LESSON_ID, deleted_at: null }] },
-      subscriptions: {
-        rows: [
-          {
-            id: '81000000-0000-0000-0000-000000000001',
-            student_id: USER_STUDENT.id,
-            status: 'active',
-            expires_at: '2099-01-01T00:00:00Z',
-          },
-        ],
-      },
       lesson_pdfs: {
         rows: [
           {
@@ -52,6 +42,11 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
         ],
       },
     },
+    rpc: {
+      get_my_lesson_access: {
+        data: { has_access: true, has_purchase: true, is_trial: false },
+      },
+    },
     storage: {
       pdfs: {
         signedUrl: 'https://example.supabase.co/storage/v1/object/sign/pdfs/lesson.pdf?token=abc',
@@ -62,12 +57,13 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
     ...base,
     ...overrides,
     tables: { ...base.tables, ...(overrides?.tables ?? {}) },
+    rpc: { ...base.rpc, ...(overrides?.rpc ?? {}) },
     storage: { ...base.storage, ...(overrides?.storage ?? {}) },
   };
 }
 
 function deps(cfg: StubConfig, ttlSeconds?: number) {
-  const { client, storageCalls } = makeStubClient(cfg);
+  const { client, storageCalls, rpcCalls } = makeStubClient(cfg);
   const dep = {
     url: 'https://example.supabase.co',
     makeClient: () => client,
@@ -75,7 +71,7 @@ function deps(cfg: StubConfig, ttlSeconds?: number) {
     ttlSeconds,
     nowUnix: () => 1750000000,
   };
-  return { dep, storageCalls };
+  return { dep, storageCalls, rpcCalls };
 }
 
 // ---------------------------------------------------------------------
@@ -178,34 +174,59 @@ Deno.test('get-pdf-signed-url: soft-deleted lesson -> access_denied 403', async 
   await expectStatus(res, 403);
 });
 
-Deno.test('get-pdf-signed-url: no active subscription -> access_denied 403', async () => {
-  const { dep } = deps(cfg({ tables: { subscriptions: { rows: [] } } }));
+Deno.test('get-pdf-signed-url: no lesson access -> access_denied 403', async () => {
+  const { dep } = deps(
+    cfg({
+      rpc: {
+        get_my_lesson_access: { data: { has_access: false, has_purchase: false, is_trial: false } },
+      },
+    }),
+  );
   const res = await handle(post(LESSON_ID, USER_STUDENT), dep);
   await expectStatus(res, 403);
   const body = (await res.json()) as { error: { code: string } };
   assertEqual(body.error.code, 'access_denied');
 });
 
-Deno.test('get-pdf-signed-url: expired subscription -> access_denied 403', async () => {
+Deno.test('get-pdf-signed-url: lesson-access RPC failure -> internal_error 500', async () => {
   const { dep } = deps(
-    cfg({
-      tables: {
-        subscriptions: {
-          rows: [
-            {
-              id: '81000000-0000-0000-0000-000000000001',
-              student_id: USER_STUDENT.id,
-              status: 'active',
-              expires_at: '2020-01-01T00:00:00Z',
-            },
-          ],
-        },
-      },
-    }),
+    cfg({ rpc: { get_my_lesson_access: { error: { message: 'db down', code: 'P0001' } } } }),
   );
   const res = await handle(post(LESSON_ID, USER_STUDENT), dep);
-  await expectStatus(res, 403);
+  await expectStatus(res, 500);
+  const body = (await res.json()) as { error: { code: string; message: string } };
+  assertEqual(body.error.code, 'internal_error');
+  assert(!body.error.message.includes('db down'), 'raw error must not be echoed');
 });
+
+Deno.test(
+  'get-pdf-signed-url: trial-lesson access (has_access, is_trial) is honored',
+  async () => {
+    const { dep } = deps(
+      cfg({
+        rpc: {
+          get_my_lesson_access: {
+            data: { has_access: true, has_purchase: false, is_trial: true },
+          },
+        },
+      }),
+    );
+    const res = await handle(post(LESSON_ID, USER_STUDENT), dep);
+    await expectStatus(res, 200);
+  },
+);
+
+Deno.test(
+  'get-pdf-signed-url: gate calls get_my_lesson_access with the lesson',
+  async () => {
+    const { dep, rpcCalls } = deps(cfg());
+    const res = await handle(post(LESSON_ID, USER_STUDENT), dep);
+    await expectStatus(res, 200);
+    assertEqual(rpcCalls.length, 1);
+    assertEqual(rpcCalls[0].fn, 'get_my_lesson_access');
+    assert(JSON.stringify(rpcCalls[0].args) === JSON.stringify({ p_lesson_id: LESSON_ID }));
+  },
+);
 
 // ---------------------------------------------------------------------
 // PDF resolution
@@ -274,7 +295,6 @@ Deno.test('get-pdf-signed-url: signed URL issued via service role on the pdfs bu
     pdf_id: string;
     lesson_id: string;
     original_name: string | null;
-    expires_at: string;
   };
   assertEqual(
     body.pdf_url,
@@ -283,7 +303,6 @@ Deno.test('get-pdf-signed-url: signed URL issued via service role on the pdfs bu
   assertEqual(body.pdf_id, PDF_ID);
   assertEqual(body.lesson_id, LESSON_ID);
   assertEqual(body.original_name, 'ملخص الدرس.pdf');
-  assertEqual(body.expires_at, new Date((1750000000 + 123) * 1000).toISOString());
   assertEqual(storageCalls.length, 1);
   assertEqual(storageCalls[0].bucket, PDFS_BUCKET);
   assertEqual(storageCalls[0].path, PDF_PATH);
@@ -291,11 +310,10 @@ Deno.test('get-pdf-signed-url: signed URL issued via service role on the pdfs bu
 });
 
 Deno.test('get-pdf-signed-url: default TTL is 15 minutes', async () => {
-  const { dep } = deps(cfg());
+  const { dep, storageCalls } = deps(cfg());
   const res = await handle(post(LESSON_ID, USER_STUDENT), dep);
   await expectStatus(res, 200);
-  const body = (await res.json()) as { expires_at: string };
-  assertEqual(body.expires_at, new Date((1750000000 + DEFAULT_TTL_SECONDS) * 1000).toISOString());
+  assertEqual(storageCalls[0].options?.expiresIn, DEFAULT_TTL_SECONDS);
 });
 
 Deno.test(

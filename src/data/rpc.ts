@@ -4,23 +4,30 @@ import type {
   AppNotification,
   AuditFilters,
   AuditLogRow,
-  CodeWithStudent,
   DashboardStats,
+  Exam,
+  ExamAnswer,
+  ExamAttempt,
+  ExamQuestion,
   Grade,
   Lesson,
+  LessonAccessInfo,
+  LessonComment,
   LessonPdf,
   LessonVideo,
   PdfAccessResponse,
   PlaybackResponse,
-  PricingPlan,
-  PricingPlanWithGrade,
   Profile,
   Progress,
   PublicSettings,
-  Subscription,
-  SubscriptionCode,
-  SubscriptionWithPlan,
+  PublicUnitPrice,
   Unit,
+  UnitCode,
+  UnitCodeWithUnit,
+  UnitPricingWithUnit,
+  UnitPurchase,
+  UnitPurchaseStats,
+  UnitPurchaseWithUnit,
   UserRole,
   VideoUploadSession,
 } from '../types/database';
@@ -542,7 +549,6 @@ export interface ThumbnailResponse {
   thumbnail_url: string;
   video_id: string;
   lesson_id: string;
-  expires_at: string;
 }
 
 export async function getVideoThumbnailUrl(videoId: string): Promise<ThumbnailResponse> {
@@ -724,55 +730,6 @@ export async function exportAuditLog(filters: AuditFilters = {}): Promise<string
   return payload.url;
 }
 
-export interface PricingPlanInput {
-  gradeId: string;
-  durationDays: number;
-  basePrice: number;
-  platformFee: number;
-  isActive: boolean;
-}
-
-export async function setPricingPlan(input: PricingPlanInput): Promise<string> {
-  const { data, error } = await getSupabaseClient().rpc('set_pricing_plan', {
-    p_grade_id: input.gradeId,
-    p_duration_days: input.durationDays,
-    p_base_price: input.basePrice,
-    p_platform_fee: input.platformFee,
-    p_is_active: input.isActive,
-  });
-  if (error) {
-    throw error;
-  }
-  return (data ?? '') as string;
-}
-
-export async function deletePricingPlan(planId: string): Promise<void> {
-  const { error } = await getSupabaseClient().rpc('delete_pricing_plan', { p_plan_id: planId });
-  if (error) {
-    throw error;
-  }
-}
-
-export async function listPricingPlans(): Promise<PricingPlanWithGrade[]> {
-  const client = getSupabaseClient();
-  const { data: plans, error: plansError } = await client
-    .from('pricing_plans')
-    .select('*')
-    .order('duration_days', { ascending: true });
-  if (plansError) {
-    throw plansError;
-  }
-  const rows = (plans ?? []) as PricingPlan[];
-  const gradeIds = [...new Set(rows.map((plan) => plan.grade_id))];
-  const gradeNames = await fetchGradeNames(gradeIds);
-  return rows.map((plan) => ({ ...plan, grade_name: gradeNames.get(plan.grade_id) ?? null }));
-}
-
-export async function listActivePricingPlans(): Promise<PricingPlanWithGrade[]> {
-  const plans = await listPricingPlans();
-  return plans.filter((plan) => plan.is_active);
-}
-
 async function fetchGradeNames(gradeIds: string[]): Promise<Map<string, string>> {
   const ids = [...new Set(gradeIds.filter((id): id is string => Boolean(id)))];
   if (ids.length === 0) {
@@ -788,112 +745,152 @@ async function fetchGradeNames(gradeIds: string[]): Promise<Map<string, string>>
   return new Map((data ?? []).map((grade) => [grade.id, grade.name]));
 }
 
-function toPlanLabel(plan: PricingPlan): string {
-  return `${plan.duration_days} يومًا`;
-}
-
-async function enrichSubscriptions(rows: Subscription[]): Promise<SubscriptionWithPlan[]> {
-  if (rows.length === 0) {
-    return [];
-  }
-  const planIds = [
-    ...new Set(rows.map((row) => row.pricing_plan_id).filter((id): id is string => Boolean(id))),
-  ];
-  const plansById = new Map<string, PricingPlan>();
-  if (planIds.length > 0) {
-    const { data: plans, error: plansError } = await getSupabaseClient()
-      .from('pricing_plans')
-      .select('*')
-      .in('id', planIds);
-    if (plansError) {
-      throw plansError;
-    }
-    (plans ?? []).forEach((plan) => plansById.set(plan.id, plan as PricingPlan));
-  }
-  const gradeNames = await fetchGradeNames(
-    [...new Set([...plansById.values()].map((plan) => plan.grade_id))],
-  );
-  return rows.map((row) => {
-    const plan = plansById.get(row.pricing_plan_id);
-    return {
-      ...row,
-      plan_label: plan ? toPlanLabel(plan) : null,
-      grade_name: plan ? (gradeNames.get(plan.grade_id) ?? null) : null,
-    };
-  });
-}
-
-export async function getMySubscriptions(): Promise<SubscriptionWithPlan[]> {
-  const { data, error } = await getSupabaseClient().rpc('get_my_subscriptions');
-  if (error) {
-    throw error;
-  }
-  return enrichSubscriptions((data ?? []) as Subscription[]);
-}
-
-export async function getMyCurrentSubscription(): Promise<SubscriptionWithPlan | null> {
-  const { data, error } = await getSupabaseClient().rpc('get_my_current_subscription');
-  if (error) {
-    throw error;
-  }
-  const row = data as Subscription | null;
-  // PostgREST returns an all-null composite row (not null) when a
-  // single-record-returning RPC has no match — treat it as "no subscription".
-  if (!row || !row.id) {
-    return null;
-  }
-  const [enriched] = await enrichSubscriptions([row]);
-  return enriched;
-}
-
-export async function redeemSubscriptionCode(code: string): Promise<string> {
-  const { data, error } = await getSupabaseClient().rpc('redeem_subscription_code', {
+export async function redeemUnitCode(code: string): Promise<UnitPurchase> {
+  const { data, error } = await getSupabaseClient().rpc('redeem_unit_code', {
     p_code: code,
   });
   if (error) {
     throw error;
   }
-  return (data ?? '') as string;
+  return data as UnitPurchase;
 }
 
-export async function listCodesByPlan(planId: string): Promise<CodeWithStudent[]> {
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('subscription_codes')
-    .select('*')
-    .eq('pricing_plan_id', planId)
-    .order('created_at', { ascending: false });
+export async function getMyUnitPurchases(): Promise<UnitPurchaseWithUnit[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_unit_purchases');
   if (error) {
     throw error;
   }
-  const rows = (data ?? []) as SubscriptionCode[];
-  const usedByIds = [
-    ...new Set(rows.map((row) => row.used_by).filter((id): id is string => Boolean(id))),
-  ];
-  const studentNames = new Map<string, string>();
-  if (usedByIds.length > 0) {
-    const { data: students, error: studentsError } = await client
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', usedByIds);
-    if (studentsError) {
-      throw studentsError;
-    }
-    (students ?? []).forEach((student) => studentNames.set(student.id, student.full_name));
+  const rows = (data ?? []) as UnitPurchase[];
+  if (rows.length === 0) {
+    return [];
   }
-  return rows.map((row) => ({
-    ...row,
-    student_name: row.used_by ? (studentNames.get(row.used_by) ?? null) : null,
-  }));
+  const unitIds = [...new Set(rows.map((row) => row.unit_id))];
+  const { data: units, error: unitsError } = await getSupabaseClient()
+    .from('units')
+    .select('id, name, grade_id')
+    .in('id', unitIds);
+  if (unitsError) {
+    throw unitsError;
+  }
+  const unitsById = new Map(
+    (units ?? []).map((unit) => [unit.id, { name: unit.name, gradeId: unit.grade_id }]),
+  );
+  const gradeIds = [...new Set([...unitsById.values()].map((unit) => unit.gradeId))];
+  const gradeNames = await fetchGradeNames(gradeIds);
+  return rows.map((row) => {
+    const unit = unitsById.get(row.unit_id);
+    return {
+      ...row,
+      unit_name: unit?.name ?? row.unit_id,
+      grade_name: unit ? (gradeNames.get(unit.gradeId) ?? null) : null,
+    };
+  });
 }
 
-export async function revokeSubscriptionCode(codeId: string): Promise<void> {
-  const { error } = await getSupabaseClient().rpc('revoke_subscription_code', {
+export async function getMyLessonAccess(lessonId: string): Promise<LessonAccessInfo> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_lesson_access', {
+    p_lesson_id: lessonId,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? {}) as LessonAccessInfo;
+}
+
+export async function getPublicUnitPrices(): Promise<PublicUnitPrice[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_public_unit_prices');
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as PublicUnitPrice[];
+}
+
+export interface UnitPriceInput {
+  unitId: string;
+  basePrice: number;
+  platformFee: number;
+}
+
+export async function setUnitPrice(input: UnitPriceInput): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_unit_price', {
+    p_unit_id: input.unitId,
+    p_base_price: input.basePrice,
+    p_platform_fee: input.platformFee,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listUnitPricing(): Promise<UnitPricingWithUnit[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_unit_pricing');
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as UnitPricingWithUnit[];
+}
+
+export async function listCodesByUnit(unitId: string): Promise<UnitCodeWithUnit[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_codes_by_unit', {
+    p_unit_id: unitId,
+  });
+  if (error) {
+    throw error;
+  }
+  const rows = (data ?? []) as UnitCode[];
+  const { data: unit, error: unitError } = await getSupabaseClient()
+    .from('units')
+    .select('name')
+    .eq('id', unitId)
+    .maybeSingle();
+  if (unitError) {
+    throw unitError;
+  }
+  const unitName = unit?.name ?? '';
+  return rows.map((row) => ({ ...row, unit_name: unitName }));
+}
+
+export async function revokeUnitCode(codeId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('revoke_unit_code', {
     p_code_id: codeId,
   });
   if (error) {
     throw error;
   }
+}
+
+export async function createUnitCodesForStaff(
+  unitId: string,
+  count: number,
+  note?: string | null,
+): Promise<UnitCode[]> {
+  const { data, error } = await getSupabaseClient().rpc('create_unit_codes_for_staff', {
+    p_unit_id: unitId,
+    p_count: count,
+    p_note: note ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as UnitCode[];
+}
+
+export async function listAllUnitPurchases(studentId?: string | null): Promise<UnitPurchaseWithUnit[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_all_unit_purchases', {
+    p_student_id: studentId ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as UnitPurchaseWithUnit[];
+}
+
+export async function unitPurchaseStats(): Promise<UnitPurchaseStats> {
+  const { data, error } = await getSupabaseClient().rpc('unit_purchase_stats');
+  if (error) {
+    throw error;
+  }
+  return (data ?? {}) as UnitPurchaseStats;
 }
 
 export async function invokeFunction<T = unknown>(
@@ -922,16 +919,274 @@ export async function invokeFunction<T = unknown>(
   return (await response.json()) as T;
 }
 
-export async function generateSubscriptionCodes(planId: string, count: number): Promise<string[]> {
-  const payload = await invokeFunction<
-    { codes?: Array<{ code: string | null }> } | Array<{ code: string | null }>
-  >('generate-subscription-codes', {
-    method: 'POST',
-    body: { plan_id: planId, count },
+export async function listExams(lessonId: string): Promise<Exam[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_exams', {
+    p_lesson_id: lessonId,
   });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as Exam[];
+}
 
-  const rows = Array.isArray(payload) ? payload : payload.codes;
-  return (rows ?? [])
-    .map((row) => row?.code)
-    .filter((code): code is string => typeof code === 'string' && code.length > 0);
+export async function getExamQuestions(examId: string): Promise<ExamQuestion[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_exam_questions', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as ExamQuestion[];
+}
+
+export async function getMyExamAttempt(examId: string): Promise<ExamAttempt | null> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_exam_attempt', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+  const rows = (data ?? []) as ExamAttempt[];
+  return rows[0] ?? null;
+}
+
+export interface ExamAnswerInput {
+  questionId: string;
+  choiceIndex?: number | null;
+  answerText?: string | null;
+}
+
+export async function submitExam(examId: string, answers: ExamAnswerInput[]): Promise<ExamAttempt> {
+  const { data, error } = await getSupabaseClient().rpc('submit_exam_attempt', {
+    p_exam_id: examId,
+    p_answers: answers.map((answer) => ({
+      question_id: answer.questionId,
+      choice_index: answer.choiceIndex ?? null,
+      answer_text: answer.answerText ?? null,
+    })),
+  });
+  if (error) {
+    throw error;
+  }
+  return data as ExamAttempt;
+}
+
+export interface ExamScoreInput {
+  questionId: string;
+  score: number;
+}
+
+export async function gradeExam(attemptId: string, scores: ExamScoreInput[]): Promise<ExamAttempt> {
+  const { data, error } = await getSupabaseClient().rpc('grade_exam_attempt', {
+    p_attempt_id: attemptId,
+    p_scores: scores.map((score) => ({ question_id: score.questionId, score: score.score })),
+  });
+  if (error) {
+    throw error;
+  }
+  return data as ExamAttempt;
+}
+
+export interface CreateExamInput {
+  lessonId: string;
+  title: string;
+  sortOrder?: number;
+  passingScore?: number;
+}
+
+export async function createExam(input: CreateExamInput): Promise<string> {
+  const { data, error } = await getSupabaseClient()
+    .from('exams')
+    .insert({
+      lesson_id: input.lessonId,
+      title: input.title,
+      sort_order: input.sortOrder ?? 0,
+      passing_score: input.passingScore ?? 50,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    throw error;
+  }
+  return (data?.id ?? '') as string;
+}
+
+export interface UpdateExamInput {
+  examId: string;
+  title?: string | null;
+  sortOrder?: number | null;
+  passingScore?: number | null;
+}
+
+export async function updateExam(input: UpdateExamInput): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (input.title !== undefined) {
+    payload.title = input.title;
+  }
+  if (input.sortOrder !== undefined) {
+    payload.sort_order = input.sortOrder;
+  }
+  if (input.passingScore !== undefined) {
+    payload.passing_score = input.passingScore;
+  }
+  const { error } = await getSupabaseClient()
+    .from('exams')
+    .update(payload as Partial<Exam>)
+    .eq('id', input.examId);
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteExam(examId: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('exams')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', examId);
+  if (error) {
+    throw error;
+  }
+}
+
+export interface CreateExamQuestionInput {
+  examId: string;
+  type: 'mcq' | 'essay';
+  prompt: string;
+  choices?: string[] | null;
+  correctIndex?: number | null;
+  maxScore?: number;
+  sortOrder?: number;
+}
+
+export async function createExamQuestion(input: CreateExamQuestionInput): Promise<string> {
+  const { data, error } = await getSupabaseClient()
+    .from('exam_questions')
+    .insert({
+      exam_id: input.examId,
+      type: input.type,
+      prompt: input.prompt,
+      choices: input.type === 'mcq' ? input.choices ?? [] : null,
+      correct_index: input.type === 'mcq' ? input.correctIndex ?? null : null,
+      max_score: input.maxScore ?? 1,
+      sort_order: input.sortOrder ?? 0,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    throw error;
+  }
+  return (data?.id ?? '') as string;
+}
+
+export interface UpdateExamQuestionInput {
+  questionId: string;
+  type?: 'mcq' | 'essay' | null;
+  prompt?: string | null;
+  choices?: string[] | null;
+  correctIndex?: number | null;
+  maxScore?: number | null;
+  sortOrder?: number | null;
+}
+
+export async function updateExamQuestion(input: UpdateExamQuestionInput): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (input.type !== undefined) {
+    payload.type = input.type;
+  }
+  if (input.prompt !== undefined) {
+    payload.prompt = input.prompt;
+  }
+  if (input.choices !== undefined) {
+    payload.choices = input.choices;
+  }
+  if (input.correctIndex !== undefined) {
+    payload.correct_index = input.correctIndex;
+  }
+  if (input.maxScore !== undefined) {
+    payload.max_score = input.maxScore;
+  }
+  if (input.sortOrder !== undefined) {
+    payload.sort_order = input.sortOrder;
+  }
+  const { error } = await getSupabaseClient()
+    .from('exam_questions')
+    .update(payload as Partial<ExamQuestion>)
+    .eq('id', input.questionId);
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteExamQuestion(questionId: string): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from('exam_questions')
+    .delete()
+    .eq('id', questionId);
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listExamAttempts(examId: string): Promise<ExamAttempt[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('exam_attempts')
+    .select('*')
+    .eq('exam_id', examId)
+    .order('submitted_at', { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as ExamAttempt[];
+}
+
+export async function listAttemptAnswers(attemptId: string): Promise<ExamAnswer[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('exam_answers')
+    .select('*')
+    .eq('attempt_id', attemptId)
+    .order('id', { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as ExamAnswer[];
+}
+
+export async function getProfileName(userId: string): Promise<string> {
+  const profile = await getProfileById(userId);
+  return profile?.full_name ?? '';
+}
+
+export async function listLessonComments(lessonId: string): Promise<LessonComment[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_lesson_comments', {
+    p_lesson_id: lessonId,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as LessonComment[];
+}
+
+export async function addLessonComment(
+  lessonId: string,
+  body: string,
+  parentId?: string | null,
+): Promise<LessonComment> {
+  const { data, error } = await getSupabaseClient().rpc('add_lesson_comment', {
+    p_lesson_id: lessonId,
+    p_body: body,
+    p_parent_id: parentId ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as LessonComment;
+}
+
+export async function deleteLessonComment(commentId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('delete_lesson_comment', {
+    p_comment_id: commentId,
+  });
+  if (error) {
+    throw error;
+  }
 }

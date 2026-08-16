@@ -40,10 +40,10 @@
 ### Student (`/student/*`, `RoleGuard allow=['student']`)
 | Route | Component | Notes |
 |---|---|---|
-| `/student/dashboard` | `StudentDashboardPage` | Subscription pill, account summary, quick links, WhatsApp card |
+| `/student/dashboard` | `StudentDashboardPage` | Access pill (trial/purchased), account summary, quick links, WhatsApp card |
 | `/student/curriculum` | `StudentCurriculumPage` | Progress bar card + unit/lesson lists with status pills |
 | `/student/lessons/:lessonId` | `StudentLessonPage` | Video (hls.js) + PDF iframe + progress + prev/next |
-| `/student/subscriptions` | `StudentSubscriptionsPage` | Current sub card, redeem code form, history table |
+| `/student/units` | `UnitsPage` | Per-unit pricing + locked/purchased cards, redeem code form, purchase history |
 | `/student/notifications` | `StudentNotificationsPage` | Read/unread list, mark-all |
 | `/student/profile` | `StudentProfilePage` | **Does NOT use LayoutShell** (no header/nav) |
 | `/student/password` | `StudentChangePasswordPage` | **Does NOT use LayoutShell** (no header/nav) |
@@ -51,15 +51,15 @@
 ### Mr. Walid (`/walid/*`, `RoleGuard allow=['mr_walid','admin']`)
 | Route | Component | Notes |
 |---|---|---|
-| `/walid/dashboard` | `WalidDashboardPage` | Stat cards + tables (by_grade, recent subs, expirations, engagement) |
+| `/walid/dashboard` | `WalidDashboardPage` | Stat cards + tables (by_grade, top units, recent purchases, engagement) |
 | `/walid/students` | `StudentListPage` | Search + status filter tabs + table + confirm modal |
 | `/walid/students/trash` | `TrashPage` | Table + restore modal |
 | `/walid/students/:studentId` | `StudentDetailPage` | Account info, actions, edit form incl. grade select |
 | `/walid/grades` | `GradesPage` | Create form, active table, deleted table, edit/delete modals |
 | `/walid/curriculum` | `CurriculumPage` | Grade select → units pane → lessons pane; create/edit/delete/restore; show/hide deleted; publish/hide |
 | `/walid/lessons/:lessonId` | `LessonAssetsPage` | Lesson info, video list + TUS upload/preview/replace, PDF upload + list; **2 hand-rolled inline modals duplicating `Modal`** |
-| `/walid/pricing` | `PricingPage` | Read-only banner for mr_walid; table; admin-only edit form + delete modal |
-| `/walid/codes` | `CodesPage` | Plan select, generate (1–500), generated-codes box, codes table, revoke modal |
+| `/walid/pricing` | `PricingPage` | Read-only banner for mr_walid; table of per-unit pricing; admin-only edit form + deactivate modal |
+| `/walid/codes` | `CodesPage` | Unit select, generate (1–500), generated-codes box, codes table, revoke modal |
 
 ### Admin (`/admin/*`, `RoleGuard allow=['admin']`)
 | Route | Component | Notes |
@@ -93,9 +93,9 @@
 | `VideoPlayer` | hls.js + native fallback, resume-after-manifest, progress/complete hooks — **functionally sound; container styling minimal** |
 
 ### Duplicated / inline component implementations (violate STYLE §22)
-1. **Badges** — at least 9 distinct hand-rolled pill implementations: `StatusBadge`, `LessonStatusBadge`, `CodeStatusBadge` (CodesPage), video status badge (LessonAssetsPage), grade status pill (GradesPage), plan status pill (PricingPage), PDF ready/primary pills (LessonAssetsPage), "الأساسي" pill, `LessonProgressBadge` (CurriculumPage), notification type pill, lesson percent/completed pills (LessonPage). Styles drift slightly (colors, padding).
-2. **Selects** — raw `<select>` with copied class strings in 6 places: CurriculumPage (grade), CodesPage (plan), PricingPage (grade), StudentDetailPage (grade), RolesPage (role), AuditLogPage (entity type). No shared `Select`.
-3. **Tables** — 9+ identical table scaffolds (`overflow-x-auto … <table>` with copied header/tbody classes): Students, Trash, Grades ×2, Curriculum-related, Codes, Pricing, Audit, Subscriptions history, Walid dashboard (×3 small). No `Table` primitive.
+1. **Badges** — at least 9 distinct hand-rolled pill implementations: `StatusBadge`, `LessonStatusBadge`, `CodeStatusBadge` (CodesPage), video status badge (LessonAssetsPage), grade status pill (GradesPage), unit status pill (PricingPage), PDF ready/primary pills (LessonAssetsPage), "الأساسي" pill, `LessonProgressBadge` (CurriculumPage), notification type pill, lesson percent/completed pills (LessonPage). Styles drift slightly (colors, padding).
+2. **Selects** — raw `<select>` with copied class strings in 6 places: CurriculumPage (grade), CodesPage (unit), PricingPage (grade), StudentDetailPage (grade), RolesPage (role), AuditLogPage (entity type). No shared `Select`.
+3. **Tables** — 9+ identical table scaffolds (`overflow-x-auto … <table>` with copied header/tbody classes): Students, Trash, Grades ×2, Curriculum-related, Codes, Pricing, Audit, UnitsPage purchase list, Walid dashboard (×3 small). No `Table` primitive.
 4. **Modals** — `Modal` component exists, but `LessonAssetsPage` hand-rolls 2 dialogs (replace-video, preview) with duplicated overlay/panel markup.
 5. **Filter tabs** — StudentListPage status tabs; AuditLogPage filter form; both custom.
 6. **Link-buttons** — dozens of `<button className="text-sm font-medium text-emerald-700 hover:underline">` action cells repeated in every table (edit/delete/publish/hide/restore…). No `IconButton`/`LinkButton`, no focus-visible styling, small touch targets.
@@ -121,7 +121,7 @@
 
 ## 5. UX Problems
 
-1. **No "continue learning"** on student dashboard (STYLE §12 priority 1) — student lands on subscription/account cards.
+1. **No "continue learning"** on student dashboard (STYLE §12 priority 1) — student lands on account/purchase cards.
 2. **Student profile/password pages lack app chrome** (no header, no nav, no back affordance) — dead-end pages.
 3. **Curriculum page does N+1 lesson queries** per unit (acceptable volume, but no skeleton while loading → content pops).
 4. **Lesson page**: video card appears before content; progress badge hidden until data loads; PDF iframe `h-[500px]` fixed on mobile; prev/next buttons wrap awkwardly on small screens.
@@ -130,7 +130,7 @@
 7. **Loading states** are full-card spinners on every screen — no skeletons, no suspense boundaries; slow-feeling on mobile.
 8. **No pagination on long tables** (students, codes, audit is 50/page ✓); students list loads all rows.
 9. **No sorting** on tables; **no bulk actions** (STYLE §15).
-10. **Subscription page**: redeem form fine, but no plan/benefit explanation; status pill mixed with ad-hoc text (STYLE §14).
+10. **Units page**: redeem form fine, but no unit/benefit explanation; access pill mixed with ad-hoc text (STYLE §14).
 11. **Notifications**: list grows unbounded (no pagination); mark-all is a text button at top-right (left in RTL = start position is right… container `justify-end` in RTL puts it on the left) — inconsistent with reading flow.
 12. **Dialog focus/scroll**: modals don't trap focus or restore scroll — mobile UX suffers.
 13. **Session/account states**: disabled account → only login error message (acceptable per PLAN; no dedicated screen); session expiry handled on password change only.
@@ -149,7 +149,7 @@
 7. **AuditLogPage** filter grid `lg:grid-cols-5` → 2 cols on small; fine but filter actions row may overflow; pagination buttons okay.
 8. **No meta viewport issues** — `index.html` viewport ✓.
 9. **Touch targets**: table action links (~16–20px tall) below 44px recommendation; pill badges not interactive; nav links ~32px.
-10. **Horizontal overflow risk**: `min-w-*`/wide content in codes `<pre>` (has overflow-auto ✓); StudentSubscriptionsPage table ✓ wrapped; dashboard tables have their own overflow ✓. No global overflow bug found — but no systematic verification pass exists.
+10. **Horizontal overflow risk**: `min-w-*`/wide content in codes `<pre>` (has overflow-auto ✓); UnitsPage tables ✓ wrapped; dashboard tables have their own overflow ✓. No global overflow bug found — but no systematic verification pass exists.
 
 ---
 
@@ -157,7 +157,7 @@
 
 1. `index.html` has `lang="ar" dir="rtl"` ✓; LandingPage/NotFoundPage set `dir="rtl"` redundantly ✓.
 2. **Literal arrows** (`←`/`→`) for direction are fragile (see §4.5) — should use logical/directional icons or CSS transforms.
-3. Physical utilities used in a few spots: `-left-2` (unread badge, StudentDashboardPage), `text-right`/`text-left` hardcodes (table headers `text-right` ✓ correct for RTL; StudentSubscriptionsPage `text-left` block), `mr-2` in notifications dot (physical; `ms-2` would be correct), `file:mr-3` in PDF input.
+3. Physical utilities used in a few spots: `-left-2` (unread badge, StudentDashboardPage), `text-right`/`text-left` hardcodes (table headers `text-right` ✓ correct for RTL; UnitsPage `text-left` block), `mr-2` in notifications dot (physical; `ms-2` would be correct), `file:mr-3` in PDF input.
 4. `dir="ltr"` correctly applied to emails/phones/codes/dates-with-times ✓ (good pattern).
 5. No RTL-specific motion or layout flip issues (no direction-dependent animations exist).
 6. **Mixed bidi content** in audit actions (`font-mono` + Arabic join separators) — handled via `dir="ltr"` ✓.
@@ -188,7 +188,7 @@
 | Student dashboard | — (cards render empty) | — | ErrorState (settings only) |
 | Curriculum | Spinner | EmptyState (no grade / no lessons) | ErrorState |
 | Lesson | Spinner | EmptyState (missing) | ErrorState + per-asset errors (access_denied card, video_not_ready text) |
-| Subscriptions | Spinner ×2 | EmptyState (history) | ErrorState ×2 |
+| Purchases | Spinner ×2 | EmptyState (history) | ErrorState ×2 |
 | Notifications | Spinner | EmptyState | ErrorState |
 | Walid dashboard | Spinner | "لا توجد بيانات بعد" (plain `<p>`) | ErrorState |
 | Students | Spinner | EmptyState | ErrorState |
@@ -232,9 +232,9 @@
 ## 11. Regression Risks (what must NOT break)
 
 ### Test contract (184 tests / 27 files — must stay green or be deliberately updated)
-- **Test-ids** (non-exhaustive, authoritative list gathered from tests): `lesson-video`, `lesson-pdf-frame`, `lesson-pdf-download`, `lesson-completed-badge`, `lesson-percent-badge`, `lesson-nav`, `prev-lesson`, `next-lesson`, `subscription-link`, `curriculum-progress-bar`, `curriculum-progress-label`, `curriculum-lesson-{id}`, `notifications-link`, `unread-count`, `notification-{id}` (+ `data-unread`), `mark-all-read`, `student-row-*`, `trash-row-*`, `grade-row-*`, `deleted-grade-row-*`, `unit-row-*`, `deleted-unit-row-*`, `lesson-row-*`, `deleted-lesson-row-*`, `video-row-*`, `pdf-row-*`, `code-row-*`, `plan-row-*`, `subscription-row-*`, `audit-row-*`, `role-row-*`, `role-badge-*`, `lesson-status-*`.
+- **Test-ids** (non-exhaustive, authoritative list gathered from tests): `lesson-video`, `lesson-pdf-frame`, `lesson-pdf-download`, `lesson-completed-badge`, `lesson-percent-badge`, `lesson-nav`, `prev-lesson`, `next-lesson`, `units-link`, `open-unit-{id}`, `curriculum-progress-bar`, `curriculum-progress-label`, `curriculum-lesson-{id}`, `notifications-link`, `unread-count`, `notification-{id}` (+ `data-unread`), `mark-all-read`, `student-row-*`, `trash-row-*`, `grade-row-*`, `deleted-grade-row-*`, `unit-row-*`, `deleted-unit-row-*`, `lesson-row-*`, `deleted-lesson-row-*`, `video-row-*`, `pdf-row-*`, `code-row-*`, `audit-row-*`, `role-row-*`, `role-badge-*`, `lesson-status-*`.
 - **Accessible names asserted**: buttons `تسجيل الدخول`, `إنشاء حساب`, `إعادة المحاولة`, `تسجيل الخروج`, `إعادة التحميل`, `نعم، حذف/إيقاف/تفعيل/استعادة/إلغاء/تغيير`, `حفظ التغييرات`, `تغيير كلمة المرور`, `إضافة وحدة`, `إضافة درس`, `إضافة`, `بحث`, `تصدير CSV`, `تحديد الكل كمقروء`, `توليد الأكواد`, `نسخ`, `معاينة`, `استبدال`, `رفع الملف`, `رفع فيديو جديد`, `رفع الفيديو`, `إلغاء الرفع`, `إعادة المحاولة`, `متابعة الاستبدال`, etc.; links `المنهج الدراسي`, `الإشعارات`, `عرض التفاصيل`, `فتح محادثة واتساب`, `العودة إلى الرئيسية`, `إنشاء حساب جديد`; headings `تسجيل الدخول`, `إنشاء حساب`, `لوحة الطالب`, `المنهج الدراسي`, `الملف الشخصي`, `سجل النشاطات`, `الأدوار والصلاحيات`, `404`, lesson titles as headings, etc.
-- **Visible strings**: validation messages (`صيغة البريد الإلكتروني غير صحيحة`, `كلمة المرور يجب أن تكون 6 أحرف على الأقل`, phone rules), error cards (`هذا الدرس غير متاح حاليًا`, `الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.`, `الدرس غير موجود`), labels (`البريد الإلكتروني`, `كلمة المرور`, `رقم الهاتف`, `رقم هاتف ولي الأمر`, `العنوان`, `الاسم الكامل`, `اسم الوحدة`, `عنوان الدرس`, `الوصف`, `الترتيب`, `كود التفعيل`, `عدد الأكواد (1 - 500)`, `المدة (أيام)`, `السعر الأساسي (ج.م)`, `رسوم المنصة (ج.م)`, `اختيار الملف`, `البحث`…), price/date formats (`350 ج.م`, `30 يوم`, `%61.5`, `10500 ج.م`), progress formats (`1 من 2 درسًا`, `30٪`, `40٪`).
+- **Visible strings**: validation messages (`صيغة البريد الإلكتروني غير صحيحة`, `كلمة المرور يجب أن تكون 6 أحرف على الأقل`, phone rules), error cards (`هذا الدرس غير متاح حاليًا`, `الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.`, `الدرس غير موجود`), labels (`البريد الإلكتروني`, `كلمة المرور`, `رقم الهاتف`, `رقم هاتف ولي الأمر`, `العنوان`, `الاسم الكامل`, `اسم الوحدة`, `عنوان الدرس`, `الوصف`, `الترتيب`, `كود التفعيل`, `عدد الأكواد (1 - 500)`, `السعر الأساسي (ج.م)`, `رسوم المنصة (ج.م)`, `اختيار الملف`, `البحث`…), price/date formats (`350 ج.م`, `%61.5`, `10500 ج.م`), progress formats (`1 من 2 درسًا`, `30٪`, `40٪`).
 - **Roles/ARIA**: `role="dialog"` + `aria-modal` on modals; `role="alert"` on form errors; `role="progressbar"` on video upload; `role="table"` (`getByRole('table')` in AuditLogPage test); `combobox` for selects; heading hierarchy (page titles as `h1`/`h2`).
 
 ### Functional surface (must remain behaviorally identical)
@@ -268,7 +268,7 @@
 ## 13. Priorities for the UI-UX Blueprint
 
 **P0 (foundation):** design tokens; font; Button/Input/Select/Badge/Card/Modal/Toast/Skeleton/EmptyState/ErrorState primitives; LayoutShell + nav system (student bottom nav, staff drawer); fix pre-existing TS build errors.
-**P1 (screens):** landing (public identity), auth (split-panel premium), student dashboard (continue learning), curriculum & lesson polish, subscriptions, notifications, walid dashboard & management screens, admin audit/roles.
+**P1 (screens):** landing (public identity), auth (split-panel premium), student dashboard (continue learning), curriculum & lesson polish, purchases, notifications, walid dashboard & management screens, admin audit/roles.
 **P2 (cross-cutting):** tables→responsive strategy, pagination, filter/search patterns, confirmation dialogs, status badges, focus-visible & contrast, reduced motion, code splitting (lazy routes + lazy hls.js), RTL arrow icons, document title/favicon.
 **P3 (verification):** responsive matrix, RTL checks, a11y pass, console-error pass, full test + typecheck + build gates after every phase.
 

@@ -379,18 +379,17 @@ Resources such as PDFs must be easy to access without overwhelming the learning 
 
 ---
 
-## 14. Subscription UX
+## 14. Purchase UX
 
 Clearly communicate:
 
-- Plan
-- Price
-- Duration
-- Status
-- Start date
-- Expiry date
-- Benefits
+- Unit
+- Price (base + platform fee = total)
+- Ownership (permanent, one-time)
 - Activation state
+- Redemption result
+- Benefits
+- Trial lessons (free preview)
 
 Primary actions must be obvious.
 
@@ -520,7 +519,7 @@ UI/UX work MUST NOT break:
 - Supabase schema
 - RLS policies
 - Authentication
-- Subscription calculations
+- Access logic (trial / per-unit purchase)
 - Bunny security
 - Video authorization
 - API contracts

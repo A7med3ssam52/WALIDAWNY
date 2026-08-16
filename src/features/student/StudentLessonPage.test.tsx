@@ -55,6 +55,9 @@ import {
   makePdf,
   makeProgress,
   makeUnit,
+  makeUnitCode,
+  makeUnitPricing,
+  makeUnitPurchase,
   makeVideo,
   mockState,
   resetMockState,
@@ -79,7 +82,6 @@ function mockFunctions() {
           playback_url: PLAYBACK_URL,
           video_id: 'video-1',
           lesson_id: 'lesson-1',
-          expires_at: '2026-01-01T00:00:00.000Z',
         }),
       };
     }
@@ -92,7 +94,6 @@ function mockFunctions() {
           pdf_id: 'pdf-1',
           lesson_id: 'lesson-1',
           original_name: 'ملخص الدرس.pdf',
-          expires_at: '2026-01-01T00:00:00.000Z',
         }),
       };
     }
@@ -130,6 +131,8 @@ function seedLessonPage() {
   mockState.lessonPdfs.push(
     makePdf({ id: 'pdf-1', lesson_id: 'lesson-1', is_primary: true, is_ready: true }),
   );
+  mockState.unitPricing.push(makeUnitPricing({ id: 'pricing-1', unit_id: 'unit-1' }));
+  mockState.unitPurchases.push(makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1' }));
 }
 
 describe('StudentLessonPage', () => {
@@ -234,7 +237,7 @@ describe('StudentLessonPage', () => {
     void calls;
   });
 
-  it('shows the access-denied card with the subscription link when playback is denied', async () => {
+  it('shows the access-denied card with the units link when playback is denied', async () => {
     const fetchMock = mockFunctions();
     fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
       if (String(url).includes('/functions/v1/get-video-playback-url')) {
@@ -249,7 +252,6 @@ describe('StudentLessonPage', () => {
             pdf_id: 'pdf-1',
             lesson_id: 'lesson-1',
             original_name: 'x.pdf',
-            expires_at: '2026-01-01T00:00:00.000Z',
           }),
         };
       }
@@ -259,10 +261,38 @@ describe('StudentLessonPage', () => {
     renderApp('/student/lessons/lesson-1');
 
     expect(await screen.findByText('هذا الدرس غير متاح حاليًا')).toBeInTheDocument();
-    expect(screen.getByTestId('subscription-link')).toHaveAttribute(
+    expect(screen.getByTestId('units-link')).toHaveAttribute('href', '/student/units');
+  });
+
+  it('shows the lock screen when the unit is not purchased', async () => {
+    mockFunctions();
+    seedLessonPage();
+    mockState.unitPurchases = [];
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByText('هذه الوحدة غير مفعّلة')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'تواصل عبر واتساب لتفعيل الوحدة' })).toHaveAttribute(
       'href',
-      '/student/subscriptions',
+      expect.stringContaining('wa.me/201000000000'),
     );
+    expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
+  });
+
+  it('unlocks the lesson after redeeming a valid unit code', async () => {
+    mockFunctions();
+    seedLessonPage();
+    mockState.unitPurchases = [];
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-1' }));
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByText('هذه الوحدة غير مفعّلة')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('كود التفعيل'), {
+      target: { value: 'wldn-abcd-efgh-jklm' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
+
+    expect(expectRpcCall('redeem_unit_code')).toEqual({ p_code: 'wldn-abcd-efgh-jklm' });
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
   });
 
   it('shows a processing message when the video is not ready yet', async () => {

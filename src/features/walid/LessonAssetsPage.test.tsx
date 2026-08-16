@@ -2,8 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  expectRpcCall,
   getQueryCallCount,
   makeLesson,
+  makeLessonComment,
   makeVideo,
   mockState,
   resetMockState,
@@ -162,7 +164,6 @@ describe('LessonAssetsPage — video section', () => {
             thumbnail_url: 'https://vz.example.test/signed-thumb.jpg?token=HS256-1-abc',
             video_id: 'v-ready',
             lesson_id: 'lesson-1',
-            expires_at: '2026-07-01T00:00:00Z',
           }),
         };
       }
@@ -526,7 +527,6 @@ describe('LessonAssetsPage — video section', () => {
             playback_url: 'https://vz.example.test/playback/abc.mp4',
             video_id: 'video-1',
             lesson_id: 'lesson-1',
-            expires_at: '2026-07-01T00:00:00Z',
           }),
         };
       }
@@ -624,5 +624,55 @@ describe('LessonAssetsPage — video section', () => {
     renderApp('/walid/lessons/lesson-1');
 
     expect(await screen.findByRole('heading', { name: 'لوحة الطالب' })).toBeInTheDocument();
+  });
+});
+
+describe('LessonAssetsPage — comments moderation', () => {
+  beforeEach(() => {
+    resetMockState();
+    setAuthenticatedWalid();
+  });
+
+  it('lists the lesson comments and deletes a comment as staff', async () => {
+    seedLesson();
+    mockState.lessonComments.push(
+      makeLessonComment({
+        id: 'comment-1',
+        lesson_id: 'lesson-1',
+        author_id: 'user-test-1',
+        author_name: 'أحمد محمد',
+        body: 'شرح ممتاز، شكرًا للأستاذ',
+      }),
+      makeLessonComment({
+        id: 'comment-2',
+        lesson_id: 'lesson-1',
+        author_id: 'user-student-2',
+        author_name: 'منى علي',
+        body: 'هل يمكن إعادة الشرح؟',
+        parent_id: 'comment-1',
+      }),
+    );
+    renderApp('/walid/lessons/lesson-1');
+
+    expect(await screen.findByTestId('staff-comment-comment-1')).toBeInTheDocument();
+    expect(screen.getByText('شرح ممتاز، شكرًا للأستاذ')).toBeInTheDocument();
+    expect(screen.getByText('منى علي')).toBeInTheDocument();
+    expect(screen.getByText('رد')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('staff-comment-comment-1').querySelector('button')!);
+
+    await waitFor(() => {
+      expect(expectRpcCall('delete_lesson_comment')).toEqual({ p_comment_id: 'comment-1' });
+    });
+    expect(await screen.findByText('محذوف')).toBeInTheDocument();
+  });
+
+  it('shows an empty state when there are no comments', async () => {
+    seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+
+    expect(
+      await screen.findByText('لا توجد تعليقات على هذا الدرس بعد'),
+    ).toBeInTheDocument();
   });
 });

@@ -41,28 +41,24 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
         rows: [{ id: USER_STUDENT.id, role: 'student', status: 'active', deleted_at: null }],
       },
       lessons: { rows: [{ id: LESSON_ID, deleted_at: null }] },
-      subscriptions: {
-        rows: [
-          {
-            id: '81000000-0000-0000-0000-000000000001',
-            student_id: USER_STUDENT.id,
-            status: 'active',
-            expires_at: '2099-01-01T00:00:00Z',
-          },
-        ],
-      },
       lesson_videos: { rows: [videoRow()] },
+    },
+    rpc: {
+      get_my_lesson_access: {
+        data: { has_access: true, has_purchase: true, is_trial: false },
+      },
     },
   };
   return {
     ...base,
     ...overrides,
     tables: { ...base.tables, ...(overrides?.tables ?? {}) },
+    rpc: { ...base.rpc, ...(overrides?.rpc ?? {}) },
   };
 }
 
 function deps(cfg: StubConfig) {
-  const { client } = makeStubClient(cfg);
+  const { client, rpcCalls } = makeStubClient(cfg);
   const dep = {
     url: 'https://example.supabase.co',
     makeClient: () => client,
@@ -72,7 +68,7 @@ function deps(cfg: StubConfig) {
     nowUnix: () => 1750000000,
     getClientIp: () => '203.0.113.7',
   };
-  return { dep };
+  return { dep, rpcCalls };
 }
 
 // The signed object is covered by the SAME IP-locked directory token as
@@ -203,9 +199,17 @@ Deno.test(
 );
 
 Deno.test(
-  'get-video-thumbnail-url: student without active subscription -> 403 access_denied',
+  'get-video-thumbnail-url: student without lesson access -> 403 access_denied',
   async () => {
-    const { dep } = deps(cfg({ tables: { subscriptions: { rows: [] } } }));
+    const { dep } = deps(
+      cfg({
+        rpc: {
+          get_my_lesson_access: {
+            data: { has_access: false, has_purchase: false, is_trial: false },
+          },
+        },
+      }),
+    );
     const res = await handle(get(VIDEO_ID, USER_STUDENT), dep);
     await expectStatus(res, 403);
     const body = await res.json();
@@ -214,7 +218,35 @@ Deno.test(
 );
 
 Deno.test(
-  'get-video-thumbnail-url: student success -> IP-locked signed thumbnail + expiry',
+  'get-video-thumbnail-url: student, lesson-access RPC failure -> 500 internal_error',
+  async () => {
+    const { dep } = deps(
+      cfg({
+        rpc: { get_my_lesson_access: { error: { message: 'db down', code: 'P0001' } } },
+      }),
+    );
+    const res = await handle(get(VIDEO_ID, USER_STUDENT), dep);
+    await expectStatus(res, 500);
+    const body = await res.json();
+    assertEqual(body.error.code, 'internal_error');
+    assert(!JSON.stringify(body).includes('db down'), 'raw error must not be echoed');
+  },
+);
+
+Deno.test(
+  'get-video-thumbnail-url: student gate calls get_my_lesson_access with the video lesson',
+  async () => {
+    const { dep, rpcCalls } = deps(cfg());
+    const res = await handle(get(VIDEO_ID, USER_STUDENT), dep);
+    await expectStatus(res, 200);
+    assertEqual(rpcCalls.length, 1);
+    assertEqual(rpcCalls[0].fn, 'get_my_lesson_access');
+    assert(deepEqual(rpcCalls[0].args, { p_lesson_id: LESSON_ID }));
+  },
+);
+
+Deno.test(
+  'get-video-thumbnail-url: student success -> IP-locked signed thumbnail',
   async () => {
     const { dep } = deps(cfg());
     const res = await handle(get(VIDEO_ID, USER_STUDENT), dep);
@@ -222,7 +254,6 @@ Deno.test(
     const body = await res.json();
     assertEqual(body.video_id, VIDEO_ID);
     assertEqual(body.lesson_id, LESSON_ID);
-    assertEqual(body.expires_at, new Date(1750000123 * 1000).toISOString());
     assertEqual(
       body.thumbnail_url,
       `https://vz-test.b-cdn.net/${BUNNY_VIDEO_ID}/thumbnail.jpg` +
@@ -279,22 +310,22 @@ Deno.test('get-video-thumbnail-url: staff, soft-deleted lesson -> 422 lesson_del
 });
 
 Deno.test(
-  'get-video-thumbnail-url: staff thumbnail for non-primary video succeeds WITHOUT subscription',
+  'get-video-thumbnail-url: staff thumbnail for non-primary video succeeds WITHOUT the lesson-access gate',
   async () => {
-    const { dep } = deps(
+    const { dep, rpcCalls } = deps(
       cfg({
         user: USER_STAFF,
         tables: {
           profiles: {
             rows: [{ id: USER_STAFF.id, role: 'mr_walid', status: 'active', deleted_at: null }],
           },
-          subscriptions: { rows: [] },
           lesson_videos: { rows: [videoRow({ is_primary: false, status: 'processing' })] },
         },
       }),
     );
     const res = await handle(get(VIDEO_ID, USER_STAFF), dep);
     await expectStatus(res, 200);
+    assertEqual(rpcCalls.length, 0, 'staff preview must skip the lesson-access gate');
     const body = await res.json();
     assert(
       body.thumbnail_url.startsWith(
@@ -333,7 +364,6 @@ Deno.test(
     const b = await handle(get(VIDEO_ID, USER_STUDENT), second);
     const bodyB = await b.json();
     assert(!deepEqual(bodyA.thumbnail_url, bodyB.thumbnail_url), 'different tokens');
-    assertEqual(bodyB.expires_at, new Date(1750000183 * 1000).toISOString());
   },
 );
 

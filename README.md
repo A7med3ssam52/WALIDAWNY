@@ -1,8 +1,8 @@
 # منصة مستر وليد عونى التعليمية
 
-منصة وليد التعليمية — Arabic-first, RTL educational platform for Mr. Walid. Students buy time-limited subscription access to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**.
+منصة وليد التعليمية — Arabic-first, RTL educational platform for Mr. Walid. Students buy permanent per-unit access (via activation codes) to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**, with free trial lessons.
 
-**Status:** Phases 1–11 implemented & verified. Phase 1 (Supabase backend) — migrations, RLS, RPCs, triggers, tests, seeded local data. Phase 2 (Auth & Account Lifecycle frontend) — login/register, session handling, profile edit, password change (with reauthentication flow), student dashboard, staff student list/detail/trash with disable/enable/soft-delete/restore, route guards. Phase 3 (Grades, Pricing & Subscriptions) — grade CRUD, pricing plans per grade (admin manage / mr_walid read-only), subscription code generation via Edge Function (staff-only, ≤500), atomic redemption (race-tested), expiry job Edge Function, student subscription status/history/redemption UI. Phase 4 (Curriculum & Content Management) — grades→units→lessons manager (/walid/curriculum): create/rename/reorder/publish/hide/soft-delete/restore; lesson assets (/walid/lessons/:id): PDF upload via Edge Function signed-URL flow. Phase 5 (Bunny Video) — 5 Edge Functions (upload session with TUS auth headers + session cancellation, numeric-status webhook driving the video state machine, IP-locked HS256 signed playback URLs, signed thumbnail URLs, scheduled state reconciliation), video upload with progress/cancel/resume, replace flow, cancel/release flow, preview player; token formula and full HLS chain verified live against the real pull zone. Phase 6 (Student Learning Experience) — student curriculum browsing (published units/lessons only), lesson player with HLS (hls.js + native fallback) and signed PDF viewing, resume-from-position, progress tracking with throttled upserts and ≥90% completion, unread notification center, get-pdf-signed-url Edge Function (student-only, active-subscription gate, TTL-signed URLs). Phase 7 (Dashboards) — staff dashboard at /walid/dashboard with live aggregates (students, active/expiring subscriptions, revenue, content readiness, codes, engagement, students-by-grade, recent subscriptions, upcoming expirations) via one staff-guarded stats RPC, plus persistent staff navigation across all management pages. Phase 8 (Notifications – Audit) – admin audit log (/admin/audit: filters, pagination, CSV export via the export-audit-log Edge Function with UTF-8 BOM), role management (/admin/roles via set_user_role, escalation admin-only), the notification engine (7-day expiry warnings + expiry events, deduplicated once per subscription), read/unread notification center, and an admin route group with its own navigation. Phase 9 (Security Hardening) — dual security reviews (database RLS/grants/authz + secrets/frontend) with no HIGH findings, migration 0020 hardening (re-asserted read-state REVOKE, PDF storage INSERT now pending-only — no planting at ready primary paths), a dedicated regression suite (search_path pins, storage policy inventory, B2 privilege locks, cross-user IDOR negatives, staff boundary matrix, grant-drift anchors), and corrected security documentation (the previously documented "column-scoped policy" claim is invalid PostgreSQL; enforcement is the REVOKE). All phases implemented (0–11); only deployment actions remain (db push, EF deploy, Bunny webhook wiring, Playwright E2E, CI workflow – they need a hosted Supabase project and a GitHub remote). Phase 10 (QA/Verification) — full regression sweep green (DB harness 10/10 suites + 21/21 migrations, vitest 184/184, deno 203/203, tsc, eslint, vite build, prettier with the formatting gap closed), no runtime mocks or TODO leftovers; Playwright E2E and the CI workflow are deferred to Phase 11 (they need a hosted Supabase project and a GitHub remote).
+**Status:** Phases 1–12 implemented & verified. Phase 1 (Supabase backend) — migrations, RLS, RPCs, triggers, tests, seeded local data. Phase 2 (Auth & Account Lifecycle frontend) — login/register, session handling, profile edit, password change (with reauthentication flow), student dashboard, staff student list/detail/trash with disable/enable/soft-delete/restore, route guards. Phase 3 (Grades, Pricing & Purchases) — grade CRUD, permanent per-unit pricing (admin manage / mr_walid read-only), unit code generation via Edge Function (staff-only, ≤500), atomic redemption (race-tested), student purchases/redemption UI. Phase 4 (Curriculum & Content Management) — grades→units→lessons manager (/walid/curriculum): create/rename/reorder/publish/hide/soft-delete/restore; lesson assets (/walid/lessons/:id): PDF upload via Edge Function signed-URL flow. Phase 5 (Bunny Video) — 5 Edge Functions (upload session with TUS auth headers + session cancellation, numeric-status webhook driving the video state machine, IP-locked HS256 signed playback URLs, signed thumbnail URLs, scheduled state reconciliation), video upload with progress/cancel/resume, replace flow, cancel/release flow, preview player; token formula and full HLS chain verified live against the real pull zone. Phase 6 (Student Learning Experience) — student curriculum browsing (published units/lessons only), lesson player with HLS (hls.js + native fallback) and signed PDF viewing, resume-from-position, progress tracking with throttled upserts and ≥90% completion, unread notification center, get-pdf-signed-url Edge Function (student-only, can_access_lesson gate, TTL-signed URLs). Phase 7 (Dashboards) — staff dashboard at /walid/dashboard with live aggregates (students, purchases/revenue, content readiness, codes, engagement, students-by-grade, top units, recent purchases) via one staff-guarded stats RPC, plus persistent staff navigation across all management pages. Phase 8 (Notifications – Audit) – admin audit log (/admin/audit: filters, pagination, CSV export via the export-audit-log Edge Function with UTF-8 BOM), role management (/admin/roles via set_user_role, escalation admin-only), the notification engine (unit activation + new content, deduplicated), read/unread notification center, and an admin route group with its own navigation. Phase 9 (Security Hardening) — dual security reviews (database RLS/grants/authz + secrets/frontend) with no HIGH findings, migration 0020 hardening (re-asserted read-state REVOKE, PDF storage INSERT now pending-only — no planting at ready primary paths), a dedicated regression suite (search_path pins, storage policy inventory, B2 privilege locks, cross-user IDOR negatives, staff boundary matrix, grant-drift anchors), and corrected security documentation (the previously documented "column-scoped policy" claim is invalid PostgreSQL; enforcement is the REVOKE). All phases implemented (0–11); only deployment actions remain (db push, EF deploy, Bunny webhook wiring, Playwright E2E, CI workflow – they need a hosted Supabase project and a GitHub remote). Phase 10 (QA/Verification) — full regression sweep green (DB harness 10/10 suites + 21/21 migrations, vitest 184/184, deno 203/203, tsc, eslint, vite build, prettier with the formatting gap closed), no runtime mocks or TODO leftovers; Playwright E2E and the CI workflow are deferred to Phase 11 (they need a hosted Supabase project and a GitHub remote). Phase 12 (Exams & Comments) — per-lesson exams with MCQ/essay questions and automatic/manual grading (/walid/exams staff builder, student exam tab inside the lesson page), threaded lesson comments with staff moderation and self-delete (/walid/lessons/:id moderation card, student comments tab), notifications for submission/grading/comment/reply; verified green (DB harness 12/12 suites + 30/30 migrations, vitest 211/211, tsc, eslint, vite build, ZERO LEFTOVERS sweep).
 
 **Docs:**
 - `PLAN.md` — master technical implementation plan (source of truth)
@@ -19,11 +19,11 @@
 - **Auth:** email + password; immutable email; password change; sign-in gate blocks disabled/deleted accounts; fail-closed profile creation
 - **Account lifecycle:** disable/enable, soft delete, Trash, restore (staff)
 - **Curriculum:** grades → units → lessons with draft/published/hidden statuses, ordering, soft delete/restore
-- **Subscriptions:** grade-based pricing with duration offers (base + platform fee + total), single-use activation codes (`WLDN-XXXX-XXXX-XXXX`), atomic redemption, live expiry enforcement, manual subscriptions
+- **Purchases:** permanent per-unit pricing (base + platform fee = total), single-use activation codes (`WLDN-XXXX-XXXX-XXXX`), atomic redemption, free trial lessons per unit
 - **Bunny video:** server-side upload sessions (TUS direct upload with progress/cancel/resume), processing webhooks, state machine, IP-locked tokenized protected playback (HLS + signed thumbnails), deterministic replacement, abandoned-session release, stuck-video reconciliation
-- **PDFs:** private Supabase Storage, signed URLs, subscription-aware access
+- **PDFs:** private Supabase Storage, signed URLs, access-gated by `can_access_lesson`
 - **Progress:** resume position, monotonic percent, deterministic 90% completion, video-replacement resets
-- **Notifications:** in-platform, deduplicated (7-day warning fires exactly once, activation, expiry, new content)
+- **Notifications:** in-platform, deduplicated (unit activation, new content, exam graded, comment replies)
 - **Audit log:** insert-only, admin-only, filterable + CSV export (Arabic/Excel-safe)
 - **Dashboards:** student, Mr. Walid, admin (operational metrics, analytics)
 - **WhatsApp:** centrally configured button (whatsapp settings), public landing reads only `get_public_settings()`
@@ -97,13 +97,12 @@ supabase functions serve
 # set function secrets locally first:
 supabase secrets set BUNNY_API_KEY=... BUNNY_LIBRARY_ID=... BUNNY_PULL_ZONE_HOSTNAME=...
 supabase secrets set BUNNY_SIGNING_KEY=... BUNNY_WEBHOOK_TOKEN=... SUPABASE_SERVICE_ROLE_KEY=...
-supabase secrets set INTERNAL_JOB_TOKEN=...   # required by expire-subscriptions (x-internal-token header)
+supabase secrets set INTERNAL_JOB_TOKEN=...   # required by recheck-video-states (x-internal-token header)
 ```
 
 Phase 3 service functions (see `supabase/functions/`):
 
-- `generate-subscription-codes` — POST, JWT-verified (`verify_jwt = true`); `mr_walid`/`admin` with an active, non-deleted profile; validates plan (active) + count (1–500); calls `create_codes_for_staff()` (staff-guarded wrapper → `generate_codes_internal()`); returns raw codes to the caller only
-- `expire-subscriptions` — scheduled internal job (`verify_jwt = false`); protected by `x-internal-token` = `INTERNAL_JOB_TOKEN` (constant-time compare); invokes `expire_subscriptions()` (RETURNS void — the response's `expired` is the before/after delta)
+- `generate-unit-codes` — POST, JWT-verified (`verify_jwt = true`); `mr_walid`/`admin` with an active, non-deleted profile; validates pricing (active) + count (1–500); calls `create_unit_codes_for_staff()` (staff-guarded wrapper → `create_unit_codes_internal()`); returns raw codes to the caller only
 
 Stop the stack when done: `supabase stop`.
 
@@ -123,7 +122,7 @@ See `.env.example`. All names:
 | `BUNNY_SIGNING_KEY` | Edge Function secret | Phase 5 | Bunny token-auth signing key (`BUNNY_TOKEN_AUTH_SECURITY_KEY`) |
 | `BUNNY_WEBHOOK_TOKEN` | Edge Function secret | Phase 5 | Shared token for verifying Bunny webhook calls (header or URL fallback) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Function secret | yes | Used ONLY inside Edge Functions (server-side); never in the browser, never in `VITE_*` |
-| `INTERNAL_JOB_TOKEN` | Edge Function secret | Phase 3 | Shared secret authorizing internal job endpoints (`expire-subscriptions`); sent as `x-internal-token` |
+| `INTERNAL_JOB_TOKEN` | Edge Function secret | Phase 5 | Shared secret authorizing internal job endpoints (`recheck-video-states`); sent as `x-internal-token` |
 | `SUPABASE_ACCESS_TOKEN` | CI secret | CI | Supabase personal access token (deploys) |
 | `SUPABASE_PROJECT_ID` | CI secret | CI | Project ref for remote commands |
 | `SEED_ADMIN_PASSWORD` | CI secret | seed | Password for seeded `admin`/`mr_walid` users (A21) |
@@ -180,7 +179,7 @@ pnpm test:e2e           # Playwright (needs local Supabase + seeded data)
 deno test supabase/functions  # Edge Function unit tests
 ```
 
-Highlights: RLS role-simulation matrix (incl. disabled/deleted students), sign-in gate sequence, notification immutability (combined-statement UPDATE must fail), code-redemption race harness (exactly one winner), webhook forgery rejection, 90% completion determinism, once-only 7-day warning, replacement reset, grade-change-mid-subscription.
+Highlights: RLS role-simulation matrix (incl. disabled/deleted students), sign-in gate sequence, notification immutability (combined-statement UPDATE must fail), unit-code redemption race harness (exactly one winner), webhook forgery rejection, 90% completion determinism, once-only activation notification, replacement reset, grade-change access re-evaluation.
 
 ---
 
@@ -202,8 +201,8 @@ Highlights: RLS role-simulation matrix (incl. disabled/deleted students), sign-i
 - Never put service-role/Bunny keys in frontend code or `VITE_*` (secret scan enforced in CI).
 - RLS is authoritative; localStorage is session persistence only.
 - Disabled/deleted accounts cannot sign in (trigger) or access protected data (RLS + Edge Function checks).
-- Content access = `can_access_lesson()`: published, non-deleted, own-grade, active subscription, active grade.
-- Signed URLs are short-lived (video 20 min, PDF 10–15 min); subscriptions are checked live at every issuance.
+- Content access = `can_access_lesson()`: published, non-deleted, own-grade, active grade, and (active unit purchase OR trial lesson) — active profile required.
+- Signed URLs are short-lived (video 20 min, PDF 10–15 min); access is checked live at every issuance.
 - Documented residual risks and hardening checklist: `SECURITY.md` §16–17.
 
 ---

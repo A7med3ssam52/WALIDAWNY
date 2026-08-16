@@ -6,6 +6,7 @@ import {
   expectRpcCall,
   getQueryCallCount,
   makeProfile,
+  makeUnitPurchase,
   mockRpcError,
   mockState,
   resetMockState,
@@ -40,6 +41,28 @@ describe('StudentDetailPage', () => {
     expect(screen.getByText('01001234567')).toBeInTheDocument();
     expect(screen.getAllByText('بدون صف')).toHaveLength(2);
     expect(screen.getByRole('option', { name: 'الصف الأول الثانوي' })).toBeInTheDocument();
+  });
+
+  it('lists the purchased units of the student', async () => {
+    mockState.units.push({
+      id: 'unit-1',
+      grade_id: 'g1',
+      name: 'الوحدة الأولى',
+      sort_order: 1,
+      status: 'published',
+      deleted_at: null,
+      created_at: '2026-01-01T10:00:00.000Z',
+      updated_at: '2026-01-01T10:00:00.000Z',
+    });
+    mockState.unitPurchases.push(
+      makeUnitPurchase({ id: 'purchase-1', student_id: 's1', unit_id: 'unit-1', total_price: 350 }),
+    );
+    renderApp('/walid/students/s1');
+
+    expect(await screen.findByText('الوحدات المشتراة')).toBeInTheDocument();
+    expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
+    expect(screen.getByText('350 ج.م')).toBeInTheDocument();
+    expect(screen.getByTestId('purchase-purchase-1')).toBeInTheDocument();
   });
 
   it('updates the profile and assigns a grade', async () => {

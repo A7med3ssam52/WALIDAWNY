@@ -1,10 +1,11 @@
 -- =====================================================================
 -- 04_business.sql — business-rule assertions
 -- ---------------------------------------------------------------------
--- Auth gates, audit trail (PII-free), progress semantics, code
--- redemption matrix, content access matrix, subscription expiry
--- idempotency, video state machine and PDF finalization.
--- Fixture: shared 02_roles.sql (A-H, W, AD). Runs in one transaction
+-- Auth gates, audit trail (PII-free), progress semantics, unit-code
+-- redemption matrix, content access matrix (purchase + trial), progress
+-- summary + new-content fan-out, video state machine and PDF
+-- finalization, staff spot checks incl. unit pricing (0028).
+-- Fixture: shared 02_roles.sql (A-H, W, AD, T). Runs in one transaction
 -- per file, so SET LOCAL state must be reset at every section boundary.
 -- =====================================================================
 
@@ -57,16 +58,16 @@ SET LOCAL ROLE student;
 
 -- name change only
 SELECT tests.expect_rows(
-    'SELECT public.update_own_profile(''A'', ''+201001000001'', ''+201001000001'', ''Cairo'')',
+    'SELECT public.update_own_profile(''AA'', ''+201001000001'', ''+201001000001'', ''Cairo'')',
     1, 'own profile: name-only update accepted');
 -- phone change (PII) - must never land in metadata as a value
 SELECT tests.expect_rows(
-    'SELECT public.update_own_profile(''A'', ''+201001000055'', ''+201001000055'', ''Cairo'')',
+    'SELECT public.update_own_profile(''AA'', ''+201001000055'', ''+201001000055'', ''Cairo'')',
     1, 'own profile: phone update accepted');
--- restore fixture phone
+-- restore fixture (name + phone + guardian_phone)
 SELECT tests.expect_rows(
     'SELECT public.update_own_profile(''A'', ''+201001000001'', ''+201001000001'', ''Cairo'')',
-    1, 'own profile: fixture phone restored');
+    1, 'own profile: fixture restored');
 
 -- audit checks must run as admin: audit_logs SELECT is admin-only via RLS
 RESET ROLE;
@@ -233,135 +234,145 @@ SELECT tests.expect_error(
 RESET ROLE;
 
 -- =====================================================================
--- Section 4: redeem_subscription_code matrix
+-- Section 4: redeem_unit_code matrix (permanent unit purchase, 0028)
+-- Check order: code_not_found -> unit_inactive -> code_revoked ->
+-- code_already_used -> no_grade_assigned -> unit_not_in_student_grade
+-- -> unit_already_purchased. grades.is_active is deliberately NOT a
+-- redeem gate (asserted below as a regression guard).
 -- =====================================================================
 RESET ROLE;
 RESET "app.current_user_id";
 
--- F (no grade) is rejected before any code mutation; code3 stays available
+-- F (no grade) is rejected BEFORE any code mutation; code1 stays available
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000006';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-CCCC-CCCC-CCCC'')',
+    'SELECT public.redeem_unit_code(''WLDN-AAAAAAAAAAAA'')',
     'P0001', 'no_grade_assigned');
 RESET ROLE;
 RESET "app.current_user_id";
--- subscription_codes are invisible to students: verify code3 as admin
+-- unit_codes are invisible to students: verify code1 as admin
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.assert(
     (SELECT status = 'available' AND used_at IS NULL
-     FROM public.subscription_codes WHERE id = '90000000-0000-0000-0000-000000000003'),
+     FROM public.unit_codes WHERE id = '90000000-0000-0000-0000-000000000001'),
     'redeem: failed attempt leaves code untouched');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- E: happy path - lowercase input normalized, planA (g1, 30d)
+-- E: happy path - lowercase input normalized, permanent purchase snapshot
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000005';
 SET LOCAL ROLE student;
 SELECT tests.assert(
-    (SELECT public.redeem_subscription_code('wldn-aaaa-aaaa-aaaa') IS NOT NULL),
+    (SELECT public.redeem_unit_code('wldn-aaaaaaaaaaaa') IS NOT NULL),
     'redeem: E redeems code1 (lowercase normalized)');
 SELECT tests.assert(
     (SELECT EXISTS (
-        SELECT 1 FROM public.subscriptions
+        SELECT 1 FROM public.unit_purchases
         WHERE student_id = '70000000-0000-0000-0000-000000000005'
-          AND pricing_plan_id = '20000000-0000-0000-0000-000000000001'
+          AND unit_id = '30000000-0000-0000-0000-000000000001'
           AND code_id = '90000000-0000-0000-0000-000000000001'
-          AND source = 'code' AND status = 'active'
+          AND status = 'active'
           AND base_price = 100.00 AND platform_fee = 10.00 AND total_price = 110.00
-          AND expires_at BETWEEN now() + interval '29 days' AND now() + interval '31 days'
     )),
-    'redeem: subscription created with price snapshot + 30d window');
-SELECT tests.assert(
-    (SELECT EXISTS (
-        SELECT 1 FROM public.code_redemptions
-        WHERE code_id = '90000000-0000-0000-0000-000000000001'
-          AND student_id = '70000000-0000-0000-0000-000000000005'
-          AND subscription_id IS NOT NULL
-    )),
-    'redeem: code_redemptions row recorded');
+    'redeem: purchase created with price snapshot (100 + 10 = 110)');
 SELECT tests.assert(
     (SELECT EXISTS (
         SELECT 1 FROM public.notifications
         WHERE user_id = '70000000-0000-0000-0000-000000000005'
-          AND type = 'subscription_activated'
+          AND type = 'unit_activated' AND entity_type = 'unit_purchases'
     )),
     'redeem: activation notification emitted');
-SELECT tests.assert(
-    (SELECT NOT EXISTS (
-        SELECT 1 FROM public.notifications
-        WHERE user_id = '70000000-0000-0000-0000-000000000005'
-          AND type = 'subscription_expiring'
-    )),
-    'redeem: no expiring warning for 30d plan');
--- subscription_codes + audit_logs are invisible to students: verify as admin
+-- unit_codes + audit_logs are invisible to students: verify as admin
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.assert(
     (SELECT status = 'used' AND used_by = '70000000-0000-0000-0000-000000000005' AND used_at IS NOT NULL
-     FROM public.subscription_codes WHERE id = '90000000-0000-0000-0000-000000000001'),
+     FROM public.unit_codes WHERE id = '90000000-0000-0000-0000-000000000001'),
     'redeem: code1 marked used by E');
 SELECT tests.assert(
     (SELECT EXISTS (
         SELECT 1 FROM public.audit_logs
-        WHERE action = 'code.redeem' AND actor_id = '70000000-0000-0000-0000-000000000005' AND actor_role = 'student'
+        WHERE action = 'unit_purchase.create'
+          AND actor_id = '70000000-0000-0000-0000-000000000005'
+          AND actor_role = 'student'
     )),
-    'redeem: code.redeem audit row with actor');
+    'redeem: unit_purchase.create audit row with actor');
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000005';
 SET LOCAL ROLE student;
-SELECT tests.assert(
-    (SELECT (SELECT id FROM public.get_my_current_subscription()) IS NOT NULL),
-    'redeem: get_my_current_subscription now live for E');
-RESET ROLE;
-RESET "app.current_user_id";
-
--- E now has an active sub: grade mismatch checked BEFORE active-sub check
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000005';
-SET LOCAL ROLE student;
-SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-BBBB-BBBB-BBBB'')',
-    'P0001', 'plan_grade_mismatch');
+SELECT tests.expect_rows(
+    'SELECT * FROM public.get_my_unit_purchases()',
+    1, 'redeem: get_my_unit_purchases returns the new purchase');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- revoked / unavailable / used codes
+-- E: grade mismatch checked BEFORE the active-purchase check (B8)
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000005';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-DDDD-DDDD-DDDD'')',
+    'SELECT public.redeem_unit_code(''WLDN-BBBBBBBBBBBB'')',
+    'P0001', 'unit_not_in_student_grade');
+-- code4 targets u3 (g3, an INACTIVE grade): the inactive-grade flag is NOT
+-- a redeem gate - the grade MISMATCH fires first (regression guard)
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-DDDDDDDDDDDD'')',
+    'P0001', 'unit_not_in_student_grade');
+-- revoked code and inactive-pricing code
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-CCCCCCCCCCCC'')',
     'P0001', 'code_revoked');
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-EEEE-EEEE-EEEE'')',
-    'P0001', 'plan_not_available');
+    'SELECT public.redeem_unit_code(''WLDN-EEEEEEEEEEEE'')',
+    'P0001', 'unit_inactive');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- A: own active sub blocks redemption (fresh available code needed)
-INSERT INTO public.subscription_codes (id, code, pricing_plan_id, status, created_by, created_at, note)
-VALUES ('90000000-0000-0000-0000-000000000007', 'WLDN-TEST-AAAA-AAAA', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
-ON CONFLICT (id) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL, revoked_at = NULL, revoked_by = NULL;
+-- hidden unit with ACTIVE pricing: unit_inactive (unit status is checked
+-- AFTER the pricing rows, per the 0028 order)
+INSERT INTO public.units (id, grade_id, name, sort_order, status, deleted_at)
+VALUES ('30000000-0000-0000-0000-00000000000d', '10000000-0000-0000-0000-000000000001', 'TEST-U1H2', 98, 'hidden', NULL)
+ON CONFLICT (id) DO UPDATE SET status = 'hidden', deleted_at = NULL;
+INSERT INTO public.unit_pricing (id, unit_id, base_price, platform_fee, is_active)
+VALUES ('20000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-00000000000d', 10.00, 1.00, true)
+ON CONFLICT (unit_id) DO UPDATE SET is_active = true;
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
+VALUES ('90000000-0000-0000-0000-000000000007', 'WLDN-HIDDENU1', '20000000-0000-0000-0000-000000000005', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
+ON CONFLICT (code) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL, revoked_at = NULL, revoked_by = NULL;
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-HIDDENU1'')',
+    'P0001', 'unit_inactive');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- A: own active purchase of u1 blocks redemption (fresh available code)
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
+VALUES ('90000000-0000-0000-0000-000000000008', 'WLDN-9876543210AB', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
+ON CONFLICT (code) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL, revoked_at = NULL, revoked_by = NULL;
 
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-TEST-AAAA-AAAA'')',
-    'P0001', 'student_has_active_subscription');
+    'SELECT public.redeem_unit_code(''WLDN-9876543210AB'')',
+    'P0001', 'unit_already_purchased');
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-FFFF-FFFF-FFFF'')',
+    'SELECT public.redeem_unit_code(''WLDN-FFFFFFFFFFF'')',
     'P0001', 'code_already_used');
--- subscription_codes invisible to students: verify as admin
+-- verify as admin: the fresh code is untouched
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.assert(
     (SELECT status = 'available'
-     FROM public.subscription_codes WHERE id = '90000000-0000-0000-0000-000000000007'),
+     FROM public.unit_codes WHERE id = '90000000-0000-0000-0000-000000000008'),
     'redeem: failed attempts leave the fresh code untouched');
 RESET ROLE;
 RESET "app.current_user_id";
@@ -370,38 +381,24 @@ RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-AAAA-AAAA-AAAA'')',
+    'SELECT public.redeem_unit_code(''WLDN-AAAAAAAAAAAA'')',
     'P0001', 'code_already_used');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- H: 3-day plan -> sub + expiring warning in the same transaction
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000008';
+-- G: fresh code9 -> success; immediate re-redeem -> code_already_used
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
+VALUES ('90000000-0000-0000-0000-000000000009', 'WLDN-0B1C2D3E4F5A', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
+ON CONFLICT (code) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL, revoked_at = NULL, revoked_by = NULL;
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
 SET LOCAL ROLE student;
 SELECT tests.assert(
-    (SELECT public.redeem_subscription_code('WLDN-CCCC-CCCC-CCCC') IS NOT NULL),
-    'redeem: H redeems code3 (3-day plan)');
-SELECT tests.assert(
-    (SELECT EXISTS (
-        SELECT 1 FROM public.subscriptions
-        WHERE student_id = '70000000-0000-0000-0000-000000000008'
-          AND expires_at BETWEEN now() + interval '2.5 days' AND now() + interval '3.5 days'
-    )),
-    'redeem: 3-day plan yields ~3 day expiry');
-SELECT tests.assert(
-    (SELECT EXISTS (
-        SELECT 1 FROM public.notifications
-        WHERE user_id = '70000000-0000-0000-0000-000000000008'
-          AND type = 'subscription_expiring'
-    )),
-    'redeem: expiring warning emitted inside warning window');
-SELECT tests.assert(
-    (SELECT EXISTS (
-        SELECT 1 FROM public.notifications
-        WHERE user_id = '70000000-0000-0000-0000-000000000008'
-          AND type = 'subscription_activated'
-    )),
-    'redeem: activation notification also emitted');
+    (SELECT public.redeem_unit_code('WLDN-0B1C2D3E4F5A') IS NOT NULL),
+    'redeem: G redeems code9');
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-0B1C2D3E4F5A'')',
+    'P0001', 'code_already_used');
 RESET ROLE;
 RESET "app.current_user_id";
 
@@ -409,37 +406,60 @@ RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000002';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-BBBB-BBBB-BBBB'')',
+    'SELECT public.redeem_unit_code(''WLDN-BBBBBBBBBBBB'')',
     'P0001', 'access_denied');
 RESET ROLE;
 RESET "app.current_user_id";
 
 SET LOCAL ROLE anon;
 SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-BBBB-BBBB-BBBB'')',
-    '42501', 'permission denied for function redeem_subscription_code');
+    'SELECT public.redeem_unit_code(''WLDN-BBBBBBBBBBBB'')',
+    '42501', 'permission denied for function redeem_unit_code');
 RESET ROLE;
 
--- UNIQUE backstop: a second redemption for the same (code, student) is impossible
+-- UNIQUE(student_id, unit_id) backstop: a second purchase row for the
+-- same (student, unit) is impossible even via a direct insert
 SELECT tests.expect_error(
-    'INSERT INTO public.code_redemptions (code_id, student_id, subscription_id)
-     VALUES (''90000000-0000-0000-0000-000000000001'', ''70000000-0000-0000-0000-000000000005'',
-             (SELECT id FROM public.subscriptions WHERE student_id = ''70000000-0000-0000-0000-000000000005'' AND code_id = ''90000000-0000-0000-0000-000000000001''))',
+    'INSERT INTO public.unit_purchases (student_id, unit_id, base_price, platform_fee, code_id, status)
+     VALUES (''70000000-0000-0000-0000-000000000005'', ''30000000-0000-0000-0000-000000000001'', 1, 0, NULL, ''active'')',
     '23505', NULL);
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.code_redemptions
-     WHERE code_id = '90000000-0000-0000-0000-000000000001' AND student_id = '70000000-0000-0000-0000-000000000005'),
-    'redeem: UNIQUE(code_id, student_id) backstop holds');
--- NOTE: concurrent double-redeem is serialized by the advisory lock
--- (pg_advisory_xact_lock on the code), making the UNIQUE a safety net.
+
+-- broken-state unit_not_found via the FK dance (the code row survives but
+-- its pricing row is gone): drop the FK, insert a dangling code, redeem ->
+-- unit_not_found, delete the code, re-add the constraint under the same
+-- name the migration generated.
+ALTER TABLE public.unit_codes DROP CONSTRAINT unit_codes_unit_pricing_id_fkey;
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
+VALUES ('90000000-0000-0000-0000-00000000000a', 'WLDN-8Z9Y0X1W2V3U', '20000000-0000-0000-0000-000000000006', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE');
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-8Z9Y0X1W2V3U'')',
+    'P0001', 'unit_not_found');
+RESET ROLE;
+RESET "app.current_user_id";
+
+DELETE FROM public.unit_codes WHERE id = '90000000-0000-0000-0000-00000000000a';
+ALTER TABLE public.unit_codes ADD CONSTRAINT unit_codes_unit_pricing_id_fkey
+    FOREIGN KEY (unit_pricing_id) REFERENCES public.unit_pricing(id) ON DELETE RESTRICT;
+
+-- cleanup of throwaway fixture rows (scratch codes + hidden unit)
+DELETE FROM public.unit_codes WHERE id IN
+    ('90000000-0000-0000-0000-000000000007', '90000000-0000-0000-0000-000000000008', '90000000-0000-0000-0000-000000000009');
+DELETE FROM public.unit_purchases WHERE unit_id = '30000000-0000-0000-0000-00000000000d';
+DELETE FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-00000000000d';
+DELETE FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000d';
+RESET ROLE;
+RESET "app.current_user_id";
 
 -- =====================================================================
--- Section 5: can_access_lesson full matrix
+-- Section 5: can_access_lesson full matrix (purchase + trial)
 -- =====================================================================
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000001'),
-    'access: l1 published own grade = true');
+    'access: l1 published own grade + purchased unit = true');
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000002'),
     'access: l2 draft = false');
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000003'),
@@ -449,23 +469,35 @@ SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000005'),
     'access: l5 hidden unit = false');
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000006'),
-    'access: l6 wrong grade = false');
+    'access: l6 wrong grade (u2) = false');
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000007'),
     'access: l7 inactive grade (B8) = false');
 SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000008'),
     'access: l8 PDF-only = true');
 SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000009'),
-    'access: l9 no assets = true');
+    'access: l9 trial lesson = true');
 SELECT tests.assert(NOT public.can_access_lesson(gen_random_uuid()),
     'access: nonexistent lesson = false');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- F: no grade -> false; anon -> false
+-- H: no purchase -> trial opens l9, purchase-less l1 stays closed
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000008';
+SET LOCAL ROLE student;
+SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000009'),
+    'access: H trial l9 = true');
+SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000001'),
+    'access: H l1 (no purchase) = false');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- F: no grade -> false even for the trial lesson; anon -> false
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000006';
 SET LOCAL ROLE student;
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000001'),
     'access: F without grade = false');
+SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000009'),
+    'access: F trial l9 still false (no grade)');
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL ROLE anon;
@@ -475,68 +507,60 @@ SELECT tests.expect_error(
 RESET ROLE;
 
 -- =====================================================================
--- Section 6: expire_subscriptions idempotency (runs as postgres)
+-- Section 6: v_student_progress_summary (0028 decision E) +
+--            notify_new_content fan-out (runs as postgres)
 -- =====================================================================
 RESET ROLE;
 RESET "app.current_user_id";
 
--- fixture subs: one inside the warning window, one already expired
-INSERT INTO public.subscriptions (id, student_id, pricing_plan_id, base_price, platform_fee, total_price, source, started_at, expires_at, status)
-VALUES
-    ('81000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, 'manual', now() - interval '25 days', now() + interval '5 days',  'active'),
-    ('81000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, 'manual', now() - interval '31 days', now() - interval '1 day',  'active')
-ON CONFLICT (id) DO UPDATE
-    SET started_at = EXCLUDED.started_at, expires_at = EXCLUDED.expires_at, status = EXCLUDED.status;
+-- A owns u1. After Section 3: l1 = 55% (not completed), l8 = 100%
+-- (completed), l9 = 92% (TRIAL - excluded from numerator AND denominator).
+-- Expect: percent 77.50, completed 1, total 2.
+SELECT tests.assert(
+    (SELECT percent = 77.50 AND completed_lessons = 1 AND total_lessons = 2
+     FROM public.v_student_progress_summary
+     WHERE student_id = '70000000-0000-0000-0000-000000000001'
+       AND unit_id = '30000000-0000-0000-0000-000000000001'),
+    'summary: A u1 = 77.5% / 1 completed / 2 total (trial l9 excluded)');
 
-SELECT tests.expect_rows('SELECT public.expire_subscriptions()', 1, 'expire: first run');
+-- D owns u2 (g2). Progress: l6 = 20% (not completed). Expect 20 / 0 / 1.
 SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.notifications
-     WHERE dedup_key = 'sub_expiring:81000000-0000-0000-0000-000000000001'),
-    'expire: warning emitted once for in-window sub');
-SELECT tests.assert(
-    (SELECT status = 'expired' FROM public.subscriptions WHERE id = '81000000-0000-0000-0000-000000000002'),
-    'expire: expired sub flipped to expired');
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.notifications
-     WHERE dedup_key = 'sub_expired:81000000-0000-0000-0000-000000000002'),
-    'expire: expired notification emitted once');
-SELECT tests.assert(
-    (SELECT status = 'active' FROM public.subscriptions WHERE id = '80000000-0000-0000-0000-000000000001'),
-    'expire: future subscription untouched');
+    (SELECT percent = 20.00 AND completed_lessons = 0 AND total_lessons = 1
+     FROM public.v_student_progress_summary
+     WHERE student_id = '70000000-0000-0000-0000-000000000004'
+       AND unit_id = '30000000-0000-0000-0000-000000000003'),
+    'summary: D u2 = 20% / 0 completed / 1 total');
 
-SELECT tests.expect_rows('SELECT public.expire_subscriptions()', 1, 'expire: second run');
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.notifications
-     WHERE dedup_key = 'sub_expiring:81000000-0000-0000-0000-000000000001'),
-    'expire: idempotent - no duplicate warning');
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.notifications
-     WHERE dedup_key = 'sub_expired:81000000-0000-0000-0000-000000000002'),
-    'expire: idempotent - no duplicate expired notification');
-SELECT tests.assert(
-    (SELECT count(*) >= 1 FROM public.audit_logs WHERE action = 'subscription.expire'),
-    'expire: audited');
+-- notify_new_content fan-out: purchasers of u1 are now A, E, G. Direct
+-- call on a scratch lesson must reach exactly those 3 and be deduped.
+INSERT INTO public.lessons (id, unit_id, title, sort_order, status, deleted_at, is_trial)
+VALUES ('40000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000001', 'TEST-L10', 7, 'published', NULL, false)
+ON CONFLICT (id) DO UPDATE SET unit_id = EXCLUDED.unit_id, status = 'published', deleted_at = NULL, is_trial = false;
 
--- LOW: 7-day warning is skipped for disabled (B) and soft-deleted (C)
--- students, while the expiry flip still applies to everyone.
-INSERT INTO public.subscriptions (id, student_id, pricing_plan_id, base_price, platform_fee, total_price, source, started_at, expires_at, status)
-VALUES
-    ('81000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, 'manual', now() - interval '25 days', now() + interval '6 days',  'active'),
-    ('81000000-0000-0000-0000-000000000004', '70000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, 'manual', now() - interval '25 days', now() + interval '6 days',  'active')
-ON CONFLICT (id) DO UPDATE
-    SET started_at = EXCLUDED.started_at, expires_at = EXCLUDED.expires_at, status = EXCLUDED.status;
+SELECT public.notify_new_content('40000000-0000-0000-0000-000000000010');
+SELECT tests.assert(
+    (SELECT count(*) = 3 FROM public.notifications
+     WHERE entity_id = '40000000-0000-0000-0000-000000000010' AND type = 'new_content'),
+    'notify: fan-out to exactly 3 purchasers of u1');
+SELECT tests.assert(
+    (SELECT count(*) = 3 FROM public.notifications
+     WHERE entity_id = '40000000-0000-0000-0000-000000000010'
+       AND user_id IN ('70000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000005','70000000-0000-0000-0000-000000000007')),
+    'notify: recipients are A, E, G only');
+SELECT public.notify_new_content('40000000-0000-0000-0000-000000000010');
+SELECT tests.assert(
+    (SELECT count(*) = 3 FROM public.notifications
+     WHERE entity_id = '40000000-0000-0000-0000-000000000010' AND type = 'new_content'),
+    'notify: second call is deduped');
+SELECT tests.expect_error(
+    'SELECT public.notify_new_content(gen_random_uuid())',
+    'P0001', 'lesson_not_found');
 
-SELECT tests.expect_rows('SELECT public.expire_subscriptions()', 1, 'expire: third run');
-SELECT tests.assert(
-    (SELECT NOT EXISTS (SELECT 1 FROM public.notifications WHERE dedup_key = 'sub_expiring:81000000-0000-0000-0000-000000000003')),
-    'expire: disabled student B gets no expiring warning');
-SELECT tests.assert(
-    (SELECT NOT EXISTS (SELECT 1 FROM public.notifications WHERE dedup_key = 'sub_expiring:81000000-0000-0000-0000-000000000004')),
-    'expire: soft-deleted student C gets no expiring warning');
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM public.notifications WHERE dedup_key = 'sub_expiring:81000000-0000-0000-0000-000000000001'),
-    'expire: active student E still warned (control)');
-DELETE FROM public.subscriptions WHERE id IN ('81000000-0000-0000-0000-000000000003', '81000000-0000-0000-0000-000000000004');
+-- cleanup of the scratch lesson + its notifications
+DELETE FROM public.notifications WHERE entity_id = '40000000-0000-0000-0000-000000000010';
+DELETE FROM public.lessons WHERE id = '40000000-0000-0000-0000-000000000010';
+RESET ROLE;
+RESET "app.current_user_id";
 
 -- =====================================================================
 -- Section 7: set_video_status state machine (internal, runs as postgres)
@@ -605,12 +629,13 @@ DELETE FROM public.progress WHERE student_id IN ('70000000-0000-0000-0000-000000
   AND lesson_id IN ('40000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000002')
   AND video_id IN ('50000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000003');
 DELETE FROM public.lesson_videos WHERE id = '50000000-0000-0000-0000-000000000006';
-UPDATE public.lesson_videos SET status = 'processing' WHERE id = '50000000-0000-0000-0000-000000000003';
 
 -- illegal transition: replaced is terminal
 SELECT tests.expect_error(
     'SELECT public.set_video_status(''50000000-0000-0000-0000-000000000003'', ''ready'')',
     'P0001', 'invalid_video_transition');
+
+UPDATE public.lesson_videos SET status = 'processing' WHERE id = '50000000-0000-0000-0000-000000000003';
 
 -- failed path + error message, then recovery
 UPDATE public.lesson_videos SET status = 'processing' WHERE id = '50000000-0000-0000-0000-000000000003';
@@ -811,9 +836,9 @@ SELECT tests.expect_error(
 RESET ROLE;
 RESET "app.current_user_id";
 
--- publish_lesson fires the deduped new_content fan-out to active
--- grade-1 subscribers only (A, E, H - B is disabled, C deleted, D g2,
--- F/G no active sub).
+-- publish_lesson fires the deduped new_content fan-out to the active
+-- PURCHASERS of the unit (A, E, G - B disabled, C deleted, D/F/H have no
+-- u1 purchase).
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
@@ -826,12 +851,12 @@ RESET "app.current_user_id";
 SELECT tests.assert(
     (SELECT count(*) = 3 FROM public.notifications
      WHERE dedup_key LIKE 'new_content:40000000-0000-0000-0000-000000000002:%'),
-    'publish: fan-out to exactly 3 eligible students');
+    'publish: fan-out to exactly 3 eligible purchasers');
 SELECT tests.assert(
     (SELECT count(*) = 3 FROM public.notifications
      WHERE dedup_key LIKE 'new_content:40000000-0000-0000-0000-000000000002:%'
-       AND user_id IN ('70000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000005','70000000-0000-0000-0000-000000000008')),
-    'publish: recipients are A, E, H only');
+       AND user_id IN ('70000000-0000-0000-0000-000000000001','70000000-0000-0000-0000-000000000005','70000000-0000-0000-0000-000000000007')),
+    'publish: recipients are A, E, G only');
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
@@ -851,52 +876,51 @@ SELECT tests.expect_rows(
 RESET ROLE;
 RESET "app.current_user_id";
 
--- delete_pricing_plan: unreferenced -> hard delete; referenced -> deactivate
-INSERT INTO public.pricing_plans (id, grade_id, duration_days, base_price, platform_fee, total_price, is_active)
-VALUES ('22000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 10, 50.00, 5.00, 55.00, true)
-ON CONFLICT (id) DO UPDATE SET is_active = true;
-
+-- set_unit_price (0028): admin-only upsert, generated total + audit;
+-- teachers are denied, negative prices raise, unknown units raise.
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.expect_rows(
-    'SELECT public.delete_pricing_plan(''22000000-0000-0000-0000-000000000001'')',
-    1, 'staff: delete unreferenced plan');
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 90, 9)',
+    1, 'staff: admin re-prices u1 (90 + 9)');
 SELECT tests.assert(
-    (SELECT NOT EXISTS (SELECT 1 FROM public.pricing_plans WHERE id = '22000000-0000-0000-0000-000000000001')),
-    'staff: unreferenced plan hard-deleted');
-SELECT tests.assert(
-    (SELECT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'pricing.delete' AND metadata ->> 'deleted' = 'true')),
-    'staff: hard delete audited');
-RESET ROLE;
-RESET "app.current_user_id";
-
--- referenced plan: insert fresh + code referencing it, then deactivate
-INSERT INTO public.pricing_plans (id, grade_id, duration_days, base_price, platform_fee, total_price, is_active)
-VALUES ('22000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 11, 55.00, 5.50, 60.50, true)
-ON CONFLICT (id) DO UPDATE SET is_active = true;
-INSERT INTO public.subscription_codes (id, code, pricing_plan_id, status, created_by, created_at, note)
-VALUES ('92000000-0000-0000-0000-000000000002', 'WLDN-TEST-CCCC-CCCC', '22000000-0000-0000-0000-000000000002', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
-ON CONFLICT (id) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL;
-
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
-SET LOCAL ROLE admin;
-SELECT tests.expect_rows(
-    'SELECT public.delete_pricing_plan(''22000000-0000-0000-0000-000000000002'')',
-    1, 'staff: delete referenced plan');
-SELECT tests.assert(
-    (SELECT is_active = false FROM public.pricing_plans WHERE id = '22000000-0000-0000-0000-000000000002'),
-    'staff: referenced plan deactivated, not deleted (B7)');
+    (SELECT base_price = 90.00 AND platform_fee = 9.00 AND total_price = 99.00
+     FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
+    'staff: total_price generated from base + platform');
 SELECT tests.assert(
     (SELECT EXISTS (SELECT 1 FROM public.audit_logs
-        WHERE action = 'pricing.delete' AND entity_id = '22000000-0000-0000-0000-000000000002'
-          AND metadata ->> 'deactivated' = 'true')),
-    'staff: deactivation audited');
+        WHERE action = 'unit_pricing.set'
+          AND metadata ->> 'unit_id' = '30000000-0000-0000-0000-000000000001')),
+    'staff: set_unit_price audited');
+-- teacher is denied (decision J - prices are admin-only)
 RESET ROLE;
 RESET "app.current_user_id";
-
--- cleanup of throwaway fixture rows
-DELETE FROM public.subscription_codes WHERE id = '92000000-0000-0000-0000-000000000002';
-DELETE FROM public.pricing_plans WHERE id = '22000000-0000-0000-0000-000000000002';
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
+SET LOCAL ROLE authenticated;
+SELECT tests.expect_error(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 80, 8)',
+    'P0001', 'permission_denied');
+RESET ROLE;
+RESET "app.current_user_id";
+-- negative price and unknown unit still raise (as admin)
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
+SET LOCAL ROLE admin;
+SELECT tests.expect_error(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', -1, 0)',
+    'P0001', 'invalid_price');
+SELECT tests.expect_error(
+    'SELECT public.set_unit_price(gen_random_uuid(), 10, 1)',
+    'P0001', 'unit_not_found');
+-- restore fixture price 100 + 10
+SELECT tests.expect_rows(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 100, 10)',
+    1, 'staff: fixture price restored (100 + 10)');
+SELECT tests.assert(
+    (SELECT base_price = 100.00 AND platform_fee = 10.00 AND total_price = 110.00
+     FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
+    'staff: fixture price restored');
+RESET ROLE;
+RESET "app.current_user_id";
 
 -- =====================================================================
 -- Section 10: update_own_profile guard rails
@@ -917,60 +941,35 @@ RESET ROLE;
 
 -- =====================================================================
 -- Section 11: HIGH-1 grade enforcement (B8) - can_access_lesson,
---              units/lessons visibility, upsert_progress, redemption
+--              units/lessons visibility, upsert_progress
 -- =====================================================================
 RESET ROLE;
 RESET "app.current_user_id";
 
--- scratch published unit in g1 + published lesson with a ready primary
--- video, so every gate is exclusively testable against the grade flags.
+-- scratch TRIAL lesson in g1 (trial: no purchase needed, so every gate is
+-- exclusively testable against the grade flags - redemption is no longer
+-- grade-gated under the permanent-purchase model).
 INSERT INTO public.units (id, grade_id, name, sort_order, status, deleted_at)
 VALUES ('30000000-0000-0000-0000-00000000000b', '10000000-0000-0000-0000-000000000001', 'B8 Scratch Unit', 99, 'published', NULL)
 ON CONFLICT (id) DO UPDATE SET grade_id = EXCLUDED.grade_id, status = 'published', deleted_at = NULL;
-INSERT INTO public.lessons (id, unit_id, title, sort_order, status, deleted_at)
-VALUES ('40000000-0000-0000-0000-000000000011', '30000000-0000-0000-0000-00000000000b', 'B8 Scratch Lesson', 99, 'published', NULL)
-ON CONFLICT (id) DO UPDATE SET unit_id = EXCLUDED.unit_id, status = 'published', deleted_at = NULL;
+INSERT INTO public.lessons (id, unit_id, title, sort_order, status, deleted_at, is_trial)
+VALUES ('40000000-0000-0000-0000-000000000011', '30000000-0000-0000-0000-00000000000b', 'B8 Scratch Lesson', 99, 'published', NULL, true)
+ON CONFLICT (id) DO UPDATE SET unit_id = EXCLUDED.unit_id, status = 'published', deleted_at = NULL, is_trial = true;
 INSERT INTO public.lesson_videos (id, lesson_id, bunny_video_id, bunny_library_id, title, status, is_primary, sort_order, deleted_at)
 VALUES ('50000000-0000-0000-0000-000000000011', '40000000-0000-0000-0000-000000000011', 'BV-B8', 'LIB-1', 'B8V', 'ready', true, 1, NULL)
 ON CONFLICT (id) DO UPDATE SET lesson_id = EXCLUDED.lesson_id, status = 'ready', deleted_at = NULL;
-INSERT INTO public.subscription_codes (id, code, pricing_plan_id, status, created_by, created_at, note)
-VALUES ('92000000-0000-0000-0000-000000000011', 'WLDN-TEST-GGGG-GGGG', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
-ON CONFLICT (id) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL;
 
 -- baseline: everything passes while the grade is live
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
-SELECT tests.expect_rows(
-    'SELECT public.can_access_lesson(''40000000-0000-0000-0000-000000000011'')',
-    1, 'B8: baseline can_access_lesson (grade live)');
 SELECT tests.assert(
     (SELECT public.can_access_lesson('40000000-0000-0000-0000-000000000011')),
-    'B8: baseline access true');
+    'B8: baseline access true (trial lesson)');
 SELECT tests.expect_rows(
     'SELECT public.upsert_progress(''40000000-0000-0000-0000-000000000011'', 30, 25)',
     1, 'B8: baseline upsert_progress accepted');
 RESET ROLE;
 RESET "app.current_user_id";
-
--- G has no active subscription -> the redemption subject for every phase
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
-SET LOCAL ROLE student;
-SELECT tests.expect_rows(
-    'SELECT public.redeem_subscription_code(''WLDN-TEST-GGGG-GGGG'')',
-    1, 'B8: baseline redemption accepted');
-RESET ROLE;
-RESET "app.current_user_id";
--- reset the code + resulting subscription for the next phase
-DELETE FROM public.notifications
-WHERE dedup_key IN (
-    SELECT 'sub_activated:' || s.id FROM public.subscriptions s WHERE s.code_id = '92000000-0000-0000-0000-000000000011'
-    UNION ALL
-    SELECT 'sub_expiring:' || s.id FROM public.subscriptions s WHERE s.code_id = '92000000-0000-0000-0000-000000000011'
-);
-DELETE FROM public.code_redemptions WHERE code_id = '92000000-0000-0000-0000-000000000011';
-DELETE FROM public.subscriptions WHERE code_id = '92000000-0000-0000-0000-000000000011';
-UPDATE public.subscription_codes SET status = 'available', used_at = NULL, used_by = NULL
-WHERE id = '92000000-0000-0000-0000-000000000011';
 
 -- grade deactivated (is_active = false): all gates close
 UPDATE public.grades SET is_active = false WHERE id = '10000000-0000-0000-0000-000000000001';
@@ -985,13 +984,6 @@ SELECT tests.expect_error(
 SELECT tests.expect_count('SELECT count(*) FROM public.units WHERE id = ''30000000-0000-0000-0000-00000000000b''', 0, 'B8: grade inactive -> unit hidden');
 SELECT tests.expect_count('SELECT count(*) FROM public.lessons WHERE id = ''40000000-0000-0000-0000-000000000011''', 0, 'B8: grade inactive -> lesson hidden');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos WHERE id = ''50000000-0000-0000-0000-000000000011''', 0, 'B8: grade inactive -> video hidden');
-RESET ROLE;
-RESET "app.current_user_id";
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
-SET LOCAL ROLE student;
-SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-TEST-GGGG-GGGG'')',
-    'P0001', 'plan_not_available');
 RESET ROLE;
 RESET "app.current_user_id";
 UPDATE public.grades SET is_active = true WHERE id = '10000000-0000-0000-0000-000000000001';
@@ -1015,13 +1007,6 @@ SELECT tests.expect_error(
 SELECT tests.expect_count('SELECT count(*) FROM public.units WHERE id = ''30000000-0000-0000-0000-00000000000b''', 0, 'B8: grade soft-deleted -> unit hidden');
 RESET ROLE;
 RESET "app.current_user_id";
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
-SET LOCAL ROLE student;
-SELECT tests.expect_error(
-    'SELECT public.redeem_subscription_code(''WLDN-TEST-GGGG-GGGG'')',
-    'P0001', 'plan_not_available');
-RESET ROLE;
-RESET "app.current_user_id";
 
 -- restore: gates reopen
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
@@ -1042,37 +1027,15 @@ SELECT tests.expect_rows(
 RESET ROLE;
 RESET "app.current_user_id";
 
--- redemption after restore succeeds
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
-SET LOCAL ROLE student;
-SELECT tests.expect_rows(
-    'SELECT public.redeem_subscription_code(''WLDN-TEST-GGGG-GGGG'')',
-    1, 'B8: restored grade -> redemption accepted');
-RESET ROLE;
-RESET "app.current_user_id";
-SELECT tests.assert(
-    (SELECT EXISTS (SELECT 1 FROM public.subscriptions s
-                    JOIN public.code_redemptions cr ON cr.subscription_id = s.id
-                    JOIN public.subscription_codes c ON c.id = cr.code_id
-                    WHERE c.code = 'WLDN-TEST-GGGG-GGGG')),
-    'B8: redemption recorded');
-
 -- fixture cleanup
-DELETE FROM public.notifications
-WHERE dedup_key IN (
-    SELECT 'sub_activated:' || s.id FROM public.subscriptions s WHERE s.code_id = '92000000-0000-0000-0000-000000000011'
-    UNION ALL
-    SELECT 'sub_expiring:' || s.id FROM public.subscriptions s WHERE s.code_id = '92000000-0000-0000-0000-000000000011'
-);
-DELETE FROM public.code_redemptions WHERE code_id = '92000000-0000-0000-0000-000000000011';
-DELETE FROM public.subscriptions WHERE code_id = '92000000-0000-0000-0000-000000000011';
 DELETE FROM public.progress
 WHERE student_id = '70000000-0000-0000-0000-000000000001'
   AND lesson_id = '40000000-0000-0000-0000-000000000011';
 DELETE FROM public.lesson_videos WHERE id = '50000000-0000-0000-0000-000000000011';
 DELETE FROM public.lessons WHERE id = '40000000-0000-0000-0000-000000000011';
 DELETE FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000b';
-DELETE FROM public.subscription_codes WHERE id = '92000000-0000-0000-0000-000000000011';
+RESET ROLE;
+RESET "app.current_user_id";
 
 -- =====================================================================
 -- Section 12: MEDIUM-4 update_student_profile target guard
@@ -1330,36 +1293,37 @@ RESET ROLE;
 RESET "app.current_user_id";
 
 -- =====================================================================
--- Section 15: create_codes_for_staff (EF wrapper, 0014)
--- Staff-guarded entry point for generate_codes_internal: the guard uses
--- the request-scoped claims (auth.uid via is_admin/is_mr_walid) exactly
--- like list_trash in 0012, so a PostgREST user-JWT call works with
--- created_by = caller uid; a GUC-free call (service role / plain psql)
--- hits permission_denied BEFORE generate_codes_internal is reached;
--- plan/count validation stays inside generate_codes_internal.
+-- Section 15: create_unit_codes_for_staff (0028 wrapper)
+-- Staff-guarded entry point for create_unit_codes_internal: the guard
+-- uses the request-scoped claims (auth.uid via is_admin/is_mr_walid/
+-- is_teacher) exactly like the 0014 wrapper fix, so a PostgREST user-JWT
+-- call works with created_by = caller uid; a GUC-free call (service role
+-- / plain psql) hits permission_denied BEFORE the internal generator;
+-- unit/count validation stays inside the wrapper + internal fn.
 -- Generated rows carry note = 'test' only (cleaned up at the end).
 -- =====================================================================
 RESET ROLE;
 RESET "app.current_user_id";
 
--- (a) mr_walid: 3 codes, created_by = caller, CHECK format, available
+-- (a) mr_walid: 3 codes for u1, created_by = caller, CHECK format, available
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
-    'SELECT public.create_codes_for_staff(''20000000-0000-0000-0000-000000000001'', 3, ''test'')',
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000001'', 3, ''test'')',
     3, 'codes: mr_walid generates 3 codes');
 SELECT tests.assert(
     (SELECT count(*) = 3
-     FROM public.subscription_codes
+     FROM public.unit_codes
      WHERE created_by = '70000000-0000-0000-0000-000000000009'
        AND note = 'test' AND status = 'available'
        AND used_at IS NULL AND revoked_at IS NULL
-       AND code ~ '^WLDN-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$'),
-    'codes: 3 rows by mr_walid, unambiguous CHECK format, status available');
+       AND code ~ '^WLDN-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$'),
+    'codes: 3 rows by mr_walid, unambiguous 12-char charset, available');
 SELECT tests.assert(
     (SELECT count(*) = 0
-     FROM public.subscription_codes
-     WHERE code !~ '^WLDN-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$'),
+     FROM public.unit_codes
+     WHERE note = 'test'
+       AND code !~ '^WLDN-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$'),
     'codes: no generated code violates the unambiguous charset');
 RESET ROLE;
 RESET "app.current_user_id";
@@ -1368,44 +1332,57 @@ RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
-    'SELECT public.create_codes_for_staff(''20000000-0000-0000-0000-000000000001'', 3, ''test'')',
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000001'', 3, ''test'')',
     'P0001', 'permission_denied');
 RESET ROLE;
 RESET "app.current_user_id";
--- subscription_codes are invisible to students (RLS): count as postgres
+-- unit_codes are invisible to students (RLS): count as postgres
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM public.subscription_codes WHERE note = 'test'),
+    (SELECT count(*) = 3 FROM public.unit_codes WHERE note = 'test'),
     'codes: denied student mutated nothing');
 
 -- (c) plain psql session (postgres, NO claims): permission_denied, NOT
 -- system_actor_required - clients cannot skip the guard by omitting sub
 SELECT tests.expect_error(
-    'SELECT public.create_codes_for_staff(''20000000-0000-0000-0000-000000000001'', 3, ''test'')',
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000001'', 3, ''test'')',
     'P0001', 'permission_denied');
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM public.subscription_codes WHERE note = 'test'),
+    (SELECT count(*) = 3 FROM public.unit_codes WHERE note = 'test'),
     'codes: GUC-free path mutated nothing');
 
--- (d) count cap stays inside generate_codes_internal: 0 / 501 -> invalid_count
+-- (d) count cap stays inside create_unit_codes_internal: 0 / 501 -> invalid_count
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_error(
-    'SELECT public.create_codes_for_staff(''20000000-0000-0000-0000-000000000001'', 0, ''test'')',
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000001'', 0, ''test'')',
     'P0001', 'invalid_count');
 SELECT tests.expect_error(
-    'SELECT public.create_codes_for_staff(''20000000-0000-0000-0000-000000000001'', 501, ''test'')',
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000001'', 501, ''test'')',
     'P0001', 'invalid_count');
 
--- (e) plan validation stays in generate_codes_internal: unknown plan -> plan_not_found
+-- (e) unit validation stays in the wrapper: unknown unit AND a unit
+-- without a pricing row both raise unit_not_found
 SELECT tests.expect_error(
-    'SELECT public.create_codes_for_staff(gen_random_uuid(), 3, ''test'')',
-    'P0001', 'plan_not_found');
+    'SELECT public.create_unit_codes_for_staff(gen_random_uuid(), 3, ''test'')',
+    'P0001', 'unit_not_found');
+INSERT INTO public.units (id, grade_id, name, sort_order, status, deleted_at)
+VALUES ('30000000-0000-0000-0000-00000000000e', '10000000-0000-0000-0000-000000000001', 'TEST-NOPRICE', 98, 'published', NULL)
+ON CONFLICT (id) DO UPDATE SET status = 'published', deleted_at = NULL;
+SELECT tests.expect_error(
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-00000000000e'', 3, ''test'')',
+    'P0001', 'unit_not_found');
+
+-- (f) inactive pricing (u1h, hidden unit) -> unit_inactive
+SELECT tests.expect_error(
+    'SELECT public.create_unit_codes_for_staff(''30000000-0000-0000-0000-000000000002'', 3, ''test'')',
+    'P0001', 'unit_inactive');
 RESET ROLE;
 RESET "app.current_user_id";
 
--- cleanup: the 3 codes generated in (a), plus any rows leaked by failed
--- (b)-(e) attempts (asserted above to be none)
-DELETE FROM public.subscription_codes WHERE note = 'test';
+-- cleanup: the 3 codes generated in (a), the scratch unit, plus any rows
+-- leaked by failed attempts (asserted above to be none)
+DELETE FROM public.unit_codes WHERE note = 'test';
+DELETE FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000e';
 RESET ROLE;
 RESET "app.current_user_id";
 
@@ -1545,7 +1522,8 @@ SELECT tests.assert(
 -- NO LONGER insertable - the policy now only satisfies PENDING
 -- (is_ready=false AND is_primary=false) row-backed paths, so a student
 -- cannot plant bytes at a visible primary PDF object (HARD-2).
--- l9 is published/unit published/own grade/active sub for student A.
+-- l9 is published/unit published/own grade + accessible for student A
+-- (trial lesson).
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
@@ -1885,6 +1863,4 @@ SELECT tests.assert(
     'video18: fixture v1 restored as primary ready');
 RESET ROLE;
 RESET "app.current_user_id";
-
-
 

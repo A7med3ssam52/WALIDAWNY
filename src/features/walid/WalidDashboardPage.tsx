@@ -3,9 +3,8 @@ import type { ReactNode } from 'react';
 import {
   BadgeCheck,
   BookOpen,
-  Clock,
   FileText,
-  KeyRound,
+  Trophy,
   Users,
   Video,
   Wallet,
@@ -27,7 +26,7 @@ import {
   TableRow,
 } from '../../components/Table';
 import { getDashboardStats } from '../../data/rpc';
-import { formatDate, formatDateTime, formatPrice } from '../../lib/format';
+import { formatDateTime, formatPrice } from '../../lib/format';
 import type { DashboardStats } from '../../types/database';
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
@@ -78,7 +77,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
   return (
     <LayoutShell
       title="لوحة المعلومات"
-      subtitle="نظرة عامة على الطلاب والاشتراكات والمحتوى"
+      subtitle="نظرة عامة على الطلاب والمشتريات والمحتوى"
       variant="sidebar"
       nav={nav ?? <StaffNav />}
     >
@@ -106,20 +105,20 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
               icon={<Users className="h-5 w-5" />}
             />
             <StatCard
-              label="اشتراكات نشطة"
-              value={String(stats.subscriptions.active)}
+              label="وحدات مباعة"
+              value={String(stats.purchases.total)}
               tone="success"
               icon={<BadgeCheck className="h-5 w-5" />}
             />
             <StatCard
-              label="تنتهي خلال 7 أيام"
-              value={String(stats.subscriptions.expiring_7d)}
-              tone="warning"
-              icon={<Clock className="h-5 w-5" />}
+              label="إيرادات هذا الشهر"
+              value={formatPrice(stats.purchases.revenue_this_month)}
+              tone="success"
+              icon={<Wallet className="h-5 w-5" />}
             />
             <StatCard
-              label="إيرادات الاشتراكات"
-              value={formatPrice(stats.subscriptions.revenue_total)}
+              label="إجمالي الإيرادات"
+              value={formatPrice(stats.purchases.total_revenue)}
               tone="success"
               icon={<Wallet className="h-5 w-5" />}
             />
@@ -145,15 +144,15 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
               icon={<FileText className="h-5 w-5" />}
             />
             <StatCard
-              label="أكواد متاحة"
-              value={String(stats.codes.available)}
-              hint={`مستخدمة: ${stats.codes.used} · ملغاة: ${stats.codes.revoked}`}
-              icon={<KeyRound className="h-5 w-5" />}
+              label="دروس مكتملة"
+              value={String(stats.engagement.completed_lessons)}
+              hint={`مشاركة: ${stats.engagement.students_with_progress} طالب`}
+              icon={<Trophy className="h-5 w-5" />}
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SectionCard title="الطلاب حسب الصف">
+            <SectionCard title="الطلاب والمشتريات حسب الصف">
               {stats.by_grade.length === 0 ? (
                 emptyTable
               ) : (
@@ -162,7 +161,8 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
                     <TableRow>
                       <TableHeadCell>الصف</TableHeadCell>
                       <TableHeadCell>الطلاب</TableHeadCell>
-                      <TableHeadCell>مشتركون نشطون</TableHeadCell>
+                      <TableHeadCell>مشتريات</TableHeadCell>
+                      <TableHeadCell>الإيرادات</TableHeadCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -172,7 +172,10 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
                           {row.grade_name}
                         </TableCell>
                         <TableCell label="الطلاب">{row.students}</TableCell>
-                        <TableCell label="مشتركون نشطون">{row.active_subscribers}</TableCell>
+                        <TableCell label="مشتريات">{row.purchases}</TableCell>
+                        <TableCell label="الإيرادات" className="font-mono" dir="ltr">
+                          {formatPrice(row.revenue)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -180,49 +183,58 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
               )}
             </SectionCard>
 
-            <SectionCard title="آخر الاشتراكات">
-              {stats.recent_subscriptions.length === 0 ? (
+            <SectionCard title="الوحدات الأكثر مبيعًا">
+              {stats.top_units.length === 0 ? (
                 emptyTable
               ) : (
-                <ul className="divide-y divide-border-muted">
-                  {stats.recent_subscriptions.map((sub) => (
-                    <li
-                      key={`${sub.student_name}-${sub.started_at}`}
-                      className="flex items-center justify-between gap-3 py-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{sub.student_name}</p>
-                        <p className="mt-0.5 text-xs text-foreground-subtle">
-                          {sub.grade_name ?? '—'} · {sub.duration_days} يوم ·{' '}
-                          {formatDate(sub.started_at)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-sm font-medium text-foreground" dir="ltr">
-                        {formatPrice(sub.total_price)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeadCell>الوحدة</TableHeadCell>
+                      <TableHeadCell>مبيعات</TableHeadCell>
+                      <TableHeadCell>الإيرادات</TableHeadCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {stats.top_units.map((row) => (
+                      <TableRow key={row.unit_name}>
+                        <TableCell label="الوحدة" className="font-medium text-foreground">
+                          {row.unit_name}
+                        </TableCell>
+                        <TableCell label="مبيعات">{row.purchases}</TableCell>
+                        <TableCell label="الإيرادات" className="font-mono" dir="ltr">
+                          {formatPrice(row.revenue)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </SectionCard>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SectionCard title="اشتراكات تنتهي قريبًا">
-              {stats.upcoming_expirations.length === 0 ? (
+            <SectionCard title="أحدث المشتريات">
+              {stats.recent_purchases.length === 0 ? (
                 emptyTable
               ) : (
                 <ul className="divide-y divide-border-muted">
-                  {stats.upcoming_expirations.map((exp) => (
+                  {stats.recent_purchases.map((purchase) => (
                     <li
-                      key={exp.student_name}
+                      key={`${purchase.student_name}-${purchase.unit_name}-${purchase.purchased_at}`}
                       className="flex items-center justify-between gap-3 py-3"
                     >
-                      <span className="truncate font-medium text-foreground">
-                        {exp.student_name}
-                      </span>
-                      <span className="shrink-0 text-xs font-medium text-warning" dir="ltr">
-                        {formatDateTime(exp.expires_at)}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">
+                          {purchase.student_name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-foreground-subtle">
+                          {purchase.grade_name ?? '—'} · {purchase.unit_name} ·{' '}
+                          {formatDateTime(purchase.purchased_at)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-sm font-medium text-foreground" dir="ltr">
+                        {formatPrice(purchase.total_price)}
                       </span>
                     </li>
                   ))}

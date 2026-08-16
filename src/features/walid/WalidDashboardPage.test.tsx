@@ -12,13 +12,7 @@ import { renderApp } from '../../test/utils';
 
 const seededStats = makeDashboardStats({
   students: { total: 42, active: 40, disabled: 2, deleted: 1, new_this_month: 5 },
-  subscriptions: {
-    active: 30,
-    expiring_7d: 4,
-    expired: 12,
-    revenue_total: 10500,
-    revenue_this_month: 3500,
-  },
+  purchases: { total: 30, total_revenue: 10500, revenue_this_month: 3500 },
   content: {
     grades: 3,
     units: 9,
@@ -30,23 +24,23 @@ const seededStats = makeDashboardStats({
     pdfs_ready: 27,
   },
   engagement: { students_with_progress: 18, completed_lessons: 120, avg_percent: 61.5 },
-  codes: { available: 80, used: 200, revoked: 10 },
   by_grade: [
-    { grade_name: 'الصف الأول', students: 20, active_subscribers: 15 },
-    { grade_name: 'الصف الثاني', students: 22, active_subscribers: 14 },
+    { grade_name: 'الصف الأول', students: 20, purchases: 15, revenue: 5000 },
+    { grade_name: 'الصف الثاني', students: 22, purchases: 14, revenue: 4500 },
   ],
-  recent_subscriptions: [
+  top_units: [
+    { unit_name: 'الوحدة الأولى', purchases: 12, revenue: 4200 },
+    { unit_name: 'الوحدة الثانية', purchases: 8, revenue: 2800 },
+  ],
+  recent_purchases: [
     {
       student_name: 'أحمد محمد',
       grade_name: 'الصف الأول',
-      duration_days: 30,
+      unit_name: 'الوحدة الأولى',
       total_price: 350,
-      status: 'active',
-      started_at: '2026-08-10T10:00:00Z',
-      expires_at: '2026-09-09T10:00:00Z',
+      purchased_at: '2026-08-10T10:00:00Z',
     },
   ],
-  upcoming_expirations: [{ student_name: 'منى سعيد', expires_at: '2026-08-15T10:00:00Z' }],
 });
 
 describe('WalidDashboardPage', () => {
@@ -62,46 +56,46 @@ describe('WalidDashboardPage', () => {
     expect(await screen.findByText('42')).toBeInTheDocument();
     expect(screen.getByText('لوحة المعلومات')).toBeInTheDocument();
     expect(screen.getByText('30')).toBeInTheDocument();
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('3500 ج.م')).toBeInTheDocument();
     expect(screen.getByText('10500 ج.م')).toBeInTheDocument();
     expect(getRpcCalls().some((call) => call.fn === 'get_dashboard_stats')).toBe(true);
   });
 
-  it('renders content and code cards', async () => {
+  it('renders the content cards', async () => {
     renderApp('/walid/dashboard');
 
-    expect(await screen.findByText('30')).toBeInTheDocument();
+    expect(await screen.findByText('31')).toBeInTheDocument();
     expect(screen.getByText('25')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
-    expect(screen.getByText('80')).toBeInTheDocument();
-    expect(screen.getByText(/مستخدمة: 200/)).toBeInTheDocument();
   });
 
-  it('renders the by-grade table with subscribers', async () => {
+  it('renders the by-grade table with students, purchases and revenue', async () => {
     renderApp('/walid/dashboard');
 
     expect(await screen.findByText('15')).toBeInTheDocument();
-    expect(screen.getByText('الطلاب حسب الصف')).toBeInTheDocument();
+    expect(screen.getByText('الطلاب والمشتريات حسب الصف')).toBeInTheDocument();
     expect(screen.getByText('الصف الأول')).toBeInTheDocument();
     expect(screen.getByText('الصف الثاني')).toBeInTheDocument();
     expect(screen.getByText('14')).toBeInTheDocument();
+    expect(screen.getByText('5000 ج.م')).toBeInTheDocument();
   });
 
-  it('renders recent subscriptions and upcoming expirations', async () => {
+  it('renders the top units and recent purchases', async () => {
     renderApp('/walid/dashboard');
 
-    expect(await screen.findByText('آخر الاشتراكات')).toBeInTheDocument();
+    expect(await screen.findByText('الوحدات الأكثر مبيعًا')).toBeInTheDocument();
+    expect(screen.getByText('أحدث المشتريات')).toBeInTheDocument();
     expect(screen.getByText('أحمد محمد')).toBeInTheDocument();
-    expect(screen.getByText('اشتراكات تنتهي قريبًا')).toBeInTheDocument();
-    expect(screen.getByText('منى سعيد')).toBeInTheDocument();
+    expect(screen.getAllByText('الوحدة الأولى').length).toBeGreaterThan(0);
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 
   it('renders engagement stats', async () => {
     renderApp('/walid/dashboard');
 
     expect(await screen.findByText('مشاركة الطلاب')).toBeInTheDocument();
-    expect(screen.getByText('18')).toBeInTheDocument();
-    expect(screen.getByText('120')).toBeInTheDocument();
+    expect(screen.getAllByText('18').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('120').length).toBeGreaterThan(0);
     expect(screen.getByText('%61.5')).toBeInTheDocument();
   });
 

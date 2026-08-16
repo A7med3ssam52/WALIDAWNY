@@ -38,8 +38,6 @@ export type ActiveGrade = {
   sort_order: number;
 };
 
-export type SubscriptionStatus = 'active' | 'expired';
-
 export type CodeStatus = 'available' | 'used' | 'revoked';
 
 export type ContentStatus = 'draft' | 'published' | 'hidden';
@@ -62,6 +60,7 @@ export type Lesson = {
   description: string | null;
   sort_order: number;
   status: ContentStatus;
+  is_trial: boolean;
   published_at: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -119,51 +118,37 @@ export interface PlaybackResponse {
   playback_url: string;
   video_id: string;
   lesson_id: string;
-  expires_at: string;
 }
 
-export type SubscriptionSource = 'code' | 'manual';
+export type UnitPurchaseStatus = 'active' | 'void';
 
-export type Subscription = {
+export type UnitPricing = {
   id: string;
-  student_id: string;
-  pricing_plan_id: string;
-  base_price: number;
-  platform_fee: number;
-  total_price: number;
-  code_id: string | null;
-  source: SubscriptionSource;
-  started_at: string;
-  expires_at: string;
-  status: SubscriptionStatus;
-  created_at: string;
-};
-
-export type PricingPlan = {
-  id: string;
-  grade_id: string;
-  duration_days: number;
+  unit_id: string;
   base_price: number;
   platform_fee: number;
   total_price: number;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
 };
 
-export type PricingPlanWithGrade = PricingPlan & {
-  grade_name: string | null;
+export type UnitPricingWithUnit = UnitPricing & {
+  unit_name: string;
+  grade_name: string;
 };
 
-export type SubscriptionWithPlan = Subscription & {
-  plan_label: string | null;
-  grade_name: string | null;
+export type PublicUnitPrice = {
+  unit_id: string;
+  unit_name: string;
+  grade_name: string;
+  base_price: number;
+  platform_fee: number;
+  total_price: number;
 };
 
-export type SubscriptionCode = {
+export type UnitCode = {
   id: string;
   code: string;
-  pricing_plan_id: string;
+  unit_pricing_id: string;
   status: CodeStatus;
   created_by: string;
   created_at: string;
@@ -172,11 +157,45 @@ export type SubscriptionCode = {
   revoked_at: string | null;
   revoked_by: string | null;
   note: string | null;
+}
+
+export type UnitCodeWithUnit = UnitCode & {
+  unit_name: string;
 };
 
-export type CodeWithStudent = SubscriptionCode & {
-  student_name: string | null;
+export type UnitPurchase = {
+  id: string;
+  student_id: string;
+  unit_id: string;
+  base_price: number;
+  platform_fee: number;
+  total_price: number;
+  code_id: string | null;
+  status: UnitPurchaseStatus;
+  purchased_at: string;
+}
+
+export type UnitPurchaseWithUnit = UnitPurchase & {
+  unit_name: string;
+  grade_name: string | null;
 };
+
+export interface LessonAccessInfo {
+  has_access: boolean;
+  has_purchase: boolean;
+  is_trial: boolean;
+  unit_id: string | null;
+  unit_name: string | null;
+  price: number | null;
+}
+
+export interface UnitPurchaseStats {
+  total_purchases: number;
+  total_revenue: number;
+  revenue_this_month: number;
+  by_grade: Array<{ grade_name: string; purchases: number; revenue: number }>;
+  top_units: Array<{ unit_name: string; purchases: number; revenue: number }>;
+}
 
 export type Progress = {
   id: string;
@@ -190,12 +209,75 @@ export type Progress = {
   updated_at: string;
 };
 
+export type ExamQuestionType = 'mcq' | 'essay';
+
+export type Exam = {
+  id: string;
+  lesson_id: string;
+  title: string;
+  sort_order: number;
+  passing_score: number;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExamQuestion = {
+  id: string;
+  exam_id: string;
+  type: ExamQuestionType;
+  prompt: string;
+  choices: string[] | null;
+  correct_index: number | null;
+  max_score: number;
+  sort_order: number;
+};
+
+export type ExamAttemptStatus = 'submitted' | 'graded';
+
+export type ExamAttempt = {
+  id: string;
+  exam_id: string;
+  student_id: string;
+  status: ExamAttemptStatus;
+  auto_score: number | null;
+  manual_score: number | null;
+  final_score: number | null;
+  graded_by: string | null;
+  graded_at: string | null;
+  submitted_at: string;
+};
+
+export type ExamAnswer = {
+  id: string;
+  attempt_id: string;
+  question_id: string;
+  choice_index: number | null;
+  answer_text: string | null;
+  score: number | null;
+};
+
+export type LessonCommentStatus = 'visible' | 'removed';
+
+export type LessonComment = {
+  id: string;
+  lesson_id: string;
+  author_id: string;
+  author_name: string;
+  parent_id: string | null;
+  body: string;
+  status: LessonCommentStatus;
+  created_at: string;
+};
+
 export type NotificationType =
-  | 'subscription_activated'
-  | 'subscription_expiring'
-  | 'subscription_expired'
+  | 'unit_activated'
   | 'new_content'
-  | 'system';
+  | 'system'
+  | 'exam_submitted'
+  | 'exam_graded'
+  | 'lesson_comment'
+  | 'comment_reply';
 
 export type AppNotification = {
   id: string;
@@ -216,7 +298,6 @@ export interface PdfAccessResponse {
   pdf_id: string;
   lesson_id: string;
   original_name: string | null;
-  expires_at: string;
 }
 
 export type AuditLogRow = {
@@ -248,11 +329,9 @@ export interface DashboardStudentsStats {
   new_this_month: number;
 }
 
-export interface DashboardSubscriptionsStats {
-  active: number;
-  expiring_7d: number;
-  expired: number;
-  revenue_total: number;
+export interface DashboardPurchasesStats {
+  total: number;
+  total_revenue: number;
   revenue_this_month: number;
 }
 
@@ -273,42 +352,35 @@ export interface DashboardEngagementStats {
   avg_percent: number;
 }
 
-export interface DashboardCodesStats {
-  available: number;
-  used: number;
-  revoked: number;
-}
-
 export interface DashboardByGradeRow {
   grade_name: string;
   students: number;
-  active_subscribers: number;
+  purchases: number;
+  revenue: number;
 }
 
-export interface DashboardRecentSubscription {
+export interface DashboardTopUnit {
+  unit_name: string;
+  purchases: number;
+  revenue: number;
+}
+
+export interface DashboardRecentPurchase {
   student_name: string;
   grade_name: string | null;
-  duration_days: number;
+  unit_name: string;
   total_price: number;
-  status: SubscriptionStatus;
-  started_at: string;
-  expires_at: string;
-}
-
-export interface DashboardUpcomingExpiration {
-  student_name: string;
-  expires_at: string;
+  purchased_at: string;
 }
 
 export interface DashboardStats {
   students: DashboardStudentsStats;
-  subscriptions: DashboardSubscriptionsStats;
+  purchases: DashboardPurchasesStats;
   content: DashboardContentStats;
   engagement: DashboardEngagementStats;
-  codes: DashboardCodesStats;
   by_grade: DashboardByGradeRow[];
-  recent_subscriptions: DashboardRecentSubscription[];
-  upcoming_expirations: DashboardUpcomingExpiration[];
+  top_units: DashboardTopUnit[];
+  recent_purchases: DashboardRecentPurchase[];
 }
 
 export interface Database {
@@ -350,22 +422,22 @@ export interface Database {
         Update: Partial<LessonVideo>;
         Relationships: [];
       };
-      pricing_plans: {
-        Row: PricingPlan;
-        Insert: PricingPlan;
-        Update: Partial<PricingPlan>;
+      unit_pricing: {
+        Row: UnitPricing;
+        Insert: UnitPricing;
+        Update: Partial<UnitPricing>;
         Relationships: [];
       };
-      subscriptions: {
-        Row: Subscription;
-        Insert: Subscription;
-        Update: Partial<Subscription>;
+      unit_codes: {
+        Row: UnitCode;
+        Insert: UnitCode;
+        Update: Partial<UnitCode>;
         Relationships: [];
       };
-      subscription_codes: {
-        Row: SubscriptionCode;
-        Insert: SubscriptionCode;
-        Update: Partial<SubscriptionCode>;
+      unit_purchases: {
+        Row: UnitPurchase;
+        Insert: UnitPurchase;
+        Update: Partial<UnitPurchase>;
         Relationships: [];
       };
       progress: {
@@ -378,6 +450,36 @@ export interface Database {
         Row: AppNotification;
         Insert: AppNotification;
         Update: Partial<AppNotification>;
+        Relationships: [];
+      };
+      exams: {
+        Row: Exam;
+        Insert: Partial<Exam>;
+        Update: Partial<Exam>;
+        Relationships: [];
+      };
+      exam_questions: {
+        Row: ExamQuestion;
+        Insert: Partial<ExamQuestion>;
+        Update: Partial<ExamQuestion>;
+        Relationships: [];
+      };
+      exam_attempts: {
+        Row: ExamAttempt;
+        Insert: Partial<ExamAttempt>;
+        Update: Partial<ExamAttempt>;
+        Relationships: [];
+      };
+      exam_answers: {
+        Row: ExamAnswer;
+        Insert: Partial<ExamAnswer>;
+        Update: Partial<ExamAnswer>;
+        Relationships: [];
+      };
+      lesson_comments: {
+        Row: LessonComment;
+        Insert: Partial<LessonComment>;
+        Update: Partial<LessonComment>;
         Relationships: [];
       };
     };
@@ -418,9 +520,30 @@ export interface Database {
       list_active_grades: { Args: never; Returns: ActiveGrade[] };
       get_public_settings: { Args: never; Returns: PublicSettings };
       get_current_role: { Args: never; Returns: UserRole };
-      redeem_subscription_code: { Args: { p_code: string }; Returns: string };
-      get_my_subscriptions: { Args: never; Returns: Subscription[] };
-      get_my_current_subscription: { Args: never; Returns: Subscription };
+      redeem_unit_code: { Args: { p_code: string }; Returns: UnitPurchase };
+      get_my_unit_purchases: { Args: never; Returns: UnitPurchase[] };
+      get_my_lesson_access: { Args: { p_lesson_id: string }; Returns: LessonAccessInfo };
+      get_public_unit_prices: { Args: never; Returns: PublicUnitPrice[] };
+      set_unit_price: {
+        Args: {
+          p_unit_id: string;
+          p_base_price: number;
+          p_platform_fee?: number | null;
+        };
+        Returns: void;
+      };
+      list_unit_pricing: { Args: never; Returns: UnitPricingWithUnit[] };
+      list_codes_by_unit: { Args: { p_unit_id: string }; Returns: UnitCode[] };
+      revoke_unit_code: { Args: { p_code_id: string }; Returns: void };
+      create_unit_codes_for_staff: {
+        Args: { p_unit_id: string; p_count: number; p_note?: string | null };
+        Returns: UnitCode[];
+      };
+      list_all_unit_purchases: {
+        Args: { p_student_id?: string | null };
+        Returns: UnitPurchaseWithUnit[];
+      };
+      unit_purchase_stats: { Args: never; Returns: UnitPurchaseStats };
       create_grade: { Args: { p_name: string; p_sort_order?: number }; Returns: string };
       create_unit: {
         Args: { p_grade_id: string; p_name: string; p_sort_order?: number };
@@ -461,18 +584,6 @@ export interface Database {
       };
       delete_grade: { Args: { p_grade_id: string }; Returns: void };
       restore_grade: { Args: { p_grade_id: string }; Returns: void };
-      set_pricing_plan: {
-        Args: {
-          p_grade_id: string;
-          p_duration_days: number;
-          p_base_price: number;
-          p_platform_fee: number;
-          p_is_active?: boolean;
-        };
-        Returns: string;
-      };
-      delete_pricing_plan: { Args: { p_plan_id: string }; Returns: void };
-      revoke_subscription_code: { Args: { p_code_id: string }; Returns: void };
       upsert_progress: {
         Args: {
           p_lesson_id: string;
@@ -506,6 +617,17 @@ export interface Database {
         };
         Returns: number;
       };
+      list_exams: { Args: { p_lesson_id: string }; Returns: Exam[] };
+      get_exam_questions: { Args: { p_exam_id: string }; Returns: ExamQuestion[] };
+      get_my_exam_attempt: { Args: { p_exam_id: string }; Returns: ExamAttempt[] };
+      submit_exam_attempt: { Args: { p_exam_id: string; p_answers: unknown }; Returns: ExamAttempt };
+      grade_exam_attempt: { Args: { p_attempt_id: string; p_scores: unknown }; Returns: ExamAttempt };
+      add_lesson_comment: {
+        Args: { p_lesson_id: string; p_body: string; p_parent_id?: string | null };
+        Returns: LessonComment;
+      };
+      delete_lesson_comment: { Args: { p_comment_id: string }; Returns: void };
+      list_lesson_comments: { Args: { p_lesson_id: string }; Returns: LessonComment[] };
     };
   };
 }

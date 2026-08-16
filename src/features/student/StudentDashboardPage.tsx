@@ -1,26 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, CheckCircle2, KeyRound, User } from 'lucide-react';
+import { Bell, KeyRound, PackageOpen, User } from 'lucide-react';
 
-import { Badge } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
-import { getMyCurrentSubscription, getPublicSettings, listMyNotifications } from '../../data/rpc';
-import { buildWhatsAppLink, formatDate } from '../../lib/format';
-import type { PublicSettings, SubscriptionWithPlan } from '../../types/database';
+import { getMyUnitPurchases, getPublicSettings, listMyNotifications } from '../../data/rpc';
+import { buildWhatsAppLink, formatPrice } from '../../lib/format';
+import type { PublicSettings, UnitPurchaseWithUnit } from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
 
 export function StudentDashboardPage() {
   const { profile, user } = useAuth();
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [settingsError, setSettingsError] = useState(false);
-  const [subscription, setSubscription] = useState<SubscriptionWithPlan | null | undefined>(
-    undefined,
-  );
+  const [purchases, setPurchases] = useState<UnitPurchaseWithUnit[] | null>(null);
+  const [purchasesError, setPurchasesError] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
@@ -52,25 +50,22 @@ export function StudentDashboardPage() {
     void loadSettings();
   }, [loadSettings]);
 
-  useEffect(() => {
-    let active = true;
-    getMyCurrentSubscription()
-      .then((value) => {
-        if (active) {
-          setSubscription(value);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setSubscription(null);
-        }
-      });
-    return () => {
-      active = false;
-    };
+  const loadPurchases = useCallback(async () => {
+    setPurchasesError(false);
+    setPurchases(null);
+    try {
+      setPurchases(await getMyUnitPurchases());
+    } catch {
+      setPurchasesError(true);
+    }
   }, []);
 
+  useEffect(() => {
+    void loadPurchases();
+  }, [loadPurchases]);
+
   const displayName = profile?.full_name ?? user?.email ?? '';
+  const totalSpent = (purchases ?? []).reduce((sum, purchase) => sum + purchase.total_price, 0);
 
   return (
     <LayoutShell
@@ -79,32 +74,40 @@ export function StudentDashboardPage() {
       variant="sidebar" nav={<StudentNav />}
     >
       <div className="flex flex-col gap-4">
-        <Card title="اشتراكك">
-          {subscription ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Badge variant="success" icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
-                اشتراك نشط حتى {formatDate(subscription.expires_at)}
-              </Badge>
-              <Link
-                to="/student/subscriptions"
-                className="rounded-sm text-sm font-medium text-primary-strong transition-colors hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-              >
-                عرض التفاصيل
-              </Link>
-            </div>
-          ) : subscription === null ? (
-            <Link
-              to="/student/subscriptions"
-              className="inline-block rounded-full transition-colors hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-            >
-              <Badge variant="warning" outline>
-                تفعيل اشتراك
-              </Badge>
-            </Link>
-          ) : (
+        <Card title="وحداتي المشتراة">
+          {purchasesError ? (
+            <ErrorState message="تعذر تحميل وحداتك المشتراة" onRetry={() => void loadPurchases()} />
+          ) : purchases === null ? (
             <div className="flex flex-col gap-3" aria-hidden="true">
               <Skeleton className="h-5 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary"
+                >
+                  <PackageOpen className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-semibold text-foreground">
+                    {purchases.length > 0
+                      ? `عدد الوحدات المشتراة: ${purchases.length}`
+                      : 'لم تشترِ أي وحدة بعد'}
+                  </p>
+                  <p className="mt-0.5 text-sm text-foreground-muted" dir="ltr">
+                    {purchases.length > 0 ? `إجمالي المدفوع: ${formatPrice(totalSpent)}` : ''}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/student/units"
+                className="rounded-sm text-sm font-medium text-primary-strong transition-colors hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+              >
+                عرض الوحدات
+              </Link>
             </div>
           )}
         </Card>

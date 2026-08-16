@@ -31,9 +31,9 @@ const ENTITY_TYPES = [
   'lessons',
   'lesson_videos',
   'lesson_pdfs',
-  'pricing_plans',
-  'subscriptions',
-  'subscription_codes',
+  'unit_pricing',
+  'unit_codes',
+  'unit_purchases',
   'app_settings',
 ] as const;
 

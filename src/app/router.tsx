@@ -11,7 +11,7 @@ import { StudentDashboardPage } from '../features/student/StudentDashboardPage';
 import { StudentLessonPage } from '../features/student/StudentLessonPage';
 import { StudentNotificationsPage } from '../features/student/StudentNotificationsPage';
 import { StudentProfilePage } from '../features/student/StudentProfilePage';
-import { StudentSubscriptionsPage } from '../features/student/StudentSubscriptionsPage';
+import { UnitsPage } from '../features/student/UnitsPage';
 import { CodesPage } from '../features/walid/CodesPage';
 import { CurriculumPage } from '../features/walid/CurriculumPage';
 import { ExamsPage } from '../features/walid/ExamsPage';
@@ -59,7 +59,7 @@ export function AppRoutes() {
           <Route path="dashboard" element={<StudentDashboardPage />} />
           <Route path="profile" element={<StudentProfilePage />} />
           <Route path="password" element={<StudentChangePasswordPage />} />
-          <Route path="subscriptions" element={<StudentSubscriptionsPage />} />
+          <Route path="units" element={<UnitsPage />} />
           <Route path="curriculum" element={<StudentCurriculumPage />} />
           <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
           <Route path="notifications" element={<StudentNotificationsPage />} />

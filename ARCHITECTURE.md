@@ -13,24 +13,26 @@
 
 ### 1.1 Product
 
-An Arabic-first, RTL educational platform for "Mr. Walid". Students buy **time-limited subscription access** to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Mr. Walid manages curriculum, students, subscriptions and content; an Admin additionally manages system configuration, pricing, roles and audit logs.
+An Arabic-first, RTL educational platform for "Mr. Walid". Students buy **per-unit permanent (lifetime) access** — a single activation code opens **one unit forever** — to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Mr. Walid manages curriculum, students, unit purchases and content; an Admin additionally manages system configuration, per-unit pricing, roles and audit logs. Trial lessons (`lessons.is_trial`) open without any purchase; there is no all-inclusive "package".
 
-Core product rules (PLAN §2): email+password auth with immutable email; Egyptian phone required; account disable/soft-delete with Trash and restore; grade-based pricing with duration-based offers; single-use activation codes with atomic redemption; live subscription expiry enforcement; deterministic progress with 90% completion; Bunny-hosted private video with signed playback; private storage-backed PDFs with signed access; once-only 7-day expiry warning; admin-only immutable audit log; centrally configured WhatsApp button.
+Core product rules (PLAN §2): email+password auth with immutable email; Egyptian phone required; account disable/soft-delete with Trash and restore; per-unit pricing (`unit_pricing`) with permanent purchases (`unit_purchases`); single-use activation codes (`unit_codes`) with atomic redemption (`redeem_unit_code`); live access enforcement (`can_access_lesson`) — trial lesson **or** active purchase; deterministic progress with 90% completion; Bunny-hosted private video with signed playback; private storage-backed PDFs with signed access; admin-only immutable audit log; centrally configured WhatsApp button.
 
 ### 1.2 Users
 
 | Role | Capability summary | Notes |
 |---|---|---|
-| `student` | Browse curriculum, watch videos, read PDFs, track progress, manage own profile/password, read own notifications, redeem one activation code | Cannot change grade/role/email, cannot modify subscription state, cannot touch other users' data |
-| `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), subscription codes, read-only pricing, WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage pricing |
-| `admin` | Everything Mr. Walid can do, **plus**: pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
+| `student` | Browse curriculum, watch videos, read PDFs, track progress, manage own profile/password, read own notifications, redeem one unit code, view own purchases | Cannot change grade/role/email, cannot modify purchase state, cannot touch other users' data |
+| `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), unit codes (generate/revoke), read-only pricing, WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage pricing |
+| `admin` | Everything Mr. Walid can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
+| `teacher` | Curriculum/lesson management, trial flagging, student grade assignment, progress analytics (added 0023) | Cannot manage pricing, roles, audit logs, or WhatsApp settings |
 
 ### 1.3 Scope boundaries (MVP)
 
 - No OTP, no forgot-password (future phase; documented admin/SQL recovery path — A13/A14).
 - Email change forbidden everywhere (app UI + DB trigger on `auth.users`); direct SQL/dashboard is the documented escape hatch.
-- Exactly three fixed roles; no granular permission tables (A15).
+- Exactly four fixed roles; no granular permission tables (A15).
 - No hard deletes in any UI; hard delete only via direct SQL with documented runbook (A31).
+- No manual purchase grants and no electronic payment: purchase happens **only** through code redemption.
 
 ---
 
@@ -58,17 +60,18 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
                           ▼
 ┌────────────────────────────────────────────────────────────────────┐
 │ Supabase PostgreSQL / Auth / Storage  ← AUTHORITATIVE (RLS)        │
-│   RLS on all 14 tables, SECURITY DEFINER RPCs, sign-in gate,       │
-│   private storage buckets, pg_cron/pg_net (scheduling fallback)    │
+│   RLS on all application tables, SECURITY DEFINER RPCs, sign-in    │
+│   gate, private storage buckets, pg_cron/pg_net (scheduling        │
+│   fallback)                                                        │
 └────────────────────────────────────────────────────────────────────┘
                           ▲
                           │ service-role client ONLY
 ┌────────────────────────────────────────────────────────────────────┐
 │ Supabase Edge Functions (Deno/TypeScript) — all privileged ops     │
 │   create-video-upload-session, bunny-video-webhook,                │
-│   get-video-playback-url, get-pdf-signed-url, upload-pdf,          │
-│   generate-subscription-codes, export-audit-log,                   │
-│   expire-subscriptions (scheduled), recheck-video-states (sched.)  │
+│   get-video-playback-url, get-video-thumbnail-url,                 │
+│   get-pdf-signed-url, upload-pdf, generate-unit-codes,             │
+│   export-audit-log, recheck-video-states (scheduled)               │
 └────────────────────────────────────────────────────────────────────┘
                           ▼
 ┌────────────────────────────────────────────────────────────────────┐
@@ -101,8 +104,8 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
 ### 2.4 Privileged operations (Edge Functions only — never browser) (BP §1.4)
 
 1. Bunny: create upload session (direct upload to Bunny Storage), webhook handling of processing states, tokenized/signed playback URL generation, video replacement.
-2. Supabase Storage: signed PDF URLs (subscription-aware), PDF upload authorization.
-3. Subscription code generation.
+2. Supabase Storage: signed PDF URLs (access-aware), PDF upload authorization.
+3. Unit code generation (`generate-unit-codes`, staff-only).
 4. Audit log CSV export.
 5. Any operation requiring the service-role key or a third-party secret.
 
@@ -114,10 +117,10 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
 
 | Module | Route prefix | Key responsibilities | Primary services |
 |---|---|---|---|
-| **auth** | `/login`, `/register` | Email+password signUp/signIn, profile creation via trigger, password change, session persistence, login error mapping (`account_inactive_or_deleted` → friendly Arabic) | `supabase.auth.*`, `handle_new_user()` trigger, sign-in gate trigger |
-| **student** | `/student/*` | Dashboard, curriculum tree, lesson page (video player + PDF viewer), progress (resume/completion), subscriptions history, notifications, profile | `get_my_current_subscription`, `get_my_subscriptions`, `upsert_progress`, `can_access_lesson` (via RLS/EFs), `get-video-playback-url`, `get-pdf-signed-url`, `mark_*_read` |
-| **walid** | `/walid/*` | Students (disable/enable/trash/restore, profile edits via `update_student_profile` — 4-column whitelist, audited [BINDING B3]), grades, curriculum manager, codes, read-only pricing, video/PDF management, analytics, WhatsApp settings | Staff RPCs (`disable_student`, `set_student_grade`, `update_student_profile`, CRUD RPCs), `create-video-upload-session`, `upload-pdf`, `generate-subscription-codes`, `list_trash`, `v_lesson_stats` |
-| **admin** | `/admin/*` + all `/walid/*` | Audit log (filter/export), pricing management (`set_pricing_plan`; `delete_pricing_plan` hard-deletes only unreferenced plans — RESTRICT guards referenced, otherwise `is_active=false`, audited `pricing.delete` [BINDING B7]), roles (`set_user_role`), app settings, operational stats | `v_audit_log`, `v_dashboard_metrics`, `export-audit-log`, `set_pricing_plan`, `delete_pricing_plan`, `set_app_setting`, `set_user_role` |
+| **auth** | `/login`, `/register` | Email+password signUp/signIn (grade picker via `list_active_grades` at sign-up), profile creation via trigger, password change, session persistence, login error mapping (`account_inactive_or_deleted` → friendly Arabic) | `supabase.auth.*`, `handle_new_user()` trigger, sign-in gate trigger |
+| **student** | `/student/*` | Dashboard, curriculum tree, lesson page (video player + PDF viewer), progress (resume/completion), units (per-unit prices + purchase history), redeem code, notifications, profile | `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `can_access_lesson` (via RLS/EFs), `get-video-playback-url`, `get-pdf-signed-url`, `mark_*_read` |
+| **walid** | `/walid/*` | Students (disable/enable/trash/restore, profile edits via `update_student_profile` — 4-column whitelist, audited [BINDING B3]), grades, curriculum manager, codes, read-only pricing, video/PDF management, analytics, WhatsApp settings | Staff RPCs (`disable_student`, `set_student_grade`, `update_student_profile`, CRUD RPCs, `set_lesson_trial`), `create-video-upload-session`, `upload-pdf`, `generate-unit-codes`, `list_trash`, `v_lesson_stats` |
+| **admin** | `/admin/*` + all `/walid/*` | Audit log (filter/export), pricing management (`set_unit_price`), roles (`set_user_role`), app settings, operational stats | `v_audit_log`, `v_dashboard_metrics`, `export-audit-log`, `set_unit_price`, `set_app_setting`, `set_user_role` |
 
 ### 3.2 Frontend project layout (BP §13.1)
 
@@ -127,7 +130,7 @@ src/
   components/     (shared UI: buttons, modals, tables, states, Arabic formatters)
   features/
     auth/         (login, register, password change)
-    student/      (dashboard, curriculum, lesson player, pdf viewer, notifications, subscription history, profile)
+    student/      (dashboard, curriculum, lesson player, pdf viewer, units + purchases, notifications, profile)
     walid/        (dashboard, students, trash, grades, pricing(read), codes, curriculum manager, video/pdf manager, analytics, settings)
     admin/        (dashboard, audit log, pricing, users/roles, settings, stats)
   data/           (supabase client factory + typed RPC wrappers + feature queries)
@@ -139,7 +142,7 @@ src/
 
 - **AuthGuard:** subscribes to `onAuthStateChange`; redirects unauthenticated users to `/login`.
 - **RoleGuard:** maps `profiles.role` (fetched once, cached in context) → allowed path prefixes. **[BINDING B10]** Residual documented: the client cache may be stale for a session in which a role changed server-side; authorization is never based on this cache — RLS and Edge Functions remain authoritative. The cache refreshes on next sign-in.
-- **SubscriptionGuard (student):** shows a lock screen if `get_my_current_subscription()` is empty/expired — **informational only**; RLS + Edge Functions remain authoritative.
+- **AccessGuard (student):** shows a lock state when `get_my_lesson_access(lesson_id)` reports `has_access = false` (no purchase, not a trial lesson) — **informational only**; RLS + Edge Functions remain authoritative.
 - **Data access:** all mutations go through typed RPC wrappers; SELECTs through RLS-scoped queries; no direct table `UPDATE` in the app (notification mark-read uses RPCs — [BINDING B2]).
 
 ---
@@ -150,27 +153,27 @@ src/
 |---|---|---|
 | `/` | public | Landing with WhatsApp CTA — reads **only `get_public_settings()`** (whatsapp fields + platform_name, granted to anon); never raw `app_settings` |
 | `/login` | public (redirects if authed) | email+password |
-| `/register` | public | full form (name, phone, guardian, address) — **no grade field** (grade is staff-assigned, A1/HIGH-1) |
-| `/student/dashboard` | student + subscription info (content locked if expired) | current subscription, remaining time, expiry, progress summary, notifications |
-| `/student/curriculum` | student, content gated | grades→units tree; locked lessons show lock state |
+| `/register` | public | full form (name, email, phone, guardian, address, **grade picker** via anon-safe `list_active_grades()` — grade required for students, 0027) |
+| `/student/dashboard` | student | purchased units, progress summary, notifications, WhatsApp CTA |
+| `/student/curriculum` | student, content gated | grades→units tree; locked units/lessons show lock state + purchase CTA |
 | `/student/lessons/:lessonId` | student, `can_access_lesson` enforced | video player + PDF viewer + progress save |
-| `/student/subscriptions` | student | own history |
+| `/student/units` | student | per-unit prices (`get_public_unit_prices`) + own purchase history (`get_my_unit_purchases`) + redeem-code form |
 | `/student/notifications` | student | read/unread |
 | `/student/profile` | student | view info, change password (no email edit UI) |
-| `/walid/dashboard` | mr_walid/admin | stats: students/grade, most-viewed lessons, content state |
+| `/walid/dashboard` | mr_walid/admin | stats: students/grade, purchases/revenue, most-viewed lessons, content state |
 | `/walid/students` | mr_walid/admin | list, search, disable/enable, soft delete |
-| `/walid/students/:id` | mr_walid/admin | profile, subscription, progress analytics |
+| `/walid/students/:id` | mr_walid/admin | profile, purchases, progress analytics |
 | `/walid/students/trash` | mr_walid/admin | restore (soft-delete list) |
 | `/walid/grades` | mr_walid/admin | CRUD + ordering |
-| `/walid/pricing` | admin (mr_walid read-only) | plans per grade (duration, base, fee, total) |
+| `/walid/pricing` | admin (mr_walid/teacher read-only) | per-unit prices (base, fee, total) |
 | `/walid/codes` | mr_walid/admin | generate (Edge Function), revoke, list usage |
-| `/walid/curriculum` | mr_walid/admin | grades→units→lessons management, statuses, reorder |
+| `/walid/curriculum` | mr_walid/admin | grades→units→lessons management, statuses, reorder, trial flagging |
 | `/walid/lessons/:lessonId` | mr_walid/admin | assets: upload video (session), upload PDF, replace, statuses |
 | `/walid/analytics` | mr_walid/admin | progress/viewing analytics |
 | `/walid/settings` | mr_walid/admin | WhatsApp config (mr_walid) |
 | `/admin/dashboard` | admin | operational metrics (`v_dashboard_metrics`) |
 | `/admin/audit` | admin | filterable audit log + CSV export |
-| `/admin/settings` | admin | pricing/platform fee, subscription config, app settings |
+| `/admin/settings` | admin | pricing/platform fees, app settings |
 | `/admin/roles` | admin | role management: list users + `set_user_role(user_id, role)` (admin-only, SECURITY DEFINER, audited) |
 | `*` | authed | 404 |
 
@@ -182,87 +185,93 @@ Admin can also reach all `/walid/*` routes (permission check allows `admin`).
 
 ### 5.1 Capability matrix
 
-| Capability | student | mr_walid | admin |
-|---|---|---|---|
-| Login (active account) | ✓ | ✓ | ✓ |
-| Browse own curriculum (published, own grade) | ✓ | — | — |
-| Watch/read protected assets (active subscription) | ✓ | QA preview only [BINDING B5] | QA preview only [BINDING B5] |
-| Track own progress | ✓ | view analytics | view analytics |
-| Manage own profile (4 columns) / password | ✓ | — | — |
-| Redeem subscription code | ✓ | — | — |
-| Read own subscriptions/notifications | ✓ | — | — |
-| Mark own notifications read (RPC) | ✓ | — | — |
-| Manage students (disable/enable/trash/restore) | — | ✓ | ✓ |
-| Manage grades / units / lessons / assets | — | ✓ | ✓ |
-| Generate/revoke codes | — | ✓ | ✓ |
-| Read pricing | — | ✓ (read-only) | ✓ (manage) |
-| Manage pricing/platform fees | — | — | ✓ |
-| Manage WhatsApp settings | — | ✓ (`whatsapp%` keys only) | ✓ (all settings) |
-| Manage roles (`set_user_role`) | — | — | ✓ |
-| Read audit logs / export | — | — | ✓ |
-| Read `v_lesson_access` | ✓ (student-facing view) | ✗ (returns empty; staff use `v_lesson_stats`/`v_dashboard_metrics` — LOW-14) | ✗ (same) |
+| Capability | student | mr_walid | admin | teacher |
+|---|---|---|---|---|
+| Login (active account) | ✓ | ✓ | ✓ | ✓ |
+| Browse own curriculum (published, own grade) | ✓ | — | — | — |
+| Watch/read protected assets (trial lesson or purchased unit) | ✓ | QA preview only [BINDING B5] | QA preview only [BINDING B5] | QA preview only [BINDING B5] |
+| Track own progress | ✓ | view analytics | view analytics | view analytics |
+| Manage own profile (4 columns) / password | ✓ | — | — | — |
+| Redeem unit code | ✓ | — | — | — |
+| Read own purchases/notifications | ✓ | — | — | — |
+| Mark own notifications read (RPC) | ✓ | — | — | — |
+| Manage students (disable/enable/trash/restore) | — | ✓ | ✓ | — |
+| Manage grades / units / lessons / assets / trial flag | — | ✓ | ✓ | ✓ |
+| Generate/revoke unit codes | — | ✓ | ✓ | — |
+| Read pricing | — | ✓ (read-only) | ✓ (manage) | ✓ (read-only) |
+| Manage per-unit pricing / platform fees (`set_unit_price`) | — | — | ✓ | — |
+| Manage WhatsApp settings | — | ✓ (`whatsapp%` keys only) | ✓ (all settings) | — |
+| Manage roles (`set_user_role`) | — | — | ✓ | — |
+| Read audit logs / export | — | — | ✓ | — |
+| Read `v_lesson_access` | ✓ (student-facing view) | ✗ (returns empty; staff use `v_lesson_stats`/`v_dashboard_metrics` — LOW-14) | ✗ (same) | ✗ (same) |
 
 ### 5.2 Role helper functions (BP §5.1)
 
 ```sql
 is_admin()    := (SELECT role = 'admin'    FROM profiles WHERE id = auth.uid());
 is_mr_walid() := (SELECT role = 'mr_walid' FROM profiles WHERE id = auth.uid());
+is_teacher()  := (SELECT role = 'teacher'  FROM profiles WHERE id = auth.uid());
 is_student()  := (SELECT role = 'student'  FROM profiles
                   WHERE id = auth.uid() AND status = 'active' AND deleted_at IS NULL);
 ```
 
-All are STABLE, SECURITY DEFINER, `SET search_path = public`. `is_student()` returns **false** for disabled/deleted accounts → blocked everywhere content/progress/subscription logic is concerned.
+All are STABLE, SECURITY DEFINER, `SET search_path = public`. `is_student()` returns **false** for disabled/deleted accounts → blocked everywhere content/progress/purchase logic is concerned.
 
 ### 5.3 Escalation prevention
 
-- Role column writeable only via `set_user_role` (admin-only SECURITY DEFINER, audited) — the only path that mutates role.
+- Role column writeable only via `set_user_role` / `set_role_by_email` (admin-only SECURITY DEFINER, audited) — the only path that mutates role.
 - RLS WITH CHECK pins role/grade/status on student self-update.
-- `is_student()`/`is_mr_walid()`/`is_admin()` are not client-callable (REVOKEd; used inside RLS/EFs only).
+- `is_student()`/`is_mr_walid()`/`is_admin()`/`is_teacher()` are not client-callable (REVOKEd; used inside RLS/EFs only).
 
 ---
 
 ## 6. Entity Map
 
-### 6.1 Application tables (14, BP §3.3)
+### 6.1 Application tables (13 after Phase 5; 18 after Phases 6–7, BP §3.3)
 
 | # | Table | Purpose | Key relations |
 |---|---|---|---|
 | 1 | `profiles` | One row per `auth.users`; role/status/grade/contact | id = auth.users.id (CASCADE); grade_id → grades (SET NULL) |
-| 2 | `grades` | Curriculum top level; is_active + deleted_at | children: units, pricing_plans, profiles |
-| 3 | `pricing_plans` | Duration-based offers per grade (base/fee/total) | grade_id → grades (CASCADE); referenced by subscriptions/codes (RESTRICT) |
-| 4 | `subscriptions` | Immutable-ish subscription history with price snapshot | student_id → profiles (CASCADE); pricing_plan_id → plans (RESTRICT); code_id → codes (SET NULL) |
-| 5 | `subscription_codes` | Single-use activation codes | pricing_plan_id → plans (RESTRICT); created_by/used_by/revoked_by → profiles |
-| 6 | `code_redemptions` | Authoritative redemption history; UNIQUE(code_id) | code_id → codes (RESTRICT); student_id → profiles (CASCADE); subscription_id → subscriptions (RESTRICT) |
-| 7 | `units` | Grade children | grade_id → grades (CASCADE) |
-| 8 | `lessons` | Unit children; status lifecycle | unit_id → units (CASCADE) |
-| 9 | `lesson_videos` | Bunny-backed assets | lesson_id → lessons (CASCADE); referenced by progress.video_id (SET NULL) |
-| 10 | `lesson_pdfs` | Storage-backed PDFs | lesson_id → lessons (CASCADE) |
-| 11 | `progress` | Per student+lesson learning state | student_id → profiles (CASCADE); lesson_id → lessons (CASCADE); video_id → lesson_videos (SET NULL, nullable) |
-| 12 | `notifications` | In-platform notifications with dedup | user_id → profiles (CASCADE) |
-| 13 | `audit_logs` | Insert-only admin audit trail | actor_id → profiles (SET NULL; NULL = system job) |
-| 14 | `app_settings` | Key/value settings (whatsapp, platform_name, expiry_warning_days) | updated_by → profiles |
+| 2 | `grades` | Curriculum top level; is_active + deleted_at | children: units, profiles |
+| 3 | `unit_pricing` | Permanent per-unit pricing (base/fee/total) | unit_id → units (CASCADE); referenced by unit_codes (RESTRICT) |
+| 4 | `unit_codes` | Single-use activation codes for a unit | unit_pricing_id → unit_pricing (RESTRICT); created_by/used_by/revoked_by → profiles/auth.users |
+| 5 | `unit_purchases` | Permanent purchase history with price snapshot; UNIQUE (student_id, unit_id) | student_id → profiles (CASCADE); unit_id → units (RESTRICT); code_id → unit_codes (SET NULL) |
+| 6 | `units` | Grade children | grade_id → grades (CASCADE) |
+| 7 | `lessons` | Unit children; status lifecycle; is_trial | unit_id → units (CASCADE) |
+| 8 | `lesson_videos` | Bunny-backed assets | lesson_id → lessons (CASCADE); referenced by progress.video_id (SET NULL) |
+| 9 | `lesson_pdfs` | Storage-backed PDFs | lesson_id → lessons (CASCADE) |
+| 10 | `progress` | Per student+lesson learning state | student_id → profiles (CASCADE); lesson_id → lessons (CASCADE); video_id → lesson_videos (SET NULL, nullable) |
+| 11 | `notifications` | In-platform notifications with dedup | user_id → profiles (CASCADE) |
+| 12 | `audit_logs` | Insert-only admin audit trail | actor_id → profiles (SET NULL; NULL = system job) |
+| 13 | `app_settings` | Key/value settings (whatsapp, platform_name) | updated_by → profiles |
+| 14 | `exams` (0029) | One exam per lesson | lesson_id → lessons (CASCADE) |
+| 15 | `exam_questions` (0029) | MCQ/essay questions per exam | exam_id → exams (CASCADE) |
+| 16 | `exam_attempts` (0029) | One attempt per student per exam | exam_id → exams (CASCADE); student_id → profiles (CASCADE) |
+| 17 | `exam_answers` (0029) | Per-question answers | attempt_id → exam_attempts (CASCADE); question_id → exam_questions (CASCADE) |
+| 18 | `lesson_comments` (0030) | Lesson discussions with replies | lesson_id → lessons (CASCADE); author_id → profiles (CASCADE); parent_id → lesson_comments (CASCADE) |
 
 Plus `auth.users` (managed by Supabase; never written by application code).
 
 ### 6.2 Relationship diagram
 
 ```
-auth.users ───1:1─── profiles ──N:1── grades ──1:N── pricing_plans
-                      │  │  │                │
-                      │  │  │                └──1:N── subscriptions ──0..1── subscription_codes
-                      │  │  │                                │
-                      │  │  │  code_redemptions ◄──1:1───────┘ (UNIQUE code_id)
-                      │  │  │
-                      │  │  └──1:N── notifications
-                      │  │
-                      │  └──1:N── audit_logs (actor, SET NULL)
-                      │
-                      │   grades ──1:N── units ──1:N── lessons ──1:N── lesson_videos
-                      │                                  │
-                      │                                  └──1:N── lesson_pdfs
-                      │
-                      └──1:N── progress (0..1 video pin)
+auth.users ───1:1─── profiles ──N:1── grades ──1:N── units ──1:N── lessons ──1:N── lesson_videos
+                       │  │  │                │           │                    │
+                       │  │  │                │           │                    └──1:N── lesson_pdfs
+                       │  │  │                │           │
+                       │  │  │                │           └──1:N── unit_pricing ──1:N── unit_codes
+                       │  │  │                │           │                        ▲
+                       │  │  │                │           └──1:N── unit_purchases ──┘ (code_id, SET NULL)
+                       │  │  │
+                       │  │  └──1:N── notifications
+                       │  │
+                       │  └──1:N── audit_logs (actor, SET NULL)
+                       │
+                       └──1:N── progress (0..1 video pin)
 app_settings (standalone; updated_by → profiles)
+lessons ──1:N── exams ──1:N── exam_questions
+                └──1:N── exam_attempts ──1:N── exam_answers
+lessons ──1:N── lesson_comments (parent_id self-reference for replies)
 ```
 
 ### 6.3 Lifecycle states
@@ -272,8 +281,8 @@ app_settings (standalone; updated_by → profiles)
 | Student (`profiles.status`) | `active` ↔ `disabled`; `deleted_at` NULL ↔ set (Trash) | `disable_student` / `enable_student` / `soft_delete_student` / `restore_student` (staff RPCs, audited) |
 | Content (`status`) | `draft` → `published` → `hidden` ↔ `published` (re-publish); soft-delete any state | staff CRUD RPCs; publish sets `published_at` + `notify_new_content` |
 | Video (`video_status`) | `pending_upload` → `uploading` → `processing` → `ready`; `processing` → `failed`; `ready` → `replaced` | webhook-driven via `set_video_status` (internal) |
-| Subscription | `active` → `expired` (scheduled job; live check is authoritative) | `expire_subscriptions` |
-| Code | `available` → `used` / `revoked` | redemption; `revoke_subscription_code` |
+| Purchase (`unit_purchases.status`) | `active` (never lapses) ↔ `void` (admin-voided, audited) | created only by `redeem_unit_code`; `unit_purchases_insert_via_rpc` policy blocks direct DML |
+| Code (`code_status`) | `available` → `used` / `revoked` | redemption; `revoke_unit_code` (revoking a used code does NOT cancel the purchase) |
 | Grade | active/deactivated (`is_active`) + soft-delete | `delete_grade` (soft) / `restore_grade`; deactivation = soft-delete equivalent [BINDING B8] |
 
 ---
@@ -284,11 +293,12 @@ app_settings (standalone; updated_by → profiles)
 
 ```
 1. Register:  supabase.auth.signUp({ email, password, options: { data: { full_name, phone,
-              guardian_phone, address } } })          -- no grade field (A1/HIGH-1)
+              guardian_phone, address, grade_id } } })
+              -- grade_id REQUIRED for students (0027), chosen from anon-safe list_active_grades()
 2. Trigger handle_new_user() on auth.users INSERT (SECURITY DEFINER, owner postgres [BINDING B1]):
-      reads ONLY full_name, phone, guardian_phone, address from raw_user_meta_data;
-      IGNORES any student-supplied grade_id (grade_id forced NULL);
-      FAILS CLOSED (raises) if any required meta field is missing (LOW-12).
+      reads full_name, phone, guardian_phone, address, grade_id from raw_user_meta_data;
+      FAILS CLOSED (raises) if any required meta field is missing (LOW-12); students without a
+      valid, active grade_id get grade_required / grade_not_available / invalid_grade_id.
       → profiles row (role 'student', status 'active', deleted_at NULL) created atomically.
 3. Login:  supabase.auth.signInWithPassword(email, password)
       → sign-in gate: block_sign_in_for_inactive_accounts() BEFORE UPDATE OF last_sign_in_at
@@ -305,40 +315,40 @@ app_settings (standalone; updated_by → profiles)
       (role/grade/status/deleted_at/email untouched) [BINDING B3].
 ```
 
-### 7.2 Subscription redemption flow
+### 7.2 Unit code redemption flow
 
 ```
-student (authenticated, active)                          Edge Function / RPC layer
-─────────────────────────────────                        ───────────────────────
-redeem_subscription_code(p_code)
+student (authenticated, active)                          RPC layer
+─────────────────────────────────                        ──────────
+redeem_unit_code(p_code)
    │  normalize to upper (L1)
    ▼
 [SECURITY DEFINER RPC — single transaction, atomic (BP §6.3)]
-  1. pg_advisory_xact_lock(hashtext('wldn_redeem:' || lower(p_code)))   -- serializes per code
-  2. SELECT ... FROM subscription_codes WHERE code = p_code FOR UPDATE  -- row lock (belt & braces)
-  3. Re-validate INSIDE transaction:
-       - student active, not disabled, not deleted (is_student())
-       - code exists, status='available', not revoked
-       - student has NO active subscription (status='active' AND expires_at > now()) -- A5
-       - student has a grade; plan belongs to that grade AND is_active (A1)
-  4. UPDATE subscription_codes SET status='used', used_at=now(), used_by=auth.uid()
-  5. INSERT subscriptions (price snapshot copied from plan: base/fee/total — MED-5;
-       started_at=now(), expires_at=started_at + duration_days (A4), source='code')
-  6. INSERT code_redemptions (UNIQUE(code_id) = final physical backstop)
-   7. INSERT notification subscription_activated (dedup sub_activated:{sub_id}, ON CONFLICT DO NOTHING)
-        + subscription_expiring in the same transaction if the plan is already within the warning window
-   8. INSERT audit_logs (code.redeem)
+  1. pg_advisory_xact_lock(hashtext('wldn_redeem_unit:' || COALESCE(p_code,'')))
+                                                       -- serializes per code
+  2. SELECT * FROM unit_codes WHERE code = v_code FOR UPDATE   -- row lock (belt & braces)
+  3. Re-validate INSIDE transaction (error order):
+       - code exists                                    → else 'code_not_found'
+       - its unit exists (not deleted)                  → else 'unit_not_found'
+       - unit is active ('published')                   → else 'unit_inactive'
+       - code not revoked                               → else 'code_revoked'
+       - code still available                           → else 'code_already_used'
+       - caller is a student with an active grade       → else 'no_grade_assigned'
+       - unit belongs to the student's grade            → else 'unit_not_in_student_grade'
+       - no existing purchase of this unit              → else 'unit_already_purchased'
+  4. UPDATE unit_codes SET status='used', used_at=now(), used_by=auth.uid()
+  5. INSERT unit_purchases (student_id, unit_id, price snapshot copied from unit_pricing:
+       base/fee/total — MED-5)                          -- UNIQUE (student_id, unit_id) = backstop
+  6. INSERT notification unit_activated (dedup unit_activated:{purchase_id})
+  7. INSERT audit_logs (unit_purchase.create)
   COMMIT
 Result: exactly one success per code; second concurrent redemption sees status='used' →
-        raise 'code_already_used'. Double redemption is impossible.
-Extension while active: NOT allowed (A5) — mr_walid/admin create manual follow-on subscription.
-Manual: create_manual_subscription(p_student_id, p_plan_id, p_started_at, p_notes) — audited;
-        p_notes stored in audit metadata (subscriptions has no notes column) [BINDING B6];
-        does not require a student grade [BINDING B10].
-Pricing plan lifecycle (admin): set_pricing_plan creates/updates duration offers; delete_pricing_plan
-        hard-deletes ONLY unreferenced plans — the FK RESTRICT on subscriptions/subscription_codes
-        guards referenced plans; when deletion is blocked the plan is deactivated (is_active = false)
-        instead; every deletion attempt is audited as pricing.delete [BINDING B7].
+        raise 'code_already_used'. Double purchase of a unit is impossible.
+Manual purchase grants: NOT allowed (P12) — the ONLY path to a purchase is redeem_unit_code.
+Code revocation: revoke_unit_code(code_id) flips any available/used code to 'revoked'; it does
+        NOT cancel purchases already created from it.
+Pricing lifecycle (admin): set_unit_price(unit_id, base, fee) upserts the per-unit price row;
+        direct DML on unit_pricing is blocked by FORCE RLS.
 ```
 
 ### 7.3 Video lifecycle flow (Bunny)
@@ -367,8 +377,8 @@ bunny-video-webhook (POST, public + shared webhook token — ?token= or x-webhoo
    ↓
 Protected playback
 get-video-playback-url (GET/HEAD, JWT)
-   student:  can_access_lesson(lesson_id) — live subscription check — profile active/not-deleted
-   staff QA preview: is_mr_walid() OR is_admin() — content-visible check, NO subscription
+   student:  can_access_lesson(lesson_id) — trial lesson OR active purchase — profile active/not-deleted
+   staff QA preview: is_mr_walid() OR is_admin() OR is_teacher() — content-visible check, NO purchase
               requirement [BINDING B5]
    server resolves the lesson's primary ready video (client never passes video_id)
    → Bunny tokenized signed URL (IP-locked HS256 DIRECTORY token, query form, TTL 20 min — S3;
@@ -399,9 +409,9 @@ Read (student):
      → require role student, status='active', deleted_at IS NULL (non-student roles rejected — S7)
      → accept lesson_id ONLY; server resolves primary ready PDF (is_primary AND is_ready AND
        deleted_at IS NULL) — non-primary requests rejected (MED-7)
-     → can_access_lesson(lesson_id) — subscription validity LIVE at every request
+     → can_access_lesson(lesson_id) — trial-or-purchase access LIVE at every request
      → createSignedUrl (service role) TTL 10–15 min → URL + metadata
-   Revocation on expiry: every issuance re-checks expires_at > now(); stale URLs die with TTL (R10).
+   Access re-check: every issuance re-runs can_access_lesson(); stale URLs die with TTL (R10).
    Note: blocking already-issued URLs immediately is inherent to Supabase signed URLs — documented
    limitation, mitigated by short TTL + client session expiry.
 
@@ -414,21 +424,22 @@ Progress on PDF-only lessons: lessons with no primary video (PDF-only) can still
 
 | Type | Producer | Dedup key | Once-only mechanism |
 |---|---|---|---|
-| `subscription_activated` | `redeem_subscription_code`, `create_manual_subscription` | `sub_activated:{sub_id}` | UNIQUE(dedup_key) + ON CONFLICT DO NOTHING |
-| `subscription_expiring` | same transaction as creation when already ≤ threshold; else scheduled `expire_subscriptions()` | `sub_expiring:{sub_id}` | UNIQUE(dedup_key) — fires exactly once per subscription (A7) |
-| `subscription_expired` | scheduled `expire_subscriptions()` | `sub_expired:{sub_id}` | UNIQUE(dedup_key) |
-| `new_content` | lesson → published trigger → `notify_new_content()` targeting **active subscribers of the lesson's grade only** | `new_content:{lesson_id}:{student_id}` | UNIQUE(dedup_key) |
+| `unit_activated` | `redeem_unit_code` | `unit_activated:{purchase_id}` | UNIQUE(dedup_key) + ON CONFLICT DO NOTHING |
+| `new_content` | lesson → published trigger → `notify_new_content()` targeting **active purchasers of the lesson's grade only** | `new_content:{lesson_id}:{student_id}` | UNIQUE(dedup_key) |
 | `system` | staff RPCs (disable, restore, …) | app-supplied key | app-managed |
+| `exam_submitted` / `exam_graded` (0029) | exam attempt submit / grading completes | `exam_submitted:{attempt_id}` / `exam_graded:{attempt_id}` | UNIQUE(dedup_key) |
+| `lesson_comment` / `comment_reply` (0030) | comment added | `lesson_comment:{comment_id}` / `comment_reply:{comment_id}` | UNIQUE(dedup_key) |
 
-Read state: `is_read`/`read_at` flipped **only** via `mark_notification_read` / `mark_all_notifications_read` (SECURITY DEFINER, own rows only). Direct UPDATE on notifications is REVOKEd from authenticated (table- and column-level) — mark-read is RPC-only [BINDING B2]; the own-row RLS UPDATE policy remains as belt-and-braces (PostgreSQL has no column-scoped policies). Threshold: `expires_at - now() <= expiry_warning_days * interval '1 day'`, threshold from `app_settings` (default 7).
+Read state: `is_read`/`read_at` flipped **only** via `mark_notification_read` / `mark_all_notifications_read` (SECURITY DEFINER, own rows only). Direct UPDATE on notifications is REVOKEd from authenticated (table- and column-level) — mark-read is RPC-only [BINDING B2]; the own-row RLS UPDATE policy remains as belt-and-braces (PostgreSQL has no column-scoped policies).
 
 ### 7.6 Audit flow
 
 ```
 Capture paths:
   1. Trigger-based: audit_trigger() on fixed table inventory (MED-8):
-       profiles, grades, units, lessons, lesson_videos, lesson_pdfs, pricing_plans,
-       subscriptions, subscription_codes, app_settings  (INSERT/UPDATE/DELETE)
+       profiles, grades, units, lessons, lesson_videos, lesson_pdfs, unit_pricing,
+       unit_codes, unit_purchases, app_settings  (INSERT/UPDATE/DELETE)
+       (exams/exam_attempts and lesson_comments are added by Phases 6–7)
        EXCLUDED: progress, notifications (high-volume, no admin insight value)
      Fills: actor_id=auth.uid(), actor_role=get_current_role(), action=table.action,
             entity_type, entity_id=NEW/OLD.id, metadata=to_jsonb(NEW) (deltas for UPDATE),
@@ -437,6 +448,8 @@ Capture paths:
        update_own_profile logs only changed column NAMES (e.g. {"changed":["phone"]}) — MED-8.
   2. RPC-based: explicit audit_log(action, entity_type, entity_id, metadata) inside SECURITY
        DEFINER functions for events triggers can't see (e.g. failed attempts, redemptions).
+  3. Real audit action values in use: unit_purchase.create (redemption), unit_code.revoke,
+       unit_pricing.set, unit.trial_set, plus the table.action values from the trigger inventory.
 Storage: audit_logs insert-only; no UPDATE/DELETE policies for any role; SELECT admin-only.
 Export: export-audit-log (admin-only): filters (date range, action, entity, actor) → CSV
         (UTF-8 BOM for Excel/Arabic) → audit-exports bucket → 10-minute signed URL (A23).
@@ -454,8 +467,8 @@ Query: v_audit_log joins actor name/role.
 | Auth | Email+password; JWT sessions; password change | Sign-in gate + email-immutability triggers on `auth.users`; no OTP/forgot-password |
 | Postgres | All business data; RLS; RPCs; triggers; views | Extensions: `pgcrypto`, `pg_cron`, `pg_net`; migrations in `supabase/migrations/` + consolidated `supabase/supabase-full-schema.sql` |
 | Storage | Private buckets `pdfs` + `audit-exports` | No public/anon policies; all object ops via Edge Function signed URLs (service role) |
-| Edge Functions | 8 request functions (incl. `get-video-thumbnail-url`) + 2 scheduled job functions | Deno + TypeScript; JWT verification; secrets via `supabase secrets set` |
-| Scheduling | `supabase functions schedule` (preferred) → pg_cron → pg_net → internal Edge Function → external cron (fallbacks) | One unified execution chain for `expire_subscriptions` / `recheck_video_states` (MED-4); availability verified in Phase 1 (A19) |
+| Edge Functions | 8 request functions (incl. `get-video-thumbnail-url`) + 1 scheduled job function | Deno + TypeScript; JWT verification; secrets via `supabase secrets set` |
+| Scheduling | `supabase functions schedule` (preferred) → pg_cron → pg_net → internal Edge Function → external cron (fallbacks) | One unified execution chain for `recheck_video_states` (MED-4); availability verified in Phase 1 (A19) |
 
 ### 8.2 Bunny
 
@@ -481,26 +494,25 @@ Storage RLS enabled on both buckets; **no anonymous policies**; authenticated us
 
 ### 8.4 Edge Functions inventory
 
-Deployment: one `supabase/functions/<name>/index.ts` per function; `supabase functions deploy`. `--no-verify-jwt` **only** for `bunny-video-webhook` (shared webhook token, verified in-function) and the scheduled job functions; all others rely on default JWT verification plus in-function role checks. **All privileged functions additionally require the caller profile `status='active'` and `deleted_at IS NULL`** (A34/§5.4).
-
-**Inventory note (BLUEPRINT §14 alignment):** BLUEPRINT §14 lists 8 request functions (rows 1–7 plus 3b `get-video-thumbnail-url`, added at Phase 5 review round 2 with the signed-thumbnail fix) and the two scheduled job functions (J1 `expire-subscriptions`, J2 `recheck-video-states`, added to BLUEPRINT §14 as rows 8–9 with the note "scheduled internal job functions, not request functions") — **10 functions total (8 request + 2 scheduled)** in both documents. `export-audit-log` (row 7, in the inventory since BLUEPRINT) was implemented at Phase 8.
+Deployment: one `supabase/functions/<name>/index.ts` per function; `supabase functions deploy`. `--no-verify-jwt` **only** for `bunny-video-webhook` (shared webhook token, verified in-function) and the scheduled job function; all others rely on default JWT verification plus in-function role checks. **All privileged functions additionally require the caller profile `status='active'` and `deleted_at IS NULL`** (A34/§5.4).
 
 | # | Function | Method/Auth | Purpose |
 |---|---|---|---|
 | 1 | `create-video-upload-session` | POST, JWT + `is_mr_walid() OR is_admin()` | Bunny create upload session; inserts `lesson_videos` (pending_upload); `mode=create/replace`; `action=cancel` releases an abandoned session (0017, best-effort Bunny delete) |
 | 2 | `bunny-video-webhook` | POST, **public + shared webhook token** (`?token=` or `x-webhook-token`, constant-time; no Bunny-side signature secret) | Map events → `set_video_status()` transitions; ready → duration/thumbnail; finalize replacement; `notify_new_content`; rejects unauthenticated requests |
-| 3 | `get-video-playback-url` | GET/HEAD, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin QA preview** [BINDING B5] | Server resolves primary `ready` video; IP-locked HS256 directory token, query form (TTL 20 min); non-privileged roles rejected |
+| 3 | `get-video-playback-url` | GET/HEAD, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin/teacher QA preview** [BINDING B5] | Server resolves primary `ready` video; IP-locked HS256 directory token, query form (TTL 20 min); non-privileged roles rejected |
 | 3b | `get-video-thumbnail-url` | GET/HEAD, JWT; same gates as row 3 | Short-lived IP-locked signed `thumbnail.jpg` (same directory token); the raw `thumbnail_url` column is never sent to clients |
 | 4 | `get-pdf-signed-url` | POST, JWT; **student role only** + active/not-deleted | Server resolves primary `ready` PDF (MED-7); `can_access_lesson()`; service-role `createSignedUrl` (TTL 10–15 min) |
 | 5 | `upload-pdf` | POST, JWT + `is_mr_walid() OR is_admin()` | MIME/size validation → `createSignedUploadUrl` (I4) on `pdfs`; `finalize_pdf_upload` RPC afterwards |
-| 6 | `generate-subscription-codes` | POST, JWT + `is_admin() OR is_mr_walid()` | Validate plan + count cap (≤500, A-flagged) → `create_codes_for_staff()` (staff-guarded wrapper) → `generate_codes_internal()` (pgcrypto, unambiguous charset, uppercase — A22) |
+| 6 | `generate-unit-codes` | POST, JWT + `is_admin() OR is_mr_walid()` | Validate `unit_pricing` + count cap (≤500) → `create_unit_codes_for_staff()` (staff-guarded wrapper) → `create_unit_codes_internal()` (pgcrypto, unambiguous charset, uppercase — A22); internal function is REVOKEd from PUBLIC and has no client grants |
 | 7 | `export-audit-log` | POST, JWT + `is_admin()` | Filters → CSV (UTF-8 BOM) → `audit-exports` → signed URL |
-| J1 | `expire-subscriptions` (scheduled) | internal endpoint (service role) | Invokes `expire_subscriptions()` over HTTP; part of unified chain (MED-4) |
 | J2 | `recheck-video-states` (scheduled) | internal endpoint (service role) | Selects stuck pre-ready videos (`pending_upload/uploading/processing`, older than threshold, not deleted) → live Bunny API status query → `set_video_status()` transition chains (missing → failed, dead statuses → failed, finished → ready with metadata); transient API errors skipped for the next run |
+
+CORS: internal job/webhook functions (`recheck-video-states`, `bunny-video-webhook`) set no CORS headers; the deploy-time `verify_jwt` flag is `false` only for these internal endpoints, and the shared webhook token / service role is verified in-function.
 
 ### 8.5 Scheduling chain (MED-4, R4)
 
-Jobs (`expire_subscriptions`, `recheck_video_states`) run via **one unified execution chain — three links**:
+Jobs (`recheck_video_states`) run via **one unified execution chain — three links**:
 1. **Managed schedule** — scheduled Edge Function (`supabase functions schedule`, service role).
 2. **Fallback** — pg_cron job → `pg_net.http_post()` → internal job Edge Function.
 3. **Final fallback** — external cron (GitHub Actions scheduled workflow) invoking the same internal job Edge Function.
@@ -531,8 +543,8 @@ Release controls: DB triggers version-pinned (digest recorded + unit-tested in C
                           8 ─┴───────┘
 ```
 
-- **8 depends on 3** (subscription events) **and 4/5** (content events).
-- **7 depends on 2–5** (student lifecycle, subscriptions, curriculum, videos).
+- **8 depends on 3** (unit purchase events) **and 4/5** (content events).
+- **7 depends on 2–5** (student lifecycle, unit purchases, curriculum, videos).
 - 7 and 8 run in parallel after 6 (7 ‖ 8).
 - Phase 0 (this phase): documentation only; acceptance = internally consistent, no open contradictions, assumptions recorded (BP §15).
 
@@ -541,12 +553,12 @@ Release controls: DB triggers version-pinned (digest recorded + unit-tested in C
 | 0 | ARCHITECTURE.md, DATABASE.md, SECURITY.md, TESTING.md, route map, role matrix, entity map, risk list | Internally consistent; no contradictions; assumptions recorded |
 | 1 | Migrations, full schema, RLS, RPCs, triggers, seeds, storage, spikes | `supabase db reset` (local) applies cleanly; roles cannot escalate; sign-in gate present; session-deletion spike recorded |
 | 2 | Auth + account lifecycle | Every lifecycle transition works; disabled/deleted cannot log in |
-| 3 | Grades, pricing, subscriptions, codes, redemption | Full activation lifecycle; double redemption impossible |
+| 3 | Grades, per-unit pricing, unit codes, redemption | Full activation lifecycle; double redemption impossible |
 | 4 | Curriculum + content management | Drafts hidden; restore works; audit rows exist |
 | 5 | Bunny video | End-to-end session→upload→webhook→ready→playback; replacement deterministic; forged webhooks rejected |
-| 6 | Student learning experience | Progress persists/resumes; 90% deterministic; expiry locks content |
-| 7 | Dashboards + analytics | Real data; no mocks; responsive |
-| 8 | Notifications + audit | 7-day warning exactly once; CSV correct; `set_user_role` escalation tests |
+| 6 | Student learning experience (+ exams, 0029) | Progress persists/resumes; 90% deterministic; trial/purchase gating locks content |
+| 7 | Dashboards + analytics (+ comments, 0030) | Real data; no mocks; responsive |
+| 8 | Notifications + audit | Activation notification exactly once; CSV correct; `set_user_role` escalation tests |
 | 9 | Security hardening | RLS review, IDOR, secret scan, race tests all pass/fixed |
 | 10 | QA/Verification | All suites green; no known blockers |
 | 11 | Production readiness | All PLAN §19 questions answered YES; no `db reset` vs prod; snapshots |
@@ -560,7 +572,7 @@ Full register: BLUEPRINT.md §18 (R1–R18). Top architecture-level risks and th
 | # | Risk | Architectural mitigation |
 |---|---|---|
 | R1 | Bunny webhook lost → stuck processing | Shared webhook token check + hourly reconciliation job + retry UI |
-| R2 | Redemption race | Advisory lock + FOR UPDATE + UNIQUE(code_id) backstop + race tests |
+| R2 | Redemption race | Advisory lock + FOR UPDATE + UNIQUE(student_id, unit_id) backstop + race tests |
 | R4 | Scheduler/pg_cron/pg_net unavailability | Unified 3-link execution chain; verified in Phase 1 |
 | R6 | RLS subquery performance | STABLE SECURITY DEFINER helpers, targeted indexes, pooling |
 | R9/R10 | Signed URL sharing beyond expiry | Short TTLs + live checks at issuance; documented residual |
@@ -574,4 +586,4 @@ Full register: BLUEPRINT.md §18 (R1–R18). Top architecture-level risks and th
 
 ## 12. Assumptions
 
-All assumptions are registered in BLUEPRINT.md §19 as A1–A34 and referenced inline above (e.g. A1 grade staff-assigned, A4 timing, A5 no extension while active, A7 once-only warning, A11 replacement policy, A12 completion irreversibility, A13 email immutability, A22 code format, A33 grade-binding, A34 sign-in gate). Phase 0 introduces no new assumptions; where behavior was refined at the architecture gate, the binding requirement is flagged **[BINDING]** and recorded in PLAN.md §22.2.
+All assumptions are registered in BLUEPRINT.md §19 as A1–A34 and referenced inline above (e.g. A4 no time limits — purchases are permanent, A5 one purchase per unit per student, A11 replacement policy, A12 completion irreversibility, A13 email immutability, A22 code format, A33 grade-binding, A34 sign-in gate). Phase 0 introduces no new assumptions; where behavior was refined at the architecture gate, the binding requirement is flagged **[BINDING]** and recorded in PLAN.md §22.2.

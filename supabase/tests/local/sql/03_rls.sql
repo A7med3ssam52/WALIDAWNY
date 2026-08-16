@@ -10,8 +10,8 @@
 -- ---------------------------------------------------------------------
 INSERT INTO public.notifications (id, user_id, type, title, body, dedup_key, is_read, entity_type, entity_id)
 VALUES
-    ('a0000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'system', 'TEST-NA', NULL, NULL, false, 'subscription', NULL),
-    ('a0000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 'system', 'TEST-NB', NULL, NULL, false, 'subscription', NULL)
+    ('a0000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 'system', 'TEST-NA', NULL, NULL, false, 'unit_purchases', NULL),
+    ('a0000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 'system', 'TEST-NB', NULL, NULL, false, 'unit_purchases', NULL)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO auth.users (id, email, encrypted_password, raw_user_meta_data)
@@ -44,25 +44,19 @@ SELECT tests.expect_rows('DELETE FROM public.profiles WHERE id = ''70000000-0000
 -- 3 more active grades, so 2 fixture + 3 seeded = 5)
 SELECT tests.expect_count('SELECT count(*) FROM public.grades', 5, 'A: grades = active non-deleted only (B8)');
 
--- pricing_plans (active + own grade only: A is grade1 -> planA, planA2)
-SELECT tests.expect_count('SELECT count(*) FROM public.pricing_plans', 2, 'A: plans = own-grade active only');
+-- unit_pricing (active + own-grade published unit only: A is grade1 -> pu1)
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 1, 'A: unit_pricing = own-grade active only (pu1)');
 
--- subscriptions: own SELECT, no direct DML
-SELECT tests.expect_count('SELECT count(*) FROM public.subscriptions', 1, 'A: own subscription history');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscriptions WHERE student_id = ''70000000-0000-0000-0000-000000000004''', 0, 'A: others subscriptions hidden');
-SELECT tests.expect_error('INSERT INTO public.subscriptions (student_id, pricing_plan_id, base_price, platform_fee, total_price, source, started_at, expires_at) VALUES (''70000000-0000-0000-0000-000000000001'', ''20000000-0000-0000-0000-000000000001'', 1, 0, 1, ''manual'', now(), now() + interval ''1 day'')', '42501', 'violates row-level security policy');
-SELECT tests.expect_rows('UPDATE public.subscriptions SET status = ''expired'' WHERE student_id = ''70000000-0000-0000-0000-000000000001''', 0, 'A: UPDATE subscriptions denied (RPC-only)');
-SELECT tests.expect_rows('DELETE FROM public.subscriptions WHERE student_id = ''70000000-0000-0000-0000-000000000001''', 0, 'A: DELETE subscriptions denied (RPC-only)');
+-- unit_codes: students never see raw codes
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_codes', 0, 'A: no raw codes visible');
+SELECT tests.expect_error('INSERT INTO public.unit_codes (code, unit_pricing_id, created_by) VALUES (''WLDN-INSERTCODE1'', ''20000000-0000-0000-0000-000000000001'', ''70000000-0000-0000-0000-000000000001'')', '42501', 'violates row-level security policy');
 
--- subscription_codes: students never see raw codes
-SELECT tests.expect_count('SELECT count(*) FROM public.subscription_codes', 0, 'A: no raw codes visible');
-SELECT tests.expect_error('INSERT INTO public.subscription_codes (code, pricing_plan_id, created_by) VALUES (''WLDN-AAAA-AAAA-AAAA'', ''20000000-0000-0000-0000-000000000001'', ''70000000-0000-0000-0000-000000000001'')', '42501', 'violates row-level security policy');
-
--- code_redemptions: own SELECT only
-SELECT tests.expect_count('SELECT count(*) FROM public.code_redemptions', 0, 'A: own redemptions (none yet)');
-SELECT tests.expect_error('INSERT INTO public.code_redemptions (code_id, student_id, subscription_id) VALUES (''90000000-0000-0000-0000-000000000001'', ''70000000-0000-0000-0000-000000000001'', ''80000000-0000-0000-0000-000000000001'')', '42501', 'violates row-level security policy');
-SELECT tests.expect_rows('UPDATE public.code_redemptions SET redeemed_at = now() WHERE code_id = ''90000000-0000-0000-0000-000000000001''', 0, 'A: UPDATE redemptions denied');
-SELECT tests.expect_rows('DELETE FROM public.code_redemptions WHERE code_id = ''90000000-0000-0000-0000-000000000001''', 0, 'A: DELETE redemptions denied');
+-- unit_purchases: own SELECT; RPC-only writes (no DML policies)
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 1, 'A: own purchases visible');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases WHERE student_id = ''70000000-0000-0000-0000-000000000004''', 0, 'A: others purchases hidden');
+SELECT tests.expect_error('INSERT INTO public.unit_purchases (student_id, unit_id, base_price, platform_fee) VALUES (''70000000-0000-0000-0000-000000000001'', ''30000000-0000-0000-0000-000000000001'', 1, 0)', '42501', 'violates row-level security policy');
+SELECT tests.expect_rows('UPDATE public.unit_purchases SET status = ''void'' WHERE student_id = ''70000000-0000-0000-0000-000000000001''', 0, 'A: UPDATE purchases denied (RPC-only)');
+SELECT tests.expect_rows('DELETE FROM public.unit_purchases WHERE student_id = ''70000000-0000-0000-0000-000000000001''', 0, 'A: DELETE purchases denied (RPC-only)');
 
 -- units / lessons: published + own grade + non-deleted
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 1, 'A: units = published own-grade only');
@@ -105,8 +99,7 @@ SELECT tests.expect_rows('UPDATE public.lessons SET title = ''x'' WHERE id = ''4
 SELECT tests.expect_rows('DELETE FROM public.grades WHERE id = ''10000000-0000-0000-0000-000000000001''', 0, 'A: DELETE grade denied');
 
 -- RPC-scoped reads
-SELECT tests.expect_count('SELECT count(*) FROM public.get_my_subscriptions()', 1, 'A: get_my_subscriptions = own only');
-SELECT tests.assert((SELECT id = '80000000-0000-0000-0000-000000000001' FROM public.get_my_current_subscription()), 'A: get_my_current_subscription returns live sub');
+SELECT tests.expect_count('SELECT count(*) FROM public.get_my_unit_purchases()', 1, 'A: get_my_unit_purchases = own only');
 
 -- mark-read RPC (binding B2 allowed path)
 SELECT tests.expect_rows('SELECT public.mark_notification_read(''a0000000-0000-0000-0000-000000000001'')', 1, 'B2: mark_notification_read works');
@@ -128,7 +121,7 @@ SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 0, 'B: disabled
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos', 0, 'B: disabled - videos denied');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_pdfs', 0, 'B: disabled - pdfs denied');
 SELECT tests.expect_count('SELECT count(*) FROM public.progress', 0, 'B: disabled - progress denied');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscriptions', 1, 'B: disabled - subscription history still readable (A9)');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 1, 'B: disabled - purchase history still readable (A9)');
 SELECT tests.expect_count('SELECT count(*) FROM public.notifications', 1, 'B: disabled - own notifications readable (stale session)');
 
 RESET ROLE;
@@ -154,7 +147,8 @@ SET LOCAL ROLE student;
 
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 1, 'D: own-grade units only (u2)');
 SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 1, 'D: own-grade lessons only (l6)');
-SELECT tests.expect_count('SELECT count(*) FROM public.pricing_plans', 2, 'D: plans = own-grade active only (planG2, planG2b)');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 1, 'D: unit_pricing = own-grade active only (pu2)');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 1, 'D: own purchases only (u2)');
 SELECT tests.expect_count('SELECT count(*) FROM public.notifications WHERE id = ''a0000000-0000-0000-0000-000000000001''', 0, 'D: others notifications hidden');
 SELECT tests.expect_error('UPDATE public.notifications SET is_read = true WHERE id = ''a0000000-0000-0000-0000-000000000001''', '42501', 'permission denied for table notifications');
 
@@ -172,10 +166,11 @@ SELECT tests.expect_count('SELECT count(*) FROM public.units', 4, 'W: sees all u
 SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 9, 'W: sees all lessons');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos', 3, 'W: sees all videos');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_pdfs', 2, 'W: sees all pdfs');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscriptions', 3, 'W: sees all subscriptions');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscription_codes', 6, 'W: sees all codes');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 4, 'W: sees all unit pricing');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_codes', 6, 'W: sees all codes');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 3, 'W: sees all purchases');
 SELECT tests.expect_count('SELECT count(*) FROM public.progress', 2, 'W: sees all progress');
-SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 4, 'W: sees app_settings');
+SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 3, 'W: sees app_settings (0028 dropped expiry_warning_days)');
 SELECT tests.expect_count('SELECT count(*) FROM public.audit_logs', 0, 'W: audit denied (admin only)');
 SELECT tests.expect_rows('SELECT * FROM public.list_trash()', 1, 'W: list_trash returns soft-deleted students');
 SELECT tests.assert(
@@ -206,15 +201,15 @@ SET LOCAL ROLE authenticated;
 SELECT tests.expect_count('SELECT count(*) FROM public.profiles WHERE id = ''70000000-0000-0000-0000-00000000000b''', 1, 'T: own profile SELECT');
 SELECT tests.assert((SELECT count(*) >= 11 FROM public.profiles), 'T: sees all profiles (staff branch)');
 SELECT tests.expect_count('SELECT count(*) FROM public.grades', 7, 'T: sees all grades');
-SELECT tests.expect_count('SELECT count(*) FROM public.pricing_plans', 5, 'T: sees all plans');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 4, 'T: sees all unit pricing');
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 4, 'T: sees all units');
 SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 9, 'T: sees all lessons');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos', 3, 'T: sees all videos');
 SELECT tests.expect_count('SELECT count(*) FROM public.lesson_pdfs', 2, 'T: sees all pdfs');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscriptions', 3, 'T: sees all subscriptions');
-SELECT tests.expect_count('SELECT count(*) FROM public.subscription_codes', 6, 'T: sees all codes');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_codes', 6, 'T: sees all codes');
+SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 3, 'T: sees all purchases');
 SELECT tests.expect_count('SELECT count(*) FROM public.progress', 2, 'T: sees all progress');
-SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 4, 'T: sees app_settings');
+SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 3, 'T: sees app_settings (0028 dropped expiry_warning_days)');
 SELECT tests.expect_count('SELECT count(*) FROM public.audit_logs', 0, 'T: audit denied (admin only)');
 SELECT tests.expect_rows('SELECT * FROM public.list_trash()', 1, 'T: list_trash returns soft-deleted students');
 SELECT tests.assert(
@@ -246,7 +241,7 @@ SELECT tests.expect_rows('SELECT * FROM public.list_trash()', 1, 'AD: list_trash
 SELECT tests.expect_error('INSERT INTO public.audit_logs (action, entity_type) VALUES (''x'',''y'')', '42501', 'violates row-level security policy');
 SELECT tests.expect_rows('UPDATE public.audit_logs SET action = ''x'' WHERE id = (SELECT id FROM public.audit_logs LIMIT 1)', 0, 'AD: UPDATE audit denied');
 SELECT tests.expect_rows('DELETE FROM public.audit_logs WHERE id = (SELECT id FROM public.audit_logs LIMIT 1)', 0, 'AD: DELETE audit denied');
-SELECT tests.expect_error('INSERT INTO public.subscriptions (student_id, pricing_plan_id, base_price, platform_fee, total_price, source, started_at, expires_at) VALUES (''70000000-0000-0000-0000-000000000001'', ''20000000-0000-0000-0000-000000000001'', 1, 0, 1, ''manual'', now(), now() + interval ''1 day'')', '42501', 'violates row-level security policy');
+SELECT tests.expect_error('INSERT INTO public.unit_purchases (student_id, unit_id, base_price, platform_fee) VALUES (''70000000-0000-0000-0000-000000000001'', ''30000000-0000-0000-0000-000000000001'', 1, 0)', '42501', 'violates row-level security policy');
 SELECT tests.expect_error('INSERT INTO public.lesson_videos (lesson_id, bunny_video_id, bunny_library_id) VALUES (''40000000-0000-0000-0000-000000000001'', ''BV-AD'', ''LIB-1'')', '42501', 'violates row-level security policy');
 
 -- admin profile INSERT + DELETE escape hatch
@@ -271,7 +266,8 @@ SET LOCAL ROLE anon;
 -- anon cannot evaluate any RLS policy: the policy helpers (is_student,
 -- is_admin, ...) are not granted to anon (0010), so every table query
 -- errors with 42501 instead of returning rows (LOW-15 keeps only the
--- get_public_settings surface callable).
+-- get_public_settings / list_active_grades / get_public_unit_prices
+-- surfaces callable).
 SELECT tests.expect_error('SELECT count(*) FROM public.profiles', '42501', 'permission denied for function');
 SELECT tests.expect_error('SELECT count(*) FROM public.grades', '42501', 'permission denied for function');
 SELECT tests.expect_error('SELECT count(*) FROM public.lessons', '42501', 'permission denied for function');
@@ -297,6 +293,11 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT sort_order FROM public.list_active_grades() LIMIT 1) = 1,
     'ANON: list_active_grades ordered by sort_order');
+
+-- anon can read public unit prices (published, active pricing, active grade)
+SELECT tests.assert(
+    (SELECT count(*) = 2 FROM public.get_public_unit_prices()),
+    'ANON: get_public_unit_prices returns published+active only (u1, u2)');
 
 RESET ROLE;
 

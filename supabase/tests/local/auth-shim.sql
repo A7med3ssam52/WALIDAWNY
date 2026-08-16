@@ -105,7 +105,7 @@ END$$;
 -- Hosted-Supabase simulation: schema USAGE grants
 -- The real project grants USAGE on auth/storage to anon/authenticated by
 -- default; required here too for SECURITY INVOKER functions whose bodies
--- call auth.uid() directly (e.g. get_my_subscriptions) and for storage
+-- call auth.uid() directly (e.g. get_my_lesson_access) and for storage
 -- bucket/object access by clients.
 -- ---------------------------------------------------------------------
 GRANT USAGE ON SCHEMA auth TO anon, authenticated;
@@ -151,11 +151,13 @@ CREATE OR REPLACE FUNCTION tests.expect_error(p_sql text, p_code text DEFAULT NU
 RETURNS void
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_err bool := false;
 BEGIN
     BEGIN
         EXECUTE p_sql;
-        RAISE EXCEPTION 'ASSERT FAILED: expected error (%:%) but statement succeeded', p_code, p_msg;
     EXCEPTION WHEN OTHERS THEN
+        v_err := true;
         IF p_code IS NOT NULL AND SQLSTATE <> p_code THEN
             RAISE EXCEPTION 'ASSERT FAILED: expected SQLSTATE % got % (%)', p_code, SQLSTATE, SQLERRM;
         END IF;
@@ -163,6 +165,9 @@ BEGIN
             RAISE EXCEPTION 'ASSERT FAILED: expected message containing "%" got "%"', p_msg, SQLERRM;
         END IF;
     END;
+    IF NOT v_err THEN
+        RAISE EXCEPTION 'ASSERT FAILED: expected error (%:%) but statement succeeded', p_code, p_msg;
+    END IF;
 END $$;
 
 -- Executes p_sql and asserts the affected row count.

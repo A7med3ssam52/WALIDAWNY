@@ -18,11 +18,13 @@ import { formatDate } from '../../lib/format';
 import type { AppNotification } from '../../types/database';
 
 const typeLabels: Record<string, string> = {
-  subscription_activated: 'اشتراك',
-  subscription_expiring: 'تنبيه اشتراك',
-  subscription_expired: 'انتهاء اشتراك',
+  unit_activated: 'تفعيل وحدة',
   new_content: 'محتوى جديد',
-  system: 'نظام',
+  system: 'النظام',
+  exam_submitted: 'إجابة اختبار',
+  exam_graded: 'نتيجة اختبار',
+  lesson_comment: 'تعليق',
+  comment_reply: 'رد على تعليق',
 };
 
 function NotificationsSkeleton() {

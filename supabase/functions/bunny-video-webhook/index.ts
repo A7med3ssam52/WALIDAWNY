@@ -11,9 +11,9 @@
 //
 // Auth: the webhook is authenticated with the shared webhook token —
 // query param `token` or the `x-webhook-token` header — compared in
-// constant time (crypto.subtle SHA-256 digests; same helper as
-// expire-subscriptions). There is NO Bunny-side signature secret in this
-// project's env, so the token is provisioned via `supabase secrets set`
+// constant time (crypto.subtle SHA-256 digests). There is NO Bunny-side
+// signature secret in this project's env, so the token is provisioned
+// via `supabase secrets set`
 // BUNNY_WEBHOOK_TOKEN=<random> and pasted into the Bunny Stream webhook
 // URL as ?token=<value>. (SECURITY.md documents this fallback.)
 //

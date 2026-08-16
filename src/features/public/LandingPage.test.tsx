@@ -53,6 +53,30 @@ describe('LandingPage', () => {
     expect(await screen.findByText('لا يوجد رقم تواصل متاح حاليًا')).toBeInTheDocument();
   });
 
+  it('shows the unit prices section with a whatsapp CTA per unit', async () => {
+    mockRpc('get_public_settings', {
+      platform_name: 'منصة مستر وليد عونى التعليمية',
+      whatsapp_number: '01000000000',
+      whatsapp_default_message: 'مرحبًا، أود التواصل مع الأستاذ',
+    });
+    mockRpc('get_public_unit_prices', [
+      {
+        unit_id: 'unit-1',
+        unit_name: 'الوحدة الأولى',
+        grade_name: 'الصف الأول',
+        base_price: 300,
+        platform_fee: 50,
+        total_price: 350,
+      },
+    ]);
+    renderApp('/');
+
+    expect(await screen.findByRole('heading', { name: 'أسعار الوحدات' })).toBeInTheDocument();
+    expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
+    expect(screen.getByText('350 ج.م')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'تواصل لتفعيل الوحدة' })).toHaveLength(1);
+  });
+
   it('shows an error state when the public settings cannot be loaded', async () => {
     mockRpcError('get_public_settings', 'connection failed');
     renderApp('/');

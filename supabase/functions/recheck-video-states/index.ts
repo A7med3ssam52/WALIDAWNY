@@ -6,7 +6,7 @@
 // endpoints), so access control is enforced HERE: the caller must
 // present the `x-internal-token` header equal to env INTERNAL_JOB_TOKEN,
 // compared in constant time (crypto.subtle SHA-256 digests — never a
-// plain ===; same pattern as expire-subscriptions, J1).
+// plain ===).
 //
 // Reconciliation job for the Bunny video pipeline (ARCHITECTURE.md §7.2):
 // Bunny webhooks are the primary driver of set_video_status (see

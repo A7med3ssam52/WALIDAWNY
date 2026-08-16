@@ -37,18 +37,13 @@
 //     lesson_deleted (422).
 //   * STUDENT: the lesson must be reachable — lesson published, unit
 //     published, own live grade, grade active AND not soft-deleted (B8),
-//     lesson not soft-deleted — and the student needs an ACTIVE,
-//     UNEXPIRED subscription (A33). These are evaluated WITHOUT calling
-//     can_access_lesson via RPC (0010 documents the four RLS-policy
-//     helpers are not part of the PostgREST RPC surface): instead the
-//     same conditions are reproduced with RLS-scoped SELECTs over the
-//     caller token — the lessons SELECT policy (0009) already filters
-//     published/own-grade/live-grade rows, so a visible lesson row IS
-//     the gate's middle clause, and the own-rows subscriptions SELECT
-//     policy yields exactly the A33 clause. Any failure ->
-//     access_denied (403). This keeps the exact semantics of
-//     can_access_lesson (H5 live evaluation) without widening the RPC
-//     surface.
+//     lesson not soft-deleted — and the student needs access to THIS
+//     lesson: a lifetime unit purchase OR an active trial lesson
+//     (public.get_my_lesson_access, 0028; replaces the old time-limited
+//     gate). The gate is evaluated by calling the RPC
+//     get_my_lesson_access(p_lesson_id) with the caller's own JWT; if
+//     has_access = false -> access_denied (403). Staff previews skip the
+//     gate.
 //
 // The primary ready video lookup is RLS-scoped as well: the
 // lesson_videos SELECT policy (0009) lets staff see all rows and
@@ -63,13 +58,13 @@
 //   validation_error          -> 422 (missing/illegal lesson_id)
 //   lesson_not_found          -> 404 (staff only)
 //   lesson_deleted            -> 422 (staff only; student sees 403)
-//   access_denied             -> 403 (student gate: lesson/subscription)
+//   access_denied             -> 403 (student gate: lesson access)
 //   video_not_ready           -> 409 (no primary ready video yet)
 //   client_ip_unavailable     -> 500 (no cf-connecting-ip / x-forwarded-for)
 //   internal_error            -> 500 (query/URL-build failures; raw
 //                                  message never echoed)
 //
-// Success: { playback_url, video_id, lesson_id, expires_at }.
+// Success: { playback_url, video_id, lesson_id }.
 //
 // No secrets are logged anywhere in this module.
 // =====================================================================
@@ -107,6 +102,10 @@ export interface SvcClient {
     }>;
   };
   from(table: string): SvcFrom;
+  rpc(
+    fn: string,
+    args?: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: DbError | null }>;
 }
 
 export interface Deps {
@@ -264,28 +263,26 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // --- 5) Student subscription gate (A33; staff previews skip it) ---
+  // --- 5) Student lesson-access gate (lifetime purchase OR trial lesson;
+  // staff previews skip it) ---
   if (!isStaff) {
-    const { data: subscription, error: subError } = await client
-      .from('subscriptions')
-      .select('id')
-      .eq('student_id', user.id)
-      .eq('status', 'active')
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
-    if (subError) {
+    const { data: access, error: accessError } = await client.rpc('get_my_lesson_access', {
+      p_lesson_id: lessonId,
+    });
+    if (accessError) {
       console.error(
-        'get-video-playback-url: subscription query failed',
-        subError.code ?? 'unknown',
+        'get-video-playback-url: lesson access check failed',
+        accessError.code ?? 'unknown',
       );
       return jsonResponse(
-        { error: { code: 'internal_error', message: 'Failed to validate subscription.' } },
+        { error: { code: 'internal_error', message: 'Failed to validate lesson access.' } },
         500,
       );
     }
-    if (!subscription) {
+    const accessInfo = access as { has_access: boolean } | null;
+    if (!accessInfo || accessInfo.has_access !== true) {
       return jsonResponse(
-        { error: { code: 'access_denied', message: 'An active subscription is required.' } },
+        { error: { code: 'access_denied', message: 'Lesson access is required.' } },
         403,
       );
     }
@@ -336,7 +333,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         500,
       );
     }
-    const { url, expires } = await buildPlaybackUrl({
+    const { url } = await buildPlaybackUrl({
       hostname: deps.bunnyHostname,
       signingKey: deps.bunnySigningKey,
       videoId: videoRow.bunny_video_id,
@@ -349,7 +346,6 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         playback_url: url,
         video_id: videoRow.id,
         lesson_id: lessonId,
-        expires_at: new Date(expires * 1000).toISOString(),
       },
       200,
     );

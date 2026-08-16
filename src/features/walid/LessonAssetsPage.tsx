@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Upload as TusUpload } from 'tus-js-client';
-import { Eye, FileUp, RefreshCw, Replace, Video as VideoIcon } from 'lucide-react';
+import { Eye, FileUp, MessageSquareText, RefreshCw, Replace, Trash2, Video as VideoIcon } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -24,6 +24,8 @@ import {
   getPlaybackUrl,
   getRpcErrorCode,
   getVideoThumbnailUrl,
+  deleteLessonComment,
+  listLessonComments,
   listLessonPdfs,
   listLessonVideos,
   uploadPdf,
@@ -32,11 +34,26 @@ import {
 import { formatDateTime } from '../../lib/format';
 import type {
   Lesson,
+  LessonComment,
   LessonPdf,
   LessonVideo,
   VideoStatus,
   VideoUploadSession,
 } from '../../types/database';
+
+const COMMENT_ERROR_MESSAGES: Record<string, string> = {
+  comment_not_found: 'التعليق غير موجود',
+  permission_denied: 'ليست لديك صلاحية',
+  access_denied: 'ليست لديك صلاحية',
+};
+
+function commentErrorMessage(error: unknown): string {
+  const code = getRpcErrorCode(error);
+  if (code && COMMENT_ERROR_MESSAGES[code]) {
+    return COMMENT_ERROR_MESSAGES[code];
+  }
+  return 'تعذر تنفيذ العملية. حاول مرة أخرى';
+}
 
 const PDF_ERROR_MESSAGES: Record<string, string> = {
   lesson_not_found: 'الدرس غير موجود',
@@ -263,6 +280,10 @@ export function LessonAssetsPage() {
   const [replaceVideo, setReplaceVideo] = useState<LessonVideo | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
+  const [comments, setComments] = useState<LessonComment[] | null>(null);
+  const [commentsError, setCommentsError] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const tusUploadRef = useRef<TusUpload | null>(null);
 
@@ -307,11 +328,37 @@ export function LessonAssetsPage() {
     }
   }, [lessonId]);
 
+  const loadComments = useCallback(async () => {
+    if (!lessonId) {
+      return;
+    }
+    setCommentsError(false);
+    try {
+      setComments(await listLessonComments(lessonId));
+    } catch {
+      setCommentsError(true);
+    }
+  }, [lessonId]);
+
+  const handleDeleteComment = async (comment: LessonComment) => {
+    setDeletingCommentId(comment.id);
+    try {
+      await deleteLessonComment(comment.id);
+      showToast('تم حذف التعليق');
+      await loadComments();
+    } catch (err) {
+      showToast(commentErrorMessage(err), 'error');
+    } finally {
+      setDeletingCommentId(null);
+    }
+  };
+
   useEffect(() => {
     void loadLesson();
     void loadPdfs();
     void loadVideos();
-  }, [loadLesson, loadPdfs, loadVideos]);
+    void loadComments();
+  }, [loadLesson, loadPdfs, loadVideos, loadComments]);
 
   const anyVideoActive = useMemo(() => (videos ?? []).some(isVideoActive), [videos]);
 
@@ -801,6 +848,80 @@ export function LessonAssetsPage() {
               ) : null}
             </div>
           </div>
+        </Card>
+
+        <Card
+          title="تعليقات الدرس"
+          subtitle="راجع تعليقات الطلاب واحذف التعليقات المخالفة"
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw aria-hidden="true" className="h-4 w-4" />}
+              onClick={() => void loadComments()}
+            >
+              تحديث التعليقات
+            </Button>
+          }
+        >
+          {commentsError ? (
+            <ErrorState
+              message="تعذر تحميل التعليقات"
+              onRetry={() => void loadComments()}
+            />
+          ) : comments === null ? (
+            <ListSkeleton rows={2} />
+          ) : comments.length === 0 ? (
+            <EmptyState
+              title="لا توجد تعليقات على هذا الدرس بعد"
+              description="ستظهر هنا تعليقات الطلاب فور إضافتها."
+              icon={<MessageSquareText className="h-6 w-6" />}
+            />
+          ) : (
+            <ul className="flex flex-col gap-2" data-testid="staff-comment-list">
+              {comments.map((comment) => {
+                const isReply = Boolean(comment.parent_id);
+                const isDeleting = deletingCommentId === comment.id;
+                return (
+                  <li
+                    key={comment.id}
+                    data-testid={`staff-comment-${comment.id}`}
+                    className={`glass-soft flex flex-wrap items-start justify-between gap-3 rounded-lg p-3 ${
+                      isReply ? 'ms-6 border-primary/15 bg-primary/5' : ''
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {comment.author_name}
+                        </span>
+                        <span className="text-xs text-foreground-subtle">
+                          {formatDateTime(comment.created_at)}
+                        </span>
+                        {comment.status === 'removed' ? (
+                          <Badge variant="error">محذوف</Badge>
+                        ) : null}
+                        {isReply ? <Badge variant="info">رد</Badge> : null}
+                      </div>
+                      <p className="mt-1 text-sm leading-relaxed text-foreground">
+                        {comment.body}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                      onClick={() => void handleDeleteComment(comment)}
+                      disabled={isDeleting || comment.status === 'removed'}
+                      className="shrink-0 text-error hover:bg-rose-500/10 hover:text-error"
+                    >
+                      {isDeleting ? 'جاري الحذف...' : 'حذف'}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Card>
 
         <Card title="ملفات PDF الحالية">

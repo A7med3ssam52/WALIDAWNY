@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { GraduationCap } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
@@ -7,15 +7,27 @@ import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
+import { LockedUnitCard } from '../../components/LockedUnitCard';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
 import {
   getGradeById,
+  getMyUnitPurchases,
+  getPublicSettings,
+  getPublicUnitPrices,
   listLessonsForUnit,
   listMyProgress,
   listUnitsForGrade,
 } from '../../data/rpc';
-import type { Grade, Lesson, Progress, Unit } from '../../types/database';
+import type {
+  Grade,
+  Lesson,
+  Progress,
+  PublicSettings,
+  PublicUnitPrice,
+  Unit,
+  UnitPurchaseWithUnit,
+} from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
 
 interface UnitWithLessons extends Unit {
@@ -59,8 +71,12 @@ function CurriculumSkeleton() {
 
 export function StudentCurriculumPage() {
   const { profile } = useAuth();
+  const [searchParams] = useSearchParams();
   const [grade, setGrade] = useState<Grade | null | undefined>(undefined);
   const [units, setUnits] = useState<UnitWithLessons[]>([]);
+  const [purchases, setPurchases] = useState<UnitPurchaseWithUnit[]>([]);
+  const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [progressByLesson, setProgressByLesson] = useState<Map<string, Progress>>(new Map());
   const [error, setError] = useState(false);
 
@@ -73,10 +89,14 @@ export function StudentCurriculumPage() {
     setError(false);
     try {
       const gradeRow = await getGradeById(profile.grade_id);
-      const [allUnits, progressRows] = await Promise.all([
-        listUnitsForGrade(profile.grade_id as string),
-        listMyProgress(),
-      ]);
+      const [allUnits, progressRows, purchasesResult, pricesResult, settingsResult] =
+        await Promise.all([
+          listUnitsForGrade(profile.grade_id as string),
+          listMyProgress(),
+          getMyUnitPurchases(),
+          getPublicUnitPrices(),
+          getPublicSettings(),
+        ]);
       const publishedUnits = allUnits
         .filter((unit) => unit.status === 'published')
         .sort((a, b) => a.sort_order - b.sort_order);
@@ -91,6 +111,9 @@ export function StudentCurriculumPage() {
       setGrade(gradeRow);
       setUnits(withLessons);
       setProgressByLesson(new Map(progressRows.map((row) => [row.lesson_id, row])));
+      setPurchases(purchasesResult);
+      setPrices(pricesResult);
+      setSettings(settingsResult);
     } catch {
       setError(true);
     }
@@ -99,6 +122,15 @@ export function StudentCurriculumPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const focusUnitId = searchParams.get('unit');
+  useEffect(() => {
+    if (!focusUnitId) {
+      return;
+    }
+    const element = document.getElementById(`unit-${focusUnitId}`);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusUnitId, units]);
 
   if (error) {
     return (
@@ -136,6 +168,8 @@ export function StudentCurriculumPage() {
   );
   const progressPercent =
     totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+  const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
+  const priceById = new Map(prices.map((price) => [price.unit_id, price]));
 
   return (
     <LayoutShell
@@ -173,24 +207,46 @@ export function StudentCurriculumPage() {
             description="لم يتم نشر أي وحدات في صفك الدراسي حتى الآن."
           />
         ) : (
-          units.map((unit) => (
-            <Card key={unit.id} title={unit.name}>
-              <ul className="divide-y divide-border-muted">
-                {unit.lessons.map((lesson) => (
-                  <li key={lesson.id}>
-                    <Link
-                      to={`/student/lessons/${lesson.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg px-1 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-                      data-testid={`curriculum-lesson-${lesson.id}`}
-                    >
-                      <span className="text-sm text-foreground">{lesson.title}</span>
-                      <LessonProgressBadge progress={progressByLesson.get(lesson.id)} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))
+          units.map((unit) => {
+            const isPurchased = purchasedUnitIds.has(unit.id);
+            const price = priceById.get(unit.id);
+            if (!isPurchased) {
+              if (!price) {
+                return null;
+              }
+              return (
+                <LockedUnitCard
+                  key={unit.id}
+                  unit={price}
+                  whatsappNumber={settings?.whatsapp_number ?? null}
+                  whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${price.unit_name}`}
+                />
+              );
+            }
+            return (
+              <Card
+                key={unit.id}
+                title={unit.name}
+                className="scroll-mt-24"
+                id={`unit-${unit.id}`}
+              >
+                <ul className="divide-y divide-border-muted">
+                  {unit.lessons.map((lesson) => (
+                    <li key={lesson.id}>
+                      <Link
+                        to={`/student/lessons/${lesson.id}`}
+                        className="flex items-center justify-between gap-3 rounded-lg px-1 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                        data-testid={`curriculum-lesson-${lesson.id}`}
+                      >
+                        <span className="text-sm text-foreground">{lesson.title}</span>
+                        <LessonProgressBadge progress={progressByLesson.get(lesson.id)} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            );
+          })
         )}
       </div>
     </LayoutShell>

@@ -18,9 +18,9 @@ import {
 import { ErrorState } from '../../components/ErrorState';
 import { Spinner } from '../../components/Spinner';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
-import { getPublicSettings } from '../../data/rpc';
-import { buildWhatsAppLink } from '../../lib/format';
-import type { PublicSettings } from '../../types/database';
+import { getPublicSettings, getPublicUnitPrices } from '../../data/rpc';
+import { buildWhatsAppLink, formatPrice } from '../../lib/format';
+import type { PublicSettings, PublicUnitPrice } from '../../types/database';
 
 const benefits = [
   {
@@ -46,8 +46,8 @@ const steps = [
     description: 'سجّل بياناتك في أقل من دقيقة وابدأ رحلتك التعليمية',
   },
   {
-    title: 'فعّل اشتراكك',
-    description: 'افتح الأكواد أو تواصل مع الأستاذ للحصول على اشتراكك',
+    title: 'فعّل وحدتك',
+    description: 'افتح كود التفعيل أو تواصل مع الأستاذ لتفعيل وحدتك مدى الحياة',
   },
   {
     title: 'تابع دروسك',
@@ -90,15 +90,24 @@ const particles = Array.from({ length: 14 }, (_, i) => ({
 export function LandingPage() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [settingsError, setSettingsError] = useState(false);
+  const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
+  const [pricesError, setPricesError] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const firstMenuLinkRef = useRef<HTMLAnchorElement>(null);
 
   const loadSettings = useCallback(async () => {
     setSettingsError(false);
+    setPricesError(false);
     try {
-      setSettings(await getPublicSettings());
+      const [settingsRow, pricesRow] = await Promise.all([
+        getPublicSettings(),
+        getPublicUnitPrices(),
+      ]);
+      setSettings(settingsRow);
+      setPrices(pricesRow);
     } catch {
       setSettingsError(true);
+      setPricesError(true);
     }
   }, []);
 
@@ -455,6 +464,65 @@ export function LandingPage() {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* ===== Unit prices ===== */}
+        <section className="py-8 sm:py-12">
+          <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+            <h2 className="text-center font-display text-2xl font-bold text-foreground sm:text-3xl">
+              أسعار <span className="text-gradient">الوحدات</span>
+            </h2>
+            <p className="mx-auto mt-2 max-w-lg text-center text-sm text-foreground-muted">
+              اشترِ الوحدة مرة واحدة وافتحها مدى الحياة — أو فعّل بكود من الأستاذ
+            </p>
+            {pricesError ? (
+              <div className="mt-8">
+                <ErrorState message="تعذر تحميل أسعار الوحدات" onRetry={() => void loadSettings()} />
+              </div>
+            ) : prices.length > 0 ? (
+              <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {prices.map((price, index) => (
+                  <div
+                    key={price.unit_id}
+                    className="rise glass-card glass-card-hover conic-ring spotlight-card group flex flex-col items-center gap-2 p-6 text-center"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-fuchsia-500/25 text-indigo-300"
+                    >
+                      <BookOpen className="h-5 w-5" />
+                    </span>
+                    <h3 className="font-display text-base font-bold text-foreground">
+                      {price.unit_name}
+                    </h3>
+                    <p className="text-xs text-foreground-subtle">{price.grade_name ?? ''}</p>
+                    <p className="mt-1 font-display text-2xl font-extrabold text-gradient" dir="ltr">
+                      {formatPrice(price.total_price)} <span className="text-sm">ج.م</span>
+                    </p>
+                    <p className="text-xs text-foreground-subtle">
+                      سعر الوحدة {formatPrice(price.base_price)} + رسوم منصة{' '}
+                      {formatPrice(price.platform_fee)}
+                    </p>
+                    {whatsappNumber ? (
+                      <a
+                        href={buildWhatsAppLink(
+                          whatsappNumber,
+                          `${settings?.whatsapp_default_message ?? ''} — وحدة ${price.unit_name}`,
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-green-500 px-4 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.97]"
+                      >
+                        <WhatsAppIcon className="h-4 w-4" />
+                        تواصل لتفعيل الوحدة
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
       </main>

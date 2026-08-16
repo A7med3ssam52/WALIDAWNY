@@ -2,10 +2,8 @@ import { screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  makeGrade,
   makeNotification,
-  makePlan,
-  makeSubscription,
+  makeUnitPurchase,
   mockState,
   resetMockState,
   setAuthenticatedStudent,
@@ -35,27 +33,28 @@ describe('StudentDashboardPage', () => {
     expect(link).toHaveAttribute('href', expect.stringContaining('text='));
   });
 
-  it('shows the active-subscription chip with the expiry date', async () => {
-    mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
-    mockState.pricingPlans.push(makePlan({ id: 'plan-1', grade_id: 'grade-1' }));
-    mockState.subscriptions.push(
-      makeSubscription({ expires_at: new Date(Date.now() + 10 * 86_400_000).toISOString() }),
+  it('shows the purchased units card with the count and total', async () => {
+    mockState.unitPurchases.push(
+      makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1', total_price: 350 }),
+      makeUnitPurchase({ id: 'purchase-2', unit_id: 'unit-2', total_price: 200 }),
     );
     renderApp('/student/dashboard');
 
-    expect(await screen.findByText(/اشتراك نشط حتى/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'عرض التفاصيل' })).toHaveAttribute(
+    expect(await screen.findByText('عدد الوحدات المشتراة: 2')).toBeInTheDocument();
+    expect(screen.getByText('إجمالي المدفوع: 550 ج.م')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'عرض الوحدات' })).toHaveAttribute(
       'href',
-      '/student/subscriptions',
+      '/student/units',
     );
   });
 
-  it('shows the activation link when there is no active subscription', async () => {
+  it('shows the empty state when the student has no purchases', async () => {
     renderApp('/student/dashboard');
 
-    expect(await screen.findByRole('link', { name: 'تفعيل اشتراك' })).toHaveAttribute(
+    expect(await screen.findByText('لم تشترِ أي وحدة بعد')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'عرض الوحدات' })).toHaveAttribute(
       'href',
-      '/student/subscriptions',
+      '/student/units',
     );
   });
 

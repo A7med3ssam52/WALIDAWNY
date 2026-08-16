@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -8,7 +8,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { Input } from '../../components/Input';
 import { LayoutShell } from '../../components/LayoutShell';
-import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
 import { StaffNav } from '../../components/StaffNav';
@@ -22,19 +21,19 @@ import {
 } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import {
-  deletePricingPlan,
   getRpcErrorCode,
   listGrades,
-  listPricingPlans,
-  setPricingPlan,
+  listUnitPricing,
+  listUnitsForGrade,
+  setUnitPrice,
 } from '../../data/rpc';
 import { formatPrice } from '../../lib/format';
 import { useAuth } from '../auth/AuthContext';
-import type { Grade, PricingPlanWithGrade } from '../../types/database';
+import type { Grade, Unit, UnitPricingWithUnit } from '../../types/database';
 
 const PRICING_ERROR_MESSAGES: Record<string, string> = {
-  invalid_plan_values: 'قيم الخطة غير صحيحة — تأكد من المدة والسعر',
-  plan_not_found: 'الخطة غير موجودة',
+  invalid_price_values: 'قيم السعر غير صحيحة — تأكد من السعر والرسوم',
+  unit_not_found: 'الوحدة غير موجودة',
   permission_denied: 'ليست لديك صلاحية',
   access_denied: 'ليست لديك صلاحية',
 };
@@ -47,42 +46,44 @@ function pricingErrorMessage(error: unknown): string {
   return 'تعذر تنفيذ العملية. حاول مرة أخرى';
 }
 
-interface PlanFormState {
-  gradeId: string;
-  durationDays: string;
+interface PriceFormState {
+  unitId: string;
   basePrice: string;
   platformFee: string;
-  isActive: boolean;
 }
 
-const EMPTY_FORM: PlanFormState = {
-  gradeId: '',
-  durationDays: '',
+const EMPTY_FORM: PriceFormState = {
+  unitId: '',
   basePrice: '',
   platformFee: '',
-  isActive: true,
 };
 
 export function PricingPage() {
   const { role } = useAuth();
   const { showToast } = useToast();
   const isAdmin = role === 'admin';
-  const [plans, setPlans] = useState<PricingPlanWithGrade[] | null>(null);
+  const [pricing, setPricing] = useState<UnitPricingWithUnit[] | null>(null);
   const [grades, setGrades] = useState<Grade[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [error, setError] = useState(false);
-  const [form, setForm] = useState<PlanFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<PriceFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<PricingPlanWithGrade | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError(false);
     try {
-      const [nextPlans, nextGrades] = await Promise.all([listPricingPlans(), listGrades()]);
-      setPlans(nextPlans);
+      const [nextPricing, nextGrades] = await Promise.all([listUnitPricing(), listGrades()]);
+      setPricing(nextPricing);
       setGrades(nextGrades);
-      setForm((prev) => ({ ...prev, gradeId: prev.gradeId || (nextGrades[0]?.id ?? '') }));
+      const nextUnits = (
+        await Promise.all(nextGrades.map((grade) => listUnitsForGrade(grade.id)))
+      ).flat();
+      setUnits(nextUnits);
+      setForm((prev) => ({
+        ...prev,
+        unitId: prev.unitId || (nextUnits[0]?.id ?? ''),
+      }));
     } catch {
       setError(true);
     }
@@ -92,32 +93,25 @@ export function PricingPage() {
     void load();
   }, [load]);
 
-  const startEdit = (plan: PricingPlanWithGrade) => {
+  const startEdit = (item: UnitPricingWithUnit) => {
     setForm({
-      gradeId: plan.grade_id,
-      durationDays: String(plan.duration_days),
-      basePrice: String(plan.base_price),
-      platformFee: String(plan.platform_fee),
-      isActive: plan.is_active,
+      unitId: item.unit_id,
+      basePrice: String(item.base_price),
+      platformFee: String(item.platform_fee),
     });
     setFormError(null);
   };
 
   const resetForm = () => {
-    setForm({ ...EMPTY_FORM, gradeId: grades[0]?.id ?? '' });
+    setForm({ ...EMPTY_FORM, unitId: units[0]?.id ?? '' });
     setFormError(null);
   };
 
   const handleSave = async () => {
-    const durationDays = Math.trunc(Number(form.durationDays));
     const basePrice = Number(form.basePrice);
     const platformFee = Number(form.platformFee);
-    if (!form.gradeId) {
-      setFormError('اختر الصف');
-      return;
-    }
-    if (!form.durationDays.trim() || durationDays < 1) {
-      setFormError('المدة يجب أن تكون يومًا واحدًا على الأقل');
+    if (!form.unitId) {
+      setFormError('اختر الوحدة');
       return;
     }
     if (
@@ -134,14 +128,12 @@ export function PricingPage() {
     setFormError(null);
     setSaving(true);
     try {
-      await setPricingPlan({
-        gradeId: form.gradeId,
-        durationDays,
+      await setUnitPrice({
+        unitId: form.unitId,
         basePrice,
         platformFee,
-        isActive: form.isActive,
       });
-      showToast('تم حفظ الخطة بنجاح');
+      showToast('تم حفظ سعر الوحدة بنجاح');
       resetForm();
       await load();
     } catch (err) {
@@ -151,35 +143,13 @@ export function PricingPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleting) {
-      return;
-    }
-    setDeleteBusy(true);
-    try {
-      await deletePricingPlan(deleting.id);
-      setDeleting(null);
-      const nextPlans = await listPricingPlans();
-      setPlans(nextPlans);
-      if (nextPlans.some((plan) => plan.id === deleting.id)) {
-        showToast('الخطة مرتبطة باشتراكات أو أكواد سابقة — تم إيقافها بدلاً من حذفها');
-      } else {
-        showToast('تم حذف الخطة بنجاح');
-      }
-    } catch (err) {
-      showToast(pricingErrorMessage(err), 'error');
-      setDeleting(null);
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
   const totalPrice = Number(form.basePrice) + Number(form.platformFee);
+  const selectedUnit = units.find((unit) => unit.id === form.unitId) ?? null;
 
   return (
     <LayoutShell
-      title="الأسعار"
-      subtitle="خطط الاشتراك لكل صف — المدة والسعر ورسوم المنصة"
+      title="أسعار الوحدات"
+      subtitle="سعر كل وحدة وسعر المنصة — الوحدة تُشترى مرة واحدة مدى الحياة"
       variant="sidebar"
       nav={<StaffNav />}
     >
@@ -190,26 +160,26 @@ export function PricingPage() {
           </div>
         ) : null}
 
-        <Card title="الخطط الحالية">
+        <Card title="أسعار الوحدات الحالية">
           {error ? (
-            <ErrorState message="تعذر تحميل خطط الأسعار" onRetry={() => void load()} />
-          ) : plans === null ? (
+            <ErrorState message="تعذر تحميل أسعار الوحدات" onRetry={() => void load()} />
+          ) : pricing === null ? (
             <div className="flex flex-col gap-3" aria-hidden="true">
               {Array.from({ length: 3 }, (_, index) => (
                 <Skeleton key={index} className="h-12 w-full rounded-sm" />
               ))}
             </div>
-          ) : plans.length === 0 ? (
+          ) : pricing.length === 0 ? (
             <EmptyState
-              title="لا توجد خطط أسعار بعد"
-              description="استخدم النموذج بالأسفل لإضافة أول خطة."
+              title="لا توجد أسعار بعد"
+              description="استخدم النموذج بالأسفل لتحديد سعر أول وحدة."
             />
           ) : (
             <Table>
               <TableHead>
                 <TableRow>
                   <TableHeadCell>الصف</TableHeadCell>
-                  <TableHeadCell>المدة</TableHeadCell>
+                  <TableHeadCell>الوحدة</TableHeadCell>
                   <TableHeadCell>السعر الأساسي</TableHeadCell>
                   <TableHeadCell>رسوم المنصة</TableHeadCell>
                   <TableHeadCell>الإجمالي</TableHeadCell>
@@ -218,51 +188,42 @@ export function PricingPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {plans.map((plan) => (
-                  <TableRow key={plan.id} data-testid={`plan-row-${plan.id}`}>
-                    <TableCell label="الصف" className="font-medium text-foreground">
-                      {plan.grade_name ?? '—'}
+                {pricing.map((item) => (
+                  <TableRow key={item.id} data-testid={`price-row-${item.unit_id}`}>
+                    <TableCell label="الصف" className="text-foreground-muted">
+                      {item.grade_name ?? '—'}
                     </TableCell>
-                    <TableCell label="المدة">{plan.duration_days} يوم</TableCell>
+                    <TableCell label="الوحدة" className="font-medium text-foreground">
+                      {item.unit_name}
+                    </TableCell>
                     <TableCell label="السعر الأساسي" dir="ltr" className="font-mono">
-                      {formatPrice(plan.base_price)}
+                      {formatPrice(item.base_price)}
                     </TableCell>
                     <TableCell label="رسوم المنصة" dir="ltr" className="font-mono">
-                      {formatPrice(plan.platform_fee)}
+                      {formatPrice(item.platform_fee)}
                     </TableCell>
                     <TableCell
                       label="الإجمالي"
                       dir="ltr"
                       className="font-mono font-medium text-foreground"
                     >
-                      {formatPrice(plan.total_price)}
+                      {formatPrice(item.total_price)}
                     </TableCell>
                     <TableCell label="الحالة">
-                      <Badge variant={plan.is_active ? 'success' : 'neutral'}>
-                        {plan.is_active ? 'نشطة' : 'موقفة'}
+                      <Badge variant={item.is_active ? 'success' : 'neutral'}>
+                        {item.is_active ? 'نشط' : 'موقف'}
                       </Badge>
                     </TableCell>
                     {isAdmin ? (
                       <TableCell label="إجراءات">
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
-                            onClick={() => startEdit(plan)}
-                          >
-                            تعديل
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                            onClick={() => setDeleting(plan)}
-                            className="text-error hover:bg-rose-500/10 hover:text-error"
-                          >
-                            حذف
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
+                          onClick={() => startEdit(item)}
+                        >
+                          تعديل
+                        </Button>
                       </TableCell>
                     ) : null}
                   </TableRow>
@@ -274,58 +235,46 @@ export function PricingPage() {
 
         {isAdmin ? (
           <Card
-            title={form.gradeId ? 'إضافة / تعديل خطة' : 'إضافة خطة'}
+            title={form.unitId ? 'إضافة / تعديل سعر وحدة' : 'إضافة سعر وحدة'}
             subtitle="يتم احتساب الإجمالي تلقائيًا = السعر الأساسي + رسوم المنصة"
           >
             <div className="flex flex-col gap-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <Select
-                  label="الصف"
-                  name="plan-grade"
-                  value={form.gradeId}
-                  onChange={(event) => setForm({ ...form, gradeId: event.target.value })}
+                  label="الوحدة"
+                  name="price-unit"
+                  value={form.unitId}
+                  onChange={(event) => setForm({ ...form, unitId: event.target.value })}
                 >
-                  {grades.length === 0 ? (
-                    <option value="">لا توجد صفوف نشطة</option>
+                  {units.length === 0 ? (
+                    <option value="">لا توجد وحدات متاحة</option>
                   ) : (
-                    grades.map((grade) => (
-                      <option key={grade.id} value={grade.id}>
-                        {grade.name}
-                      </option>
-                    ))
+                    units.map((unit) => {
+                      const grade = grades.find((candidate) => candidate.id === unit.grade_id);
+                      return (
+                        <option key={unit.id} value={unit.id}>
+                          {grade ? `${grade.name} — ` : ''}
+                          {unit.name}
+                        </option>
+                      );
+                    })
                   )}
                 </Select>
                 <Input
-                  label="المدة (أيام)"
-                  name="plan-duration"
-                  type="number"
-                  value={form.durationDays}
-                  onChange={(event) => setForm({ ...form, durationDays: event.target.value })}
-                />
-                <Input
                   label="السعر الأساسي (ج.م)"
-                  name="plan-base-price"
+                  name="price-base"
                   type="number"
                   value={form.basePrice}
                   onChange={(event) => setForm({ ...form, basePrice: event.target.value })}
                 />
                 <Input
                   label="رسوم المنصة (ج.م)"
-                  name="plan-fee"
+                  name="price-fee"
                   type="number"
                   value={form.platformFee}
                   onChange={(event) => setForm({ ...form, platformFee: event.target.value })}
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground-muted">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(event) => setForm({ ...form, isActive: event.target.checked })}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/40"
-                />
-                خطة نشطة (متاحة للتفعيل)
-              </label>
               <p className="text-sm text-foreground-muted">
                 الإجمالي:{' '}
                 <span className="font-semibold text-foreground" dir="ltr">
@@ -343,35 +292,21 @@ export function PricingPage() {
                   icon={<Plus aria-hidden="true" className="h-4 w-4" />}
                   onClick={() => void handleSave()}
                 >
-                  حفظ الخطة
+                  حفظ السعر
                 </Button>
                 <Button variant="secondary" onClick={resetForm}>
                   مسح
                 </Button>
               </div>
+              {selectedUnit ? (
+                <p className="text-xs text-foreground-subtle">
+                  الوحدة المختارة: {selectedUnit.name}
+                </p>
+              ) : null}
             </div>
           </Card>
         ) : null}
       </div>
-
-      <Modal
-        open={deleting !== null}
-        title={deleting ? `حذف الخطة: ${deleting.duration_days} يوم` : ''}
-        description={
-          deleting
-            ? `إن كانت الخطة مرتبطة باشتراكات أو أكواد سابقة فلن تُحذف نهائيًا بل ستُوقف (is_active = false). إن لم تكن مرتبطة بأي شيء فستُحذف نهائيًا.`
-            : ''
-        }
-        confirmLabel="نعم، حذف"
-        danger
-        loading={deleteBusy}
-        onConfirm={() => void handleDelete()}
-        onCancel={() => {
-          if (!deleteBusy) {
-            setDeleting(null);
-          }
-        }}
-      />
     </LayoutShell>
   );
 }

@@ -12,21 +12,22 @@ import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
 import { StaffNav } from '../../components/StaffNav';
-import { StatusBadge } from '../../components/StatusBadge';
+import { PurchaseBadge, StatusBadge } from '../../components/StatusBadge';
 import { useToast } from '../../components/Toast';
 import {
   disableStudent,
   enableStudent,
   getProfileById,
+  listAllUnitPurchases,
   listGrades,
   restoreStudent,
   setStudentGrade,
   softDeleteStudent,
   updateStudentProfile,
 } from '../../data/rpc';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTime, formatPrice } from '../../lib/format';
 import { validateProfileForm, type ProfileFormValues } from '../../lib/validation';
-import type { Grade, Profile } from '../../types/database';
+import type { Grade, Profile, UnitPurchaseWithUnit } from '../../types/database';
 
 type PendingAction = 'disable' | 'enable' | 'delete' | 'restore' | null;
 
@@ -98,6 +99,7 @@ export function StudentDetailPage() {
   const { showToast } = useToast();
 
   const [student, setStudent] = useState<Profile | null>(null);
+  const [purchases, setPurchases] = useState<UnitPurchaseWithUnit[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [form, setForm] = useState<ProfileFormValues>({
@@ -119,9 +121,10 @@ export function StudentDetailPage() {
     setLoadError(false);
     setStudent(null);
     try {
-      const [nextStudent, nextGrades] = await Promise.all([
+      const [nextStudent, nextGrades, nextPurchases] = await Promise.all([
         getProfileById(studentId),
         listGrades(),
+        listAllUnitPurchases(studentId),
       ]);
       if (!nextStudent) {
         setLoadError(true);
@@ -129,6 +132,7 @@ export function StudentDetailPage() {
       }
       setStudent(nextStudent);
       setGrades(nextGrades);
+      setPurchases(nextPurchases);
       setForm({
         fullName: nextStudent.full_name,
         phone: nextStudent.phone,
@@ -310,6 +314,35 @@ export function StudentDetailPage() {
               </>
             )}
           </div>
+        </Card>
+
+        <Card title="الوحدات المشتراة" subtitle="وحدات مُفعّلة مدى الحياة لهذا الطالب">
+          {purchases.length === 0 ? (
+            <p className="text-sm text-foreground-muted">لم يشترِ هذا الطالب أي وحدات بعد.</p>
+          ) : (
+            <ul className="divide-y divide-border-muted">
+              {purchases.map((purchase) => (
+                <li
+                  key={purchase.id}
+                  className="flex items-center justify-between gap-3 py-3"
+                  data-testid={`purchase-${purchase.id}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">{purchase.unit_name}</p>
+                    <p className="mt-0.5 text-xs text-foreground-subtle">
+                      {formatDateTime(purchase.purchased_at)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="text-sm font-medium text-foreground" dir="ltr">
+                      {formatPrice(purchase.total_price)}
+                    </span>
+                    <PurchaseBadge status={purchase.status} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
 
         <Card title="تعديل البيانات" subtitle="بيانات الطالب الشخصية">

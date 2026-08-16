@@ -22,19 +22,22 @@ import {
 } from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import {
-  generateSubscriptionCodes,
+  createUnitCodesForStaff,
   getRpcErrorCode,
-  listCodesByPlan,
-  listPricingPlans,
-  revokeSubscriptionCode,
+  listCodesByUnit,
+  listUnitPricing,
+  revokeUnitCode,
 } from '../../data/rpc';
 import { formatDateTime, formatPrice } from '../../lib/format';
-import type { CodeWithStudent, PricingPlanWithGrade } from '../../types/database';
+import type { UnitCodeWithUnit, UnitPricingWithUnit } from '../../types/database';
 
 const CODE_ERROR_MESSAGES: Record<string, string> = {
   invalid_count: 'يجب أن يكون العدد بين 1 و 500',
-  plan_inactive: 'الخطة غير متاحة حالياً',
-  plan_not_found: 'الخطة المختارة غير موجودة',
+  unit_not_found: 'الوحدة المختارة غير موجودة',
+  unit_inactive: 'هذه الوحدة غير متاحة حالياً',
+  code_not_found: 'الكود غير موجود',
+  code_not_revocable: 'هذا الكود لا يمكن إلغاؤه',
+  code_already_used: 'الكود المستخدم لا يمكن إلغاؤه',
   permission_denied: 'ليست لديك صلاحية',
   access_denied: 'ليست لديك صلاحية',
 };
@@ -51,24 +54,25 @@ const COPIED_LABEL = 'تم النسخ ✓';
 
 export function CodesPage() {
   const { showToast } = useToast();
-  const [codes, setCodes] = useState<CodeWithStudent[] | null>(null);
-  const [plans, setPlans] = useState<PricingPlanWithGrade[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [codes, setCodes] = useState<UnitCodeWithUnit[] | null>(null);
+  const [pricing, setPricing] = useState<UnitPricingWithUnit[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState('');
   const [count, setCount] = useState('');
+  const [note, setNote] = useState('');
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [error, setError] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [countError, setCountError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [revoking, setRevoking] = useState<CodeWithStudent | null>(null);
+  const [revoking, setRevoking] = useState<UnitCodeWithUnit | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError(false);
     try {
-      const nextPlans = await listPricingPlans();
-      setPlans(nextPlans);
-      setSelectedPlanId((prev) => prev || (nextPlans[0]?.id ?? ''));
+      const nextPricing = await listUnitPricing();
+      setPricing(nextPricing);
+      setSelectedUnitId((prev) => prev || (nextPricing[0]?.unit_id ?? ''));
     } catch {
       setError(true);
     }
@@ -80,14 +84,14 @@ export function CodesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedPlanId) {
+    if (!selectedUnitId) {
       setCodes([]);
       return () => {
         cancelled = true;
       };
     }
     setCodes(null);
-    listCodesByPlan(selectedPlanId)
+    listCodesByUnit(selectedUnitId)
       .then((rows) => {
         if (!cancelled) {
           setCodes(rows);
@@ -101,12 +105,12 @@ export function CodesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPlanId]);
+  }, [selectedUnitId]);
 
   const handleGenerate = async () => {
     setCountError(null);
-    if (!selectedPlanId) {
-      setCountError('لا توجد خطط نشطة');
+    if (!selectedUnitId) {
+      setCountError('لا توجد وحدات متاحة');
       return;
     }
     const countNumber = Math.trunc(Number(count));
@@ -116,9 +120,11 @@ export function CodesPage() {
     }
     setGenerating(true);
     try {
-      const result = await generateSubscriptionCodes(selectedPlanId, countNumber);
-      setGeneratedCodes(result);
+      const result = await createUnitCodesForStaff(selectedUnitId, countNumber, note.trim() || null);
+      setGeneratedCodes(result.map((item) => item.code));
       showToast(`تم توليد ${result.length} كود بنجاح`);
+      const rows = await listCodesByUnit(selectedUnitId);
+      setCodes(rows);
     } catch (err) {
       setCountError(codeErrorMessage(err));
     } finally {
@@ -145,10 +151,10 @@ export function CodesPage() {
     }
     setRevokeBusy(true);
     try {
-      await revokeSubscriptionCode(revoking.id);
+      await revokeUnitCode(revoking.id);
       setRevoking(null);
       showToast('تم إلغاء الكود');
-      const rows = await listCodesByPlan(selectedPlanId);
+      const rows = await listCodesByUnit(selectedUnitId);
       setCodes(rows);
     } catch (err) {
       showToast(codeErrorMessage(err), 'error');
@@ -160,28 +166,30 @@ export function CodesPage() {
 
   return (
     <LayoutShell
-      title="أكواد التفعيل"
-      subtitle="توليد أكواد تفعيل للطلاب ومتابعة حالة كل كود"
+      title="أكواد الوحدات"
+      subtitle="توليد أكواد تفعيل للوحدات ومتابعة حالة كل كود"
       variant="sidebar"
       nav={<StaffNav />}
     >
       <div className="flex flex-col gap-4">
-        <Card title="توليد أكواد" subtitle="كل كود يُستخدم مرة واحدة فقط لتفعيل اشتراك">
+        <Card title="توليد أكواد" subtitle="كل كود يُستخدم مرة واحدة فقط لتفعيل وحدة مدى الحياة">
           <div className="flex flex-col gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Select
-                label="الخطة"
-                name="code-plan"
-                value={selectedPlanId}
-                onChange={(event) => setSelectedPlanId(event.target.value)}
+                label="الوحدة"
+                name="code-unit"
+                value={selectedUnitId}
+                onChange={(event) => {
+                  setSelectedUnitId(event.target.value);
+                  setGeneratedCodes([]);
+                }}
               >
-                {plans.length === 0 ? (
-                  <option value="">لا توجد خطط نشطة</option>
+                {pricing.length === 0 ? (
+                  <option value="">لا توجد وحدات مسعّرة</option>
                 ) : (
-                  plans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.grade_name ?? '—'} — {plan.duration_days} يوم (
-                      {formatPrice(plan.total_price)})
+                  pricing.map((item) => (
+                    <option key={item.unit_id} value={item.unit_id}>
+                      {item.grade_name} — {item.unit_name} ({formatPrice(item.total_price)})
                     </option>
                   ))
                 )}
@@ -194,6 +202,12 @@ export function CodesPage() {
                 min={1}
                 max={500}
                 onChange={(event) => setCount(event.target.value)}
+              />
+              <Input
+                label="ملاحظة (اختياري)"
+                name="code-note"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -254,24 +268,23 @@ export function CodesPage() {
                 <Skeleton key={index} className="h-12 w-full rounded-sm" />
               ))}
             </div>
-          ) : plans.length === 0 ? (
+          ) : pricing.length === 0 ? (
             <EmptyState
-              title="لا توجد خطط نشطة"
-              description="أضف خطة اشتراك من صفحة الأسعار أولاً."
+              title="لا توجد وحدات مسعّرة"
+              description="أضف سعرًا لوحدة من صفحة أسعار الوحدات أولاً."
             />
           ) : codes.length === 0 ? (
             <EmptyState
-              title="لا توجد أكواد لهذه الخطة بعد"
-              description="استخدم النموذج بالأعلى لتوليد أكواد لهذه الخطة."
+              title="لا توجد أكواد لهذه الوحدة بعد"
+              description="استخدم النموذج بالأعلى لتوليد أكواد لهذه الوحدة."
             />
           ) : (
             <Table>
               <TableHead>
                 <TableRow>
                   <TableHeadCell>الكود</TableHeadCell>
-                  <TableHeadCell>الخطة</TableHeadCell>
+                  <TableHeadCell>الوحدة</TableHeadCell>
                   <TableHeadCell>تم إنشاؤه</TableHeadCell>
-                  <TableHeadCell>الطالب</TableHeadCell>
                   <TableHeadCell>ملاحظة</TableHeadCell>
                   <TableHeadCell>الحالة</TableHeadCell>
                   <TableHeadCell>إجراءات</TableHeadCell>
@@ -281,7 +294,6 @@ export function CodesPage() {
                 {codes.map((item) => {
                   const isUsed = item.status === 'used';
                   const isRevoked = item.status === 'revoked';
-                  const plan = plans.find((entry) => entry.id === item.pricing_plan_id);
                   return (
                     <TableRow key={item.id} data-testid={`code-row-${item.id}`}>
                       <TableCell label="الكود">
@@ -289,24 +301,10 @@ export function CodesPage() {
                           {item.code}
                         </code>
                       </TableCell>
-                      <TableCell label="الخطة" className="text-foreground-muted">
-                        {plan ? (
-                          <>
-                            {plan.grade_name ?? '—'} — {plan.duration_days} يوم (
-                            {formatPrice(plan.total_price)})
-                          </>
-                        ) : (
-                          '—'
-                        )}
+                      <TableCell label="الوحدة" className="text-foreground-muted">
+                        {item.unit_name || '—'}
                       </TableCell>
                       <TableCell label="تم إنشاؤه">{formatDateTime(item.created_at)}</TableCell>
-                      <TableCell label="الطالب">
-                        {item.student_name ? (
-                          <span className="font-medium text-foreground">{item.student_name}</span>
-                        ) : (
-                          <span className="text-foreground-muted">—</span>
-                        )}
-                      </TableCell>
                       <TableCell label="ملاحظة">
                         {item.note ? (
                           <span className="text-foreground-muted">{item.note}</span>

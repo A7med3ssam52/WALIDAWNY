@@ -171,6 +171,15 @@ async function main() {
         INSERT INTO public.lessons (id, unit_id, title, sort_order, status, deleted_at)
         VALUES ('40000000-0000-0000-0000-000000000012', '30000000-0000-0000-0000-00000000000c', 'Race Lesson', 98, 'published', NULL)
         ON CONFLICT (id) DO UPDATE SET status = 'published', deleted_at = NULL;
+        -- upsert_progress is gated on can_access_lesson (0028): give A a
+        -- purchase on the race unit so the two first-inserts are legal.
+        INSERT INTO public.unit_pricing (id, unit_id, base_price, platform_fee, is_active)
+        VALUES ('20000000-0000-0000-0000-0000000000cc', '30000000-0000-0000-0000-00000000000c', 100, 10, true)
+        ON CONFLICT (unit_id) DO UPDATE SET is_active = true;
+        INSERT INTO public.unit_purchases (id, student_id, unit_id, base_price, platform_fee, status)
+        VALUES ('70000000-0000-0000-0000-0000000000cc', '70000000-0000-0000-0000-000000000001',
+                '30000000-0000-0000-0000-00000000000c', 100, 10, 'active')
+        ON CONFLICT (student_id, unit_id) DO UPDATE SET status = 'active';
         DELETE FROM public.progress
         WHERE student_id = '70000000-0000-0000-0000-000000000001'
           AND lesson_id = '40000000-0000-0000-0000-000000000012';
@@ -206,7 +215,12 @@ async function main() {
         throw new Error(`unexpected merged state: ${JSON.stringify(row)}`);
       }
       await client.query(
-        `DELETE FROM public.progress
+        `DELETE FROM public.unit_purchases
+          WHERE student_id = '70000000-0000-0000-0000-000000000001'
+            AND unit_id = '30000000-0000-0000-0000-00000000000c';
+         DELETE FROM public.unit_pricing
+          WHERE unit_id = '30000000-0000-0000-0000-00000000000c';
+         DELETE FROM public.progress
           WHERE student_id = '70000000-0000-0000-0000-000000000001'
             AND lesson_id = '40000000-0000-0000-0000-000000000012';`);
       log(`[test ] concurrency upsert_progress (HIGH-3)   PASS (${Date.now() - t0}ms)`);
@@ -220,15 +234,15 @@ async function main() {
 
   // ------------------------------------------------------------------
   // Phase 3 race: two students redeem the SAME code concurrently.
-  // redeem_subscription_code (0006) serializes on an advisory xact lock
-  // per code + FOR UPDATE + re-validation, so EXACTLY ONE attempt may
-  // win: the loser must fail with code_already_used and the code must
-  // end 'used' with exactly one subscription (code_redemptions UNIQUE
-  // backstop). Two fresh student accounts (grade 1, no subscription)
-  // race a freshly seeded available code.
+  // redeem_unit_code (0028) serializes on an advisory xact lock per code
+  // + FOR UPDATE + re-validation, so EXACTLY ONE attempt may win: the
+  // loser must fail with code_already_used and the code must end 'used'
+  // with exactly one purchase (unit_purchases row via code_id). Two
+  // fresh student accounts (grade 1) race a freshly seeded available
+  // code linked to the u1 pricing fixture.
   // ------------------------------------------------------------------
   {
-    const RACE_CODE = 'WLDN-RACE-RACE-RACE';
+    const RACE_CODE = 'WLDN-RACERACERACE';
     const RACE_CODE_ID = '90000000-0000-0000-0000-00000000deef';
     const raceStudents = [
       '70000000-0000-0000-0000-0000000000c1',
@@ -238,11 +252,10 @@ async function main() {
     try {
       await client.query(`
         DELETE FROM public.notifications WHERE user_id IN ('${raceStudents[0]}', '${raceStudents[1]}');
-        DELETE FROM public.code_redemptions WHERE code_id = '${RACE_CODE_ID}';
-        DELETE FROM public.subscriptions WHERE code_id = '${RACE_CODE_ID}';
-        DELETE FROM public.subscription_codes WHERE code = '${RACE_CODE}';
+        DELETE FROM public.unit_purchases WHERE code_id = '${RACE_CODE_ID}';
+        DELETE FROM public.unit_codes WHERE id = '${RACE_CODE_ID}';
         DELETE FROM auth.users WHERE id IN ('${raceStudents[0]}', '${raceStudents[1]}');
-        INSERT INTO public.subscription_codes (id, code, pricing_plan_id, status, created_by, created_at, note)
+        INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
         VALUES ('${RACE_CODE_ID}', '${RACE_CODE}', '20000000-0000-0000-0000-000000000001', 'available',
                 '70000000-0000-0000-0000-00000000000a', now(), 'RACE-FIXTURE');
         INSERT INTO auth.users (id, email, encrypted_password, raw_user_meta_data) VALUES
@@ -263,7 +276,7 @@ async function main() {
         'BEGIN;',
         `SET LOCAL "app.current_user_id" = '${sid}';`,
         'SET LOCAL ROLE student;',
-        `SELECT public.redeem_subscription_code('${RACE_CODE}');`,
+        `SELECT public.redeem_unit_code('${RACE_CODE}');`,
         'COMMIT;',
       ].join(' ');
       const outcomes = await Promise.allSettled([
@@ -284,28 +297,25 @@ async function main() {
       }
 
       const check = await client.query(`
-        SELECT (SELECT count(*) FROM public.subscriptions WHERE code_id = '${RACE_CODE_ID}') AS sub_count,
-               (SELECT status FROM public.subscription_codes WHERE id = '${RACE_CODE_ID}') AS code_status,
-               (SELECT count(*) FROM public.code_redemptions WHERE code_id = '${RACE_CODE_ID}') AS redemption_count`);
-      const mergedOk = Number(check.rows[0].sub_count) === 1
-        && check.rows[0].code_status === 'used'
-        && Number(check.rows[0].redemption_count) === 1;
+        SELECT (SELECT count(*) FROM public.unit_purchases WHERE code_id = '${RACE_CODE_ID}') AS purchase_count,
+               (SELECT status FROM public.unit_codes WHERE id = '${RACE_CODE_ID}') AS code_status`);
+      const mergedOk = Number(check.rows[0].purchase_count) === 1
+        && check.rows[0].code_status === 'used';
       if (!mergedOk) {
         throw new Error(`unexpected redemption race outcome: ${JSON.stringify(check.rows[0])}`);
       }
 
       await client.query(`
         DELETE FROM public.notifications WHERE user_id IN ('${raceStudents[0]}', '${raceStudents[1]}');
-        DELETE FROM public.code_redemptions WHERE code_id = '${RACE_CODE_ID}';
-        DELETE FROM public.subscriptions WHERE code_id = '${RACE_CODE_ID}';
-        DELETE FROM public.subscription_codes WHERE id = '${RACE_CODE_ID}';
+        DELETE FROM public.unit_purchases WHERE code_id = '${RACE_CODE_ID}';
+        DELETE FROM public.unit_codes WHERE id = '${RACE_CODE_ID}';
         DELETE FROM auth.users WHERE id IN ('${raceStudents[0]}', '${raceStudents[1]}');
       `);
-      log(`[test ] concurrency redeem_subscription_code (Phase 3) PASS (${Date.now() - t0}ms)`);
+      log(`[test ] concurrency redeem_unit_code (Phase 3)   PASS (${Date.now() - t0}ms)`);
       passes += 1;
     } catch (e) {
       failures += 1;
-      log(`[test ] concurrency redeem_subscription_code (Phase 3) FAIL (${Date.now() - t0}ms)`);
+      log(`[test ] concurrency redeem_unit_code (Phase 3)   FAIL (${Date.now() - t0}ms)`);
       log(`        ${e.message.split('\n')[0]}`);
     }
   }

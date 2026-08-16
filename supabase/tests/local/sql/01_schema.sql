@@ -1,26 +1,38 @@
 -- =====================================================================
 -- 01_schema.sql — schema & constraint assertions
--- Covers TESTING.md section 3: 14 tables, 7 enums, columns, CHECK /
--- UNIQUE / partial-unique / FK rules, RLS enabled + FORCEd, 6 views
--- (SECURITY INVOKER), trigger inventory, storage buckets, B1 ownership,
--- B2 notification grants.
+-- Covers IMPLEMENTATION-PLAN.md section 6.1: 18 tables (17 + lesson_comments
+-- from 0030), 8 enums, columns, CHECK / UNIQUE / partial-unique / FK
+-- rules, RLS enabled + FORCEd, 5 views (SECURITY INVOKER), trigger
+-- inventory, storage buckets, B1 ownership, B2 notification grants.
+-- The four subscription tables (pricing_plans / subscriptions /
+-- subscription_codes / code_redemptions) and the subscription_status
+-- enum must NOT exist after 0028.
 -- =====================================================================
 
--- --- 14 application tables exist -------------------------------------
+-- --- 18 application tables exist -------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 14 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 18 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
-       AND c.relname IN ('profiles','grades','pricing_plans','subscriptions',
-                         'subscription_codes','code_redemptions','units','lessons',
+       AND c.relname IN ('profiles','grades','units','lessons',
                          'lesson_videos','lesson_pdfs','progress','notifications',
-                         'audit_logs','app_settings')),
-    'all 14 application tables exist');
+                         'audit_logs','app_settings',
+                         'unit_pricing','unit_codes','unit_purchases',
+                         'exams','exam_questions','exam_attempts','exam_answers',
+                         'lesson_comments')),
+    'all 18 application tables exist (17 + lesson_comments)');
 
--- --- 7 enums with exact member sets ----------------------------------
+-- --- the four legacy subscription tables are GONE ---------------------
 SELECT tests.assert(
-    (SELECT count(*) = 7 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+    (SELECT count(*) = 0 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relkind = 'r'
+       AND c.relname IN ('pricing_plans','subscriptions','subscription_codes','code_redemptions')),
+    'legacy subscription tables dropped (0028 step 12)');
+
+-- --- 8 enums with exact member sets ----------------------------------
+SELECT tests.assert(
+    (SELECT count(*) = 8 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
      WHERE n.nspname = 'public' AND t.typtype = 'e'),
-    'exactly 7 enums exist in public');
+    'exactly 8 enums exist in public');
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
@@ -35,13 +47,6 @@ SELECT tests.assert(
      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
      WHERE t.typname = 'account_status'),
     'account_status members are active,disabled');
-
-SELECT tests.assert(
-    (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
-            ARRAY['active','expired']::text[]
-     FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
-     WHERE t.typname = 'subscription_status'),
-    'subscription_status members are active,expired');
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
@@ -66,18 +71,36 @@ SELECT tests.assert(
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
-            ARRAY['subscription_activated','subscription_expiring','subscription_expired','new_content','system']::text[]
+            ARRAY['new_content','unit_activated','system','exam_submitted','exam_graded','lesson_comment','comment_reply']::text[]
      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
      WHERE t.typname = 'notification_type'),
-    'notification_type members match DATABASE.md');
+    'notification_type members are new_content,unit_activated,system + exam_submitted,exam_graded (0028/0029) + lesson_comment,comment_reply (0030)');
 
--- --- RLS enabled + FORCEd on all 14 tables ----------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 14
+    (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
+            ARRAY['active','void']::text[]
+     FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+     WHERE t.typname = 'unit_purchase_status'),
+    'unit_purchase_status members are active,void');
+
+SELECT tests.assert(
+    (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
+            ARRAY['mcq','essay']::text[]
+     FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+     WHERE t.typname = 'exam_question_type'),
+    'exam_question_type members are mcq,essay (0029)');
+
+SELECT tests.assert(
+    (SELECT to_regtype('public.subscription_status') IS NULL),
+    'subscription_status enum does NOT exist (0028 step 13)');
+
+-- --- RLS enabled + FORCEd on all 18 tables ----------------------------
+SELECT tests.assert(
+    (SELECT count(*) = 18
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relrowsecurity AND c.relforcerowsecurity),
-    'RLS enabled AND forced on all 14 tables');
+    'RLS enabled AND forced on all 18 tables');
 
 -- --- expected columns present ----------------------------------------
 SELECT tests.assert(
@@ -89,8 +112,8 @@ SELECT tests.assert(
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'updated_at'),
-    'subscriptions has NO updated_at column (immutable history)');
+     WHERE table_schema = 'public' AND table_name = 'unit_purchases' AND column_name = 'updated_at'),
+    'unit_purchases has NO updated_at column (immutable history)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM information_schema.columns
@@ -104,13 +127,8 @@ SELECT tests.assert(
 
 SELECT tests.assert(
     (SELECT is_nullable = 'NO' FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'guardian_phone'),
-    'profiles.guardian_phone NOT NULL');
-
-SELECT tests.assert(
-    (SELECT is_nullable = 'NO' FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'address'),
-    'profiles.address NOT NULL');
+     WHERE table_schema = 'public' AND table_name = 'lessons' AND column_name = 'is_trial'),
+    'lessons.is_trial NOT NULL');
 
 SELECT tests.assert(
     (SELECT data_type = 'numeric' AND numeric_precision = 5 AND numeric_scale = 2
@@ -135,31 +153,31 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT count(*) = 1
      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'subscription_codes' AND c.contype = 'c'
-       AND pg_get_constraintdef(c.oid) LIKE '%code = upper(code)%'),
-    'subscription_codes CHECK enforces stored-uppercase codes');
-
-SELECT tests.assert(
-    (SELECT count(*) = 1
-     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'subscription_codes' AND c.contype = 'c'
+     WHERE t.relname = 'unit_codes' AND c.contype = 'c'
        AND pg_get_constraintdef(c.oid) LIKE '%WLDN-%'
-       AND pg_get_constraintdef(c.oid) LIKE '%ABCDEFGHJKLMNPQRSTUVWXYZ23456789%'),
-    'subscription_codes CHECK enforces the unambiguous format regex (B9/A22)');
+       AND pg_get_constraintdef(c.oid) LIKE '%A-Z0-9%'),
+    'unit_codes CHECK enforces the stored-uppercase WLDN- format (0028)');
 
 SELECT tests.assert(
     (SELECT count(*) = 1
      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'pricing_plans' AND c.contype = 'c'
-       AND pg_get_constraintdef(c.oid) ~ 'total_price\s*=\s*(\(base_price\s*\+\s*platform_fee|base_price\s*\+\s*platform_fee\)|base_price\s*\+\s*platform_fee)\s*\)?'),
-    'pricing_plans CHECK total = base + fee (A6)');
+     WHERE t.relname = 'unit_pricing' AND c.contype = 'c'
+       AND pg_get_constraintdef(c.oid) LIKE '%base_price >= %'),
+    'unit_pricing CHECK base_price >= 0');
 
 SELECT tests.assert(
     (SELECT count(*) = 1
      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'subscriptions' AND c.contype = 'c'
-       AND pg_get_constraintdef(c.oid) LIKE '%expires_at > started_at%'),
-    'subscriptions CHECK expires_at > started_at');
+     WHERE t.relname = 'unit_pricing' AND c.contype = 'c'
+       AND pg_get_constraintdef(c.oid) LIKE '%platform_fee >= %'),
+    'unit_pricing CHECK platform_fee >= 0');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1
+     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+     WHERE t.relname = 'unit_purchases' AND c.contype = 'c'
+       AND pg_get_constraintdef(c.oid) LIKE '%base_price >= %'),
+    'unit_purchases CHECK base_price >= 0');
 
 SELECT tests.assert(
     (SELECT count(*) = 1
@@ -168,19 +186,22 @@ SELECT tests.assert(
        AND pg_get_constraintdef(c.oid) LIKE '%percent_completed%0%100%'),
     'progress CHECK 0 <= percent_completed <= 100');
 
+-- --- GENERATED total_price (base + platform) --------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 1
-     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'pricing_plans' AND c.contype = 'c'
-       AND pg_get_constraintdef(c.oid) LIKE '%duration_days > 0%'),
-    'pricing_plans CHECK duration_days > 0');
+    (SELECT pg_get_expr(ad.adbin, ad.adrelid) LIKE '%base_price%platform_fee%'
+     FROM pg_attrdef ad
+     JOIN pg_class c ON c.oid = ad.adrelid
+     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ad.adnum
+     WHERE c.relname = 'unit_pricing' AND a.attname = 'total_price'),
+    'unit_pricing.total_price is GENERATED as base + platform');
 
 SELECT tests.assert(
-    (SELECT count(*) = 1
-     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'subscriptions' AND c.contype = 'c'
-       AND pg_get_constraintdef(c.oid) ~ 'source\s*=\s*ANY\s*\(ARRAY\[.*''code''::text.*''manual''::text'),
-    'subscriptions CHECK source IN (code, manual)');
+    (SELECT pg_get_expr(ad.adbin, ad.adrelid) LIKE '%base_price%platform_fee%'
+     FROM pg_attrdef ad
+     JOIN pg_class c ON c.oid = ad.adrelid
+     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ad.adnum
+     WHERE c.relname = 'unit_purchases' AND a.attname = 'total_price'),
+    'unit_purchases.total_price is GENERATED as base + platform');
 
 -- --- UNIQUE constraints ----------------------------------------------
 SELECT tests.assert(
@@ -197,8 +218,17 @@ SELECT tests.assert(
     'units (grade_id, name) UNIQUE');
 
 SELECT tests.assert(
-    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'code_redemptions' AND indexdef LIKE '%code_id%' AND indexdef LIKE '%UNIQUE%'),
-    'code_redemptions (code_id) UNIQUE - physical double-redemption backstop');
+    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'unit_codes' AND indexname = 'unit_codes_code_key'),
+    'unit_codes.code UNIQUE');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'unit_pricing' AND indexdef LIKE '%unit_id%' AND indexdef LIKE '%UNIQUE%'),
+    'unit_pricing.unit_id UNIQUE (one price row per unit)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'unit_purchases'
+     AND indexdef LIKE '%student_id%' AND indexdef LIKE '%unit_id%' AND indexdef LIKE '%UNIQUE%'),
+    'unit_purchases (student_id, unit_id) UNIQUE');
 
 SELECT tests.assert(
     (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'progress'
@@ -228,6 +258,12 @@ SELECT tests.assert(
      AND indexdef LIKE '%UNIQUE%' AND indexdef LIKE '%lesson_id%' AND indexdef LIKE '%WHERE%is_primary%deleted_at IS NULL%'),
     'lesson_pdfs partial unique: one primary per lesson');
 
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'lessons'
+     AND indexdef LIKE '%UNIQUE%' AND indexdef LIKE '%unit_id%'
+     AND indexdef LIKE '%WHERE%is_trial%deleted_at IS NULL%'),
+    'lessons partial unique: at most one trial lesson per unit (0028)');
+
 -- --- FK ON DELETE behaviors ------------------------------------------
 SELECT tests.assert(
     (SELECT count(*) = 1
@@ -253,16 +289,37 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT count(*) = 1
      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'subscriptions' AND c.contype = 'f' AND c.conname = 'subscriptions_pricing_plan_id_fkey'
-       AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE RESTRICT%'),
-    'subscriptions.pricing_plan_id -> pricing_plans RESTRICT (B7)');
+     WHERE t.relname = 'unit_pricing' AND c.contype = 'f'
+       AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES units%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE CASCADE%'),
+    'unit_pricing.unit_id -> units CASCADE');
 
 SELECT tests.assert(
     (SELECT count(*) = 1
      FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
-     WHERE t.relname = 'code_redemptions' AND c.contype = 'f' AND c.conname = 'code_redemptions_subscription_id_fkey'
-       AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE RESTRICT%'),
-    'code_redemptions.subscription_id -> subscriptions RESTRICT (L6)');
+     WHERE t.relname = 'unit_codes' AND c.contype = 'f'
+       AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES unit_pricing%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE RESTRICT%'),
+    'unit_codes.unit_pricing_id -> unit_pricing RESTRICT');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1
+     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+     WHERE t.relname = 'unit_purchases' AND c.contype = 'f'
+       AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES profiles%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE CASCADE%'),
+    'unit_purchases.student_id -> profiles CASCADE');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1
+     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+     WHERE t.relname = 'unit_purchases' AND c.contype = 'f'
+       AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES units%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE RESTRICT%'),
+    'unit_purchases.unit_id -> units RESTRICT');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1
+     FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+     WHERE t.relname = 'unit_purchases' AND c.contype = 'f'
+       AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES unit_codes%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE SET NULL%'),
+    'unit_purchases.code_id -> unit_codes SET NULL');
 
 SELECT tests.assert(
     (SELECT count(*) = 1
@@ -278,24 +335,36 @@ SELECT tests.assert(
        AND pg_get_constraintdef(c.oid) LIKE '%REFERENCES lessons%' AND pg_get_constraintdef(c.oid) LIKE '%ON DELETE CASCADE%'),
     'lesson_videos.lesson_id -> lessons CASCADE');
 
--- --- 6 views, all SECURITY INVOKER -----------------------------------
+-- --- 5 views, all SECURITY INVOKER; v_active_subscriptions GONE -------
 SELECT tests.assert(
-    (SELECT count(*) = 6 FROM information_schema.views WHERE table_schema = 'public'
-     AND table_name IN ('v_active_subscriptions','v_lesson_access','v_student_progress_summary',
+    (SELECT count(*) = 5 FROM information_schema.views WHERE table_schema = 'public'
+     AND table_name IN ('v_lesson_access','v_student_progress_summary',
                         'v_lesson_stats','v_dashboard_metrics','v_audit_log')),
-    'all 6 views exist');
+    'all 5 views exist');
+
+SELECT tests.assert(
+    (SELECT to_regclass('public.v_active_subscriptions') IS NULL),
+    'v_active_subscriptions dropped (0028 step 9)');
 
 -- PG views are SECURITY INVOKER by default (no SECURITY DEFINER views, L5);
 -- the previous information_schema.security_type column does not exist in PG.
 SELECT tests.assert(
-    (SELECT count(*) = 6 FROM information_schema.views
+    (SELECT count(*) = 5 FROM information_schema.views
      WHERE table_schema = 'public' AND table_name LIKE 'v_%'),
-    'all 6 views are SECURITY INVOKER (L5)');
+    'all 5 views are SECURITY INVOKER (L5)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relname LIKE 'v_%' AND c.reloptions IS NOT NULL),
     'no view carries security_barrier options');
+
+-- v_dashboard_metrics / v_lesson_access expose no subscription columns
+SELECT tests.assert(
+    (SELECT count(*) = 0 FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name IN ('v_dashboard_metrics','v_lesson_access')
+       AND column_name LIKE '%subscription%'),
+    'no subscription column in the redefined views (0028 step 9)');
 
 -- --- Trigger inventory -------------------------------------------------
 SELECT tests.assert(
@@ -311,16 +380,16 @@ SELECT tests.assert(
     'block_sign_in_for_inactive_accounts trigger on auth.users');
 
 SELECT tests.assert(
-    (SELECT count(*) = 9 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 11 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'set_updated_at'
-       AND c.relname IN ('profiles','grades','pricing_plans','units','lessons','lesson_videos','lesson_pdfs','progress','app_settings')),
-    'set_updated_at on the 9 documented tables');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','progress','app_settings','unit_pricing','unit_codes','exams')),
+    'set_updated_at on the 11 documented tables (0028 list + exams 0029)');
 
 SELECT tests.assert(
-    (SELECT count(*) = 10 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 12 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'audit_trigger'
-       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','pricing_plans','subscriptions','subscription_codes','app_settings')),
-    'audit_trigger on the exact 10-table inventory (MED-8)');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments')),
+    'audit_trigger on the exact 12-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid

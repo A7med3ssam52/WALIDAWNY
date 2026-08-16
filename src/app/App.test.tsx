@@ -6,7 +6,7 @@ describe('App', () => {
     vi.unstubAllEnvs();
   });
 
-  it('renders the config error screen when Supabase env vars are missing', async () => {
+  it('falls back to committed config when Supabase env vars are missing', async () => {
     vi.stubEnv('VITE_SUPABASE_URL', '');
     vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '');
     vi.resetModules();
@@ -14,8 +14,10 @@ describe('App', () => {
     const { App } = await import('./App');
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'تعذر تشغيل التطبيق' })).toBeInTheDocument();
-    expect(screen.getByText('VITE_SUPABASE_URL')).toBeInTheDocument();
-    expect(screen.getByText('VITE_SUPABASE_PUBLISHABLE_KEY')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'تعذر تشغيل التطبيق' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('VITE_SUPABASE_URL')).not.toBeInTheDocument();
+    expect(screen.queryByText('VITE_SUPABASE_PUBLISHABLE_KEY')).not.toBeInTheDocument();
   });
 });

@@ -183,18 +183,18 @@ describe('route guards', () => {
     });
   });
 
-  it('allows a student to open the subscriptions page', async () => {
+  it('allows a student to open the units page', async () => {
     setAuthenticatedStudent();
-    renderApp('/student/subscriptions');
+    renderApp('/student/units');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'الاشتراكات' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'وحداتي' })).toBeInTheDocument();
     });
   });
 
-  it('redirects mr_walid away from the student subscriptions page', async () => {
+  it('redirects mr_walid away from the student units page', async () => {
     setAuthenticatedWalid();
-    renderApp('/student/subscriptions');
+    renderApp('/student/units');
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'إدارة الطلاب' })).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe('route guards', () => {
     renderApp('/walid/codes');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'أكواد التفعيل' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'أكواد الوحدات' })).toBeInTheDocument();
     });
   });
 
@@ -215,7 +215,7 @@ describe('route guards', () => {
     renderApp('/walid/pricing');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'الأسعار' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'أسعار الوحدات' })).toBeInTheDocument();
     });
   });
 

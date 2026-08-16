@@ -2,22 +2,23 @@
 -- 02_roles.sql — role helpers, public settings, HIGH-1, escalation
 -- ---------------------------------------------------------------------
 -- Also builds the deterministic shared fixture used by 03/04/05:
--- grades, plans, staff + student users, curriculum, assets, progress,
--- subscriptions and codes. All fixture rows are recreated idempotently
--- (fixed UUIDs + cleanup of prior runs).
+-- grades, unit pricing, staff + student users, curriculum, assets,
+-- progress, unit purchases and codes. All fixture rows are recreated
+-- idempotently (fixed UUIDs + cleanup of prior runs).
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
 -- Fixture cleanup (prior runs) - order follows the FK graph:
--- code_redemptions -> subscription_codes -> profiles (cascades
--- subscriptions/progress/notifications) -> units (cascades lessons ->
--- videos/pdfs) -> pricing_plans -> grades.
+-- unit_purchases -> unit_codes -> profiles (cascades progress /
+-- notifications) -> units (cascades lessons -> videos/pdfs) ->
+-- unit_pricing -> grades. unit_codes MUST go before profiles because
+-- unit_codes.used_by -> profiles is NO ACTION.
 -- ---------------------------------------------------------------------
-DELETE FROM public.code_redemptions WHERE student_id IN (SELECT id FROM auth.users WHERE email LIKE 'test-%@walid.test');
-DELETE FROM public.subscription_codes WHERE note = 'TEST-FIXTURE';
+DELETE FROM public.unit_purchases WHERE student_id IN (SELECT id FROM auth.users WHERE email LIKE 'test-%@walid.test');
+DELETE FROM public.unit_codes WHERE note = 'TEST-FIXTURE';
 DELETE FROM public.profiles WHERE id IN (SELECT id FROM auth.users WHERE email LIKE 'test-%@walid.test');
 DELETE FROM public.units WHERE name LIKE 'TEST-%';
-DELETE FROM public.pricing_plans WHERE grade_id IN (SELECT id FROM public.grades WHERE name LIKE 'TEST-%');
+DELETE FROM public.unit_pricing WHERE unit_id IN (SELECT id FROM public.units WHERE name LIKE 'TEST-%');
 DELETE FROM public.grades WHERE name LIKE 'TEST-%';
 DELETE FROM public.audit_logs;
 DELETE FROM auth.users WHERE email LIKE 'test-%@walid.test';
@@ -33,30 +34,18 @@ INSERT INTO public.grades (id, name, sort_order, is_active, deleted_at) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
--- Pricing plans (grade 1: planA 30d, planA2 3d, planInactive 60d;
--- grade 2: planG2 30d, planG2b 7d)
--- ---------------------------------------------------------------------
-INSERT INTO public.pricing_plans (id, grade_id, duration_days, base_price, platform_fee, total_price, is_active) VALUES
-    ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 30,  100.00, 10.00, 110.00, true),
-    ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', 3,   20.00,  2.00,  22.00,  true),
-    ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', 60,  200.00, 20.00, 220.00, false),
-    ('20000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000002', 30,  120.00, 12.00, 132.00, true),
-    ('20000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000002', 7,   40.00,  4.00,  44.00,  true)
-ON CONFLICT (grade_id, duration_days) DO NOTHING;
-
--- ---------------------------------------------------------------------
 -- Staff + student users (handle_new_user creates the profile rows;
 -- 0027 makes grade_id a REQUIRED meta field, so every fixture carries
 -- the active grade-1 id; per-profile grades are set below)
--- A:  grade1 active,   has active subscription
--- B:  grade1 disabled, has active subscription (no pause - A9)
+-- A:  grade1 active,   purchased u1
+-- B:  grade1 disabled, purchased u2 (counts toward history - A9)
 -- C:  grade1 soft-deleted
--- D:  grade2 active,   has active subscription
--- E:  grade1 active,   no subscription (redeem subject)
--- F:  no grade, active, no subscription
--- G:  grade1 active,   no subscription (expiry subject)
--- H:  grade1 active,   no subscription (short-plan redeem subject)
--- W:  mr_walid,  AD: admin
+-- D:  grade2 active,   purchased u2
+-- E:  grade1 active,   no purchase (redeem subject)
+-- F:  no grade, active, no purchase
+-- G:  grade1 active,   no purchase (redeem subject)
+-- H:  grade1 active,   no purchase (trial-lesson subject)
+-- W:  mr_walid,  AD: admin,  T: teacher
 -- ---------------------------------------------------------------------
 INSERT INTO auth.users (id, email, encrypted_password, raw_user_meta_data) VALUES
     ('70000000-0000-0000-0000-000000000001', 'test-a@walid.test',   'x', '{"full_name":"A","phone":"+201001000001","guardian_phone":"+201001000001","address":"Cairo","grade_id":"10000000-0000-0000-0000-000000000001"}'),
@@ -84,11 +73,14 @@ UPDATE public.profiles SET grade_id = '10000000-0000-0000-0000-000000000001' WHE
 UPDATE public.profiles SET grade_id = '10000000-0000-0000-0000-000000000002' WHERE id = '70000000-0000-0000-0000-000000000004';
 UPDATE public.profiles SET status = 'disabled' WHERE id = '70000000-0000-0000-0000-000000000002';
 UPDATE public.profiles SET status = 'disabled', deleted_at = now() WHERE id = '70000000-0000-0000-0000-000000000003';
+-- F (test-f) has NO grade: profile created with meta grade but deliberately
+-- cleared (0027 handle_new_user honours meta grade_id, see insert above)
+UPDATE public.profiles SET grade_id = NULL WHERE id = '70000000-0000-0000-0000-000000000006';
 
 -- ---------------------------------------------------------------------
 -- Curriculum
 -- u1 (g1 published): l1 published, l2 draft, l3 hidden, l4 deleted,
---                    l8 published (PDF-only), l9 published (no assets)
+--                    l8 published (PDF-only), l9 published trial
 -- u1h (g1 hidden):   l5 published
 -- u2 (g2 published): l6 published
 -- u3 (g3 published): l7 published (inactive grade - B8)
@@ -100,16 +92,16 @@ INSERT INTO public.units (id, grade_id, name, sort_order, status, deleted_at) VA
     ('30000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000003', 'TEST-U3',  1, 'published', NULL)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.lessons (id, unit_id, title, description, sort_order, status, published_at, deleted_at) VALUES
-    ('40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'TEST-L1', NULL, 1, 'published', now(), NULL),
-    ('40000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000001', 'TEST-L2', NULL, 2, 'draft',     NULL,  NULL),
-    ('40000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000001', 'TEST-L3', NULL, 3, 'hidden',    NULL,  NULL),
-    ('40000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000001', 'TEST-L4', NULL, 4, 'published', now(), now()),
-    ('40000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000002', 'TEST-L5', NULL, 1, 'published', now(), NULL),
-    ('40000000-0000-0000-0000-000000000006', '30000000-0000-0000-0000-000000000003', 'TEST-L6', NULL, 1, 'published', now(), NULL),
-    ('40000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000004', 'TEST-L7', NULL, 1, 'published', now(), NULL),
-    ('40000000-0000-0000-0000-000000000008', '30000000-0000-0000-0000-000000000001', 'TEST-L8', NULL, 5, 'published', now(), NULL),
-    ('40000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000001', 'TEST-L9', NULL, 6, 'published', now(), NULL)
+INSERT INTO public.lessons (id, unit_id, title, description, sort_order, status, published_at, deleted_at, is_trial) VALUES
+    ('40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'TEST-L1', NULL, 1, 'published', now(), NULL, false),
+    ('40000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000001', 'TEST-L2', NULL, 2, 'draft',     NULL,  NULL, false),
+    ('40000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000001', 'TEST-L3', NULL, 3, 'hidden',    NULL,  NULL, false),
+    ('40000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000001', 'TEST-L4', NULL, 4, 'published', now(), now(), false),
+    ('40000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000002', 'TEST-L5', NULL, 1, 'published', now(), NULL, false),
+    ('40000000-0000-0000-0000-000000000006', '30000000-0000-0000-0000-000000000003', 'TEST-L6', NULL, 1, 'published', now(), NULL, false),
+    ('40000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000004', 'TEST-L7', NULL, 1, 'published', now(), NULL, false),
+    ('40000000-0000-0000-0000-000000000008', '30000000-0000-0000-0000-000000000001', 'TEST-L8', NULL, 5, 'published', now(), NULL, false),
+    ('40000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000001', 'TEST-L9', NULL, 6, 'published', now(), NULL, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -138,32 +130,47 @@ VALUES
 ON CONFLICT (student_id, lesson_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
--- Subscriptions: A, B (disabled, counts down), D
+-- Unit pricing (P12 snapshots; total_price is GENERATED)
+-- pu1 -> u1 (g1) 100 + 10 = 110 active
+-- pu2 -> u2 (g2) 120 + 12 = 132 active
+-- pu3 -> u3 (g3) 200 + 20 = 220 active
+-- pu4 -> u1h    50 + 5  =  55 inactive (hidden unit too)
 -- ---------------------------------------------------------------------
-INSERT INTO public.subscriptions (id, student_id, pricing_plan_id, base_price, platform_fee, total_price, code_id, source, started_at, expires_at, status)
-VALUES
-    ('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, NULL, 'manual', now() - interval '10 days', now() + interval '20 days', 'active'),
-    ('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 100.00, 10.00, 110.00, NULL, 'manual', now() - interval '10 days', now() + interval '30 days', 'active'),
-    ('80000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000004', 120.00, 12.00, 132.00, NULL, 'manual', now() - interval '10 days', now() + interval '30 days', 'active')
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.unit_pricing (id, unit_id, base_price, platform_fee, is_active) VALUES
+    ('20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 100.00, 10.00, true),
+    ('20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000003', 120.00, 12.00, true),
+    ('20000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000004', 200.00, 20.00, true),
+    ('20000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000002', 50.00,  5.00,  false)
+ON CONFLICT (unit_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
--- Codes (note = TEST-FIXTURE):
--- code1 -> planA (g1, 30d)            [redeem happy path + lowercase]
--- code2 -> planG2 (g2)                [plan_grade_mismatch]
--- code3 -> planA2 (g1, 3d short)      [no-grade + short-window + active-sub]
--- code4 -> planA, revoked             [code_revoked]
--- code5 -> planInactive (g1, 60d)     [plan_not_available]
--- code6 -> planA, already used by A   [code_already_used]
+-- Unit codes (note = TEST-FIXTURE, stored uppercase, no dashes):
+-- code1 -> pu1 (u1)                    [redeem happy path + lowercase]
+-- code2 -> pu2 (u2)                    [unit_not_in_student_grade]
+-- code3 -> pu1 (u1), revoked           [code_revoked]
+-- code4 -> pu3 (u3, inactive grade)    [unit_not_in_student_grade]
+-- code5 -> pu4 (u1h, inactive pricing) [unit_inactive]
+-- code6 -> pu1 (u1), used by A         [code_already_used]
 -- ---------------------------------------------------------------------
-INSERT INTO public.subscription_codes (id, code, pricing_plan_id, status, created_by, created_at, used_at, used_by, revoked_at, revoked_by, note) VALUES
-    ('90000000-0000-0000-0000-000000000001', 'WLDN-AAAA-AAAA-AAAA', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
-    ('90000000-0000-0000-0000-000000000002', 'WLDN-BBBB-BBBB-BBBB', '20000000-0000-0000-0000-000000000004', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
-    ('90000000-0000-0000-0000-000000000003', 'WLDN-CCCC-CCCC-CCCC', '20000000-0000-0000-0000-000000000002', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
-    ('90000000-0000-0000-0000-000000000004', 'WLDN-DDDD-DDDD-DDDD', '20000000-0000-0000-0000-000000000001', 'revoked',   '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, now(), '70000000-0000-0000-0000-00000000000a', 'TEST-FIXTURE'),
-    ('90000000-0000-0000-0000-000000000005', 'WLDN-EEEE-EEEE-EEEE', '20000000-0000-0000-0000-000000000003', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
-    ('90000000-0000-0000-0000-000000000006', 'WLDN-FFFF-FFFF-FFFF', '20000000-0000-0000-0000-000000000001', 'used',      '70000000-0000-0000-0000-00000000000a', now(), now(), '70000000-0000-0000-0000-000000000001', NULL, NULL, 'TEST-FIXTURE')
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, used_at, used_by, revoked_at, revoked_by, note) VALUES
+    ('90000000-0000-0000-0000-000000000001', 'WLDN-AAAAAAAAAAAA', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
+    ('90000000-0000-0000-0000-000000000002', 'WLDN-BBBBBBBBBBBB', '20000000-0000-0000-0000-000000000002', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
+    ('90000000-0000-0000-0000-000000000003', 'WLDN-CCCCCCCCCCCC', '20000000-0000-0000-0000-000000000001', 'revoked',   '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, now(), '70000000-0000-0000-0000-00000000000a', 'TEST-FIXTURE'),
+    ('90000000-0000-0000-0000-000000000004', 'WLDN-DDDDDDDDDDDD', '20000000-0000-0000-0000-000000000003', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
+    ('90000000-0000-0000-0000-000000000005', 'WLDN-EEEEEEEEEEEE', '20000000-0000-0000-0000-000000000004', 'available', '70000000-0000-0000-0000-00000000000a', now(), NULL, NULL, NULL, NULL, 'TEST-FIXTURE'),
+    ('90000000-0000-0000-0000-000000000006', 'WLDN-FFFFFFFFFFF', '20000000-0000-0000-0000-000000000001', 'used',      '70000000-0000-0000-0000-00000000000a', now(), now(), '70000000-0000-0000-0000-000000000001', NULL, NULL, 'TEST-FIXTURE')
+ON CONFLICT (code) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- Purchases (permanent - no expiry): A -> u1 (via code6), B -> u2
+-- (disabled but counts toward history - A9), D -> u2.
+-- ---------------------------------------------------------------------
+INSERT INTO public.unit_purchases (id, student_id, unit_id, base_price, platform_fee, code_id, status)
+VALUES
+    ('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 100.00, 10.00, '90000000-0000-0000-0000-000000000006', 'active'),
+    ('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000003', 120.00, 12.00, NULL, 'active'),
+    ('80000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000003', 120.00, 12.00, NULL, 'active')
+ON CONFLICT (student_id, unit_id) DO NOTHING;
 
 -- =====================================================================
 -- Role helper assertions
@@ -176,7 +183,7 @@ SELECT tests.assert(public.is_student() = true
                 AND public.is_mr_walid() = false AND public.is_admin() = false,
     'A: is_student helpers correct');
 SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000001'),
-    'A: can_access_lesson true for own published grade-1 lesson');
+    'A: can_access_lesson true for own purchased grade-1 lesson');
 RESET ROLE;
 
 -- --- disabled student B ----------------------------------------------

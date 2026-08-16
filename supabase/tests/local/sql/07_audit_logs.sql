@@ -23,7 +23,7 @@ VALUES ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-0000000
        ('90000000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-0000000000aa', 'admin',
         'user.role_change', 'profile', NULL, '{"role":"mr_walid"}'::jsonb, '127.0.0.1', now() - interval '1 day'),
        ('90000000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-0000000000aa', 'admin',
-        'pricing.delete', 'pricing_plan', NULL, '{}'::jsonb, '127.0.0.1', now());
+        'unit_pricing.set', 'unit_pricing', NULL, '{}'::jsonb, '127.0.0.1', now());
 
 -- ---------------------------------------------------------------------
 -- Authorization: only admins
@@ -66,7 +66,7 @@ SELECT tests.expect_count(
 
 -- newest-first ordering
 SELECT tests.assert(
-    (SELECT action = 'pricing.delete'
+    (SELECT action = 'unit_pricing.set'
      FROM public.list_audit_logs(p_actor_id => '90000000-0000-0000-0000-0000000000aa') LIMIT 1),
     'a: newest row comes first');
 

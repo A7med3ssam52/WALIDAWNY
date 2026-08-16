@@ -14,7 +14,7 @@
 //     entity_type?: string // case-insensitive substring
 //     actor_id?: uuid
 //   }
-//   -> { url, rows, expires_at }
+//   -> { url, rows, expiresAt }
 //
 // Pipeline: query v_audit_log (RLS admin-only SELECT enforces the
 // admin gate server-side too) with date-range + actor constraints, then
@@ -327,7 +327,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     {
       url: signed.data.signedUrl,
       rows: filtered.length,
-      expires_at: new Date((now + ttl) * 1000).toISOString(),
+      expiresAt: new Date((now + ttl) * 1000).toISOString(),
     },
     200,
   );

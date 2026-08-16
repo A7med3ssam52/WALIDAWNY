@@ -57,8 +57,8 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
             actor_id: null,
             actor_name: null,
             actor_role: null,
-            action: 'pricing.delete',
-            entity_type: 'pricing_plans',
+            action: 'unit_pricing.set',
+            entity_type: 'unit_pricing',
             entity_id: null,
             ip_address: '10.0.0.1',
             metadata: { note: 'قال "مرحبًا"' },
@@ -212,8 +212,8 @@ Deno.test('buildCsv: escapes embedded quotes in metadata', () => {
       actor_id: null,
       actor_name: null,
       actor_role: null,
-      action: 'pricing.delete',
-      entity_type: 'pricing_plans',
+      action: 'unit_pricing.set',
+      entity_type: 'unit_pricing',
       entity_id: null,
       ip_address: null,
       metadata: { note: 'قال "مرحبًا"' },
@@ -232,7 +232,7 @@ Deno.test(
     const { dep, storageCalls } = deps(cfg());
     const res = await handle(post(USER_ADMIN, {}), dep);
     await expectStatus(res, 200);
-    const body = (await res.json()) as { url: string; rows: number; expires_at: string };
+    const body = (await res.json()) as { url: string; rows: number; expiresAt: string };
     assert(
       body.url.startsWith('https://example.supabase.co/storage/v1/object/sign/audit-exports/'),
       'signed URL points at the bucket',
@@ -247,7 +247,7 @@ Deno.test(
     const signed = storageCalls.find((call) => call.options?.expiresIn === 600);
     assert(signed !== undefined, 'signed URL issued with the 600 s TTL');
     assertEqual(signed!.path, CSV_PATH);
-    assertEqual(body.expires_at, '2025-06-15T15:16:40.000Z'); // now(1750000000) + 600
+    assertEqual(body.expiresAt, '2025-06-15T15:16:40.000Z'); // now(1750000000) + 600
   },
 );
 

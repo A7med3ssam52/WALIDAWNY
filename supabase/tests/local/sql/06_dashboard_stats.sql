@@ -1,9 +1,9 @@
 -- =====================================================================
 -- 06_dashboard_stats.sql -- get_dashboard_stats() assertions
 -- ---------------------------------------------------------------------
--- 0018 get_dashboard_stats: staff-only, JSON shape, aggregate correctness
+-- 0028 get_dashboard_stats: staff-only, JSON shape, aggregate correctness
 -- on self-contained fixtures, grant posture (SECURITY.md 8.2).
--- Runs last in filename order; cleans up everything it creates.
+-- Runs after 05 in filename order; cleans up everything it creates.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -24,22 +24,18 @@ VALUES ('80000000-0000-0000-0000-000000000002',
 UPDATE public.profiles SET grade_id = '80000000-0000-0000-0000-000000000001'
 WHERE id = '80000000-0000-0000-0000-000000000002';
 
-INSERT INTO public.pricing_plans (id, grade_id, duration_days, base_price, platform_fee, total_price)
-VALUES ('80000000-0000-0000-0000-000000000003', '80000000-0000-0000-0000-000000000001',
-        30, 100, 10, 110);
-
-INSERT INTO public.subscriptions (id, student_id, pricing_plan_id, base_price, platform_fee, total_price, status, expires_at)
-VALUES ('80000000-0000-0000-0000-000000000004', '80000000-0000-0000-0000-000000000002',
-        '80000000-0000-0000-0000-000000000003', 100, 10, 110, 'active', now() + interval '3 days');
-
 INSERT INTO public.units (id, grade_id, name, sort_order, status)
 VALUES ('80000000-0000-0000-0000-000000000005', '80000000-0000-0000-0000-000000000001', 'Stats Unit', 1, 'published');
 
-INSERT INTO public.lessons (id, unit_id, title, sort_order, status, published_at)
-VALUES ('80000000-0000-0000-0000-000000000006', '80000000-0000-0000-0000-000000000005', 'Stats Lesson', 1, 'published', now());
+INSERT INTO public.unit_pricing (id, unit_id, base_price, platform_fee, is_active)
+VALUES ('80000000-0000-0000-0000-000000000003', '80000000-0000-0000-0000-000000000005', 1000, 100, true);
+
+INSERT INTO public.unit_purchases (id, student_id, unit_id, base_price, platform_fee, status)
+VALUES ('80000000-0000-0000-0000-000000000004', '80000000-0000-0000-0000-000000000002',
+        '80000000-0000-0000-0000-000000000005', 1000, 100, 'active');
 
 -- ---------------------------------------------------------------------
--- Authorization: students cannot call; staff can
+-- Authorization: students cannot call; staff (admin, mr_walid, teacher) can
 -- ---------------------------------------------------------------------
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
@@ -51,6 +47,11 @@ SET LOCAL ROLE admin;
 SELECT tests.assert((SELECT public.get_dashboard_stats() IS NOT NULL), 'd: admin can call');
 RESET ROLE;
 
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
+SET LOCAL ROLE authenticated;
+SELECT tests.assert((SELECT public.get_dashboard_stats() IS NOT NULL), 'd: teacher can call');
+RESET ROLE;
+
 -- ---------------------------------------------------------------------
 -- Aggregate correctness against the fixtures (>= style: earlier suites
 -- persist their own data, so exact totals are not asserted)
@@ -59,14 +60,11 @@ SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{students,total}')::int) >= 1,
     'd: students.total >= 1');
 SELECT tests.assert(
-    ((SELECT public.get_dashboard_stats()::jsonb #>> '{subscriptions,active}')::int) >= 1,
-    'd: subscriptions.active >= 1');
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,total}')::int) >= 1,
+    'd: purchases.total >= 1');
 SELECT tests.assert(
-    ((SELECT public.get_dashboard_stats()::jsonb #>> '{subscriptions,expiring_7d}')::int) >= 1,
-    'd: subscriptions.expiring_7d flags the 3-day subscription');
-SELECT tests.assert(
-    ((SELECT public.get_dashboard_stats()::jsonb #>> '{subscriptions,revenue_total}')::numeric) >= 110,
-    'd: revenue_total includes the fixture total_price');
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,total_revenue}')::numeric) >= 1100,
+    'd: purchases.total_revenue >= 1100');
 SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{content,published_lessons}')::int) >= 1,
     'd: content.published_lessons >= 1');
@@ -77,24 +75,27 @@ SELECT tests.assert(
             (SELECT public.get_dashboard_stats()::jsonb -> 'by_grade')) e
         WHERE e ->> 'grade_name' = 'Stats Grade'
           AND (e ->> 'students')::int = 1
-          AND (e ->> 'active_subscribers')::int = 1)),
-    'd: by_grade row aggregates students + subscribers');
+          AND (e ->> 'purchases')::int = 1
+          AND (e ->> 'revenue')::numeric = 1100)),
+    'd: by_grade row aggregates students + purchases');
 
 SELECT tests.assert(
     (SELECT EXISTS (
         SELECT 1 FROM jsonb_array_elements(
-            (SELECT public.get_dashboard_stats()::jsonb -> 'recent_subscriptions')) e
+            (SELECT public.get_dashboard_stats()::jsonb -> 'top_units')) e
+        WHERE e ->> 'unit_name' = 'Stats Unit'
+          AND (e ->> 'purchases')::int = 1
+          AND (e ->> 'revenue')::numeric = 1100)),
+    'd: top_units carries the stats unit');
+
+SELECT tests.assert(
+    (SELECT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(
+            (SELECT public.get_dashboard_stats()::jsonb -> 'recent_purchases')) e
         WHERE e ->> 'student_name' = 'Stats Student'
-          AND (e ->> 'duration_days')::int = 30
-          AND (e ->> 'total_price')::numeric = 110)),
-    'd: recent_subscriptions carries plan + price snapshot');
-
-SELECT tests.assert(
-    (SELECT EXISTS (
-        SELECT 1 FROM jsonb_array_elements(
-            (SELECT public.get_dashboard_stats()::jsonb -> 'upcoming_expirations')) e
-        WHERE e ->> 'student_name' = 'Stats Student')),
-    'd: upcoming_expirations lists the 3-day subscription');
+          AND e ->> 'unit_name' = 'Stats Unit'
+          AND (e ->> 'total_price')::numeric = 1100)),
+    'd: recent_purchases carries purchase + price snapshot');
 
 -- ---------------------------------------------------------------------
 -- Grant posture (SECURITY.md 8.2): granted to authenticated, locked
@@ -108,10 +109,10 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_dashboard_sta
 -- ---------------------------------------------------------------------
 -- Cleanup
 -- ---------------------------------------------------------------------
-DELETE FROM public.subscriptions      WHERE student_id = '80000000-0000-0000-0000-000000000002';
-DELETE FROM public.pricing_plans      WHERE id = '80000000-0000-0000-0000-000000000003';
-DELETE FROM public.lessons            WHERE id = '80000000-0000-0000-0000-000000000006';
-DELETE FROM public.units              WHERE id = '80000000-0000-0000-0000-000000000005';
-DELETE FROM public.profiles           WHERE id = '80000000-0000-0000-0000-000000000002';
-DELETE FROM auth.users                WHERE id = '80000000-0000-0000-0000-000000000002';
-DELETE FROM public.grades             WHERE id = '80000000-0000-0000-0000-000000000001';
+DELETE FROM public.unit_purchases WHERE id = '80000000-0000-0000-0000-000000000004';
+DELETE FROM public.unit_pricing   WHERE id = '80000000-0000-0000-0000-000000000003';
+DELETE FROM public.units          WHERE id = '80000000-0000-0000-0000-000000000005';
+DELETE FROM public.profiles       WHERE id = '80000000-0000-0000-0000-000000000002';
+DELETE FROM auth.users            WHERE id = '80000000-0000-0000-0000-000000000002';
+DELETE FROM public.grades         WHERE id = '80000000-0000-0000-0000-000000000001';
+

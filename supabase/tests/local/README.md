@@ -1,9 +1,9 @@
 # Local verification harness (Phase 1)
 
-Runs the 11 Supabase migrations against an **embedded PostgreSQL 18.4**
-instance (no Docker, no network) and validates them with deterministic
-assertion suites. This is the "verify before deploy" step for the
-Supabase Foundation phase.
+Runs the Supabase migrations (`supabase/migrations/0001…`) against an
+**embedded PostgreSQL 18.4** instance (no Docker, no network) and
+validates them with deterministic assertion suites. This is the
+"verify before deploy" step for the Supabase Foundation phase.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ npm start          # boot -> shim -> migrations -> assertion suites
 assertion suite fails. Expected output ends with:
 
 ```
-=== suites passed: 5, suites failed: 0 ===
+=== suites passed: 12, suites failed: 0 ===
 ALL GREEN
 ```
 
@@ -40,19 +40,34 @@ removal.
      `anon`/`authenticated`) — mirrors what a real Supabase project
      starts with; the migrations' RLS + REVOKEs are the enforcement
    - `tests.*` assertion helpers
-2. **supabase/migrations/0001…0011** in filename order.
+2. **supabase/migrations/0001…0030** in filename order.
 3. **sql/01_schema.sql** — schema shape (tables, enums, constraints,
    triggers, views, buckets, ownership, B2 revocations).
-4. **sql/02_roles.sql** — fixture build (grades, plans, users A–H/W/AD,
-   curriculum, assets, codes) + role helpers, HIGH-1, escalation,
-   fail-closed signup.
+4. **sql/02_roles.sql** — fixture build (grades, per-unit pricing,
+   users A–H/W/AD, curriculum, assets, codes) + role helpers, HIGH-1,
+   escalation, fail-closed signup.
 5. **sql/03_rls.sql** — the full role x operation matrix from
    TESTING.md §4.
 6. **sql/04_business.sql** — auth gates, audit PII-freedom, progress
-   semantics, redemption matrix, access matrix, expiry idempotency,
-   video state machine, PDF finalization, staff RPC spot checks.
+   semantics, unit-code redemption matrix, access matrix (trial +
+   per-unit purchase), video state machine, PDF finalization, staff
+   RPC spot checks.
 7. **sql/05_grants.sql** — the exact RPC grant matrix (MED-6), B2
    notifications revocation, table surface.
+8. **sql/06_dashboard_stats.sql** — `get_dashboard_stats` fixture +
+   role matrix + aggregate keys (students/purchases/content/engagement,
+   by_grade, top_units, recent_purchases).
+9. **sql/07_audit_logs.sql** — audit capture, PII freedom, admin-only
+   read surface, CSV export helpers.
+10. **sql/08_security.sql** — search_path pins, storage policy
+     inventory, B2 privilege locks, own-only RPC negatives, staff
+     boundary matrix, grant-drift anchors.
+11. **sql/09_exams.sql** — exam CRUD + take/grading matrix (roles,
+     published/draft scope, MCQ + problem scoring, staff fan-out).
+12. **sql/10_comments.sql** — lesson comments: access gates, threading,
+     body/parent validation, moderation, notifications, audit capture.
+13. **concurrency** scenarios — HIGH-3 parallel progress upserts and the
+     `redeem_unit_code` race (exactly one winner).
 
 ## How auth is simulated
 

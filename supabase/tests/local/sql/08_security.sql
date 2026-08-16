@@ -15,7 +15,7 @@
 --                                     even with table-level UPDATE, only
 --                                     is_read/read_at are writable)
 --   4. cross-user IDOR negatives     (mark_read on another user's id is a
---                                     no-op; subscriptions own-only;
+--                                     no-op; purchases own-only;
 --                                     grade-mismatch progress denied)
 --   5. Phase 5/8 boundary matrix     (student cannot reach staff PDF/video/
 --                                     audit RPCs; mr_walid cannot reach
@@ -230,22 +230,23 @@ SELECT tests.assert(
     'sec: mark_notification_read on another user''s id is a no-op');
 DELETE FROM public.notifications WHERE id = 'a0000000-0000-0000-0000-0000000000e2';
 
--- (b) get_my_current_subscription / get_my_subscriptions are own-only
--- (D ...004 has subscription ...003 on grade 2; A ...001 has ...001 on grade 1)
+-- (b) get_my_unit_purchases is own-only (0028). A owns u1 from the 02/04
+-- fixtures; no student may ever see another student's purchase rows.
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.assert(
-    (SELECT id = '80000000-0000-0000-0000-000000000001' FROM public.get_my_current_subscription()),
-    'sec: get_my_current_subscription returns own subscription only');
+    (SELECT EXISTS (SELECT 1 FROM public.get_my_unit_purchases()
+      WHERE unit_id = '30000000-0000-0000-0000-000000000001')),
+    'sec: get_my_unit_purchases returns own purchase');
 SELECT tests.assert(
-    (SELECT NOT EXISTS (SELECT 1 FROM public.get_my_subscriptions()
-      WHERE id = '80000000-0000-0000-0000-000000000003')),
-    'sec: get_my_subscriptions never exposes another student''s subscription');
+    (SELECT NOT EXISTS (SELECT 1 FROM public.get_my_unit_purchases()
+      WHERE student_id <> '70000000-0000-0000-0000-000000000001')),
+    'sec: get_my_unit_purchases never exposes another student''s purchase');
 RESET ROLE;
 RESET "app.current_user_id";
 
 -- (c) upsert_progress on a lesson of another grade is denied
--- (l6 ...006 is published on grade 2; A is grade 1 with no grade-2 sub)
+-- (l6 ...006 is published on grade 2; A is grade 1 with no grade-2 purchase)
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
@@ -259,6 +260,7 @@ RESET "app.current_user_id";
 -- Finalize/audit surfaces not already covered by 04/06/07:
 --   student -> finalize_pdf_upload  access_denied (staff wrapper, 0007:810)
 --   mr_walid -> list/count_audit_logs permission_denied (admin-only)
+--   mr_walid -> get_dashboard_stats ALLOWED (0028: staff surface)
 -- =====================================================================
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
@@ -272,7 +274,8 @@ SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_error('SELECT public.list_audit_logs()', 'P0001', 'permission_denied');
 SELECT tests.expect_error('SELECT public.count_audit_logs()', 'P0001', 'permission_denied');
-SELECT tests.expect_error('SELECT public.get_dashboard_stats()', 'P0001', 'permission_denied');
+SELECT tests.assert((SELECT public.get_dashboard_stats() IS NOT NULL),
+    'sec: mr_walid can call get_dashboard_stats (0028 staff surface)');
 RESET ROLE;
 RESET "app.current_user_id";
 
@@ -283,10 +286,10 @@ RESET "app.current_user_id";
 -- function silently widening the anon executable surface.
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 2 FROM pg_proc
+    (SELECT count(*) = 3 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
        AND has_function_privilege('anon', oid, 'EXECUTE')),
-    'sec: anon still has exactly two executable public functions (get_public_settings + list_active_grades)');
+    'sec: anon still has exactly three executable public functions (get_public_settings + list_active_grades + get_public_unit_prices)');
 
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_audit_logs(timestamptz, timestamptz, text, text, uuid, integer, integer)', 'EXECUTE'),
     'sec: anon cannot exec list_audit_logs');
@@ -310,6 +313,29 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_video_status(
     'sec: anon cannot exec set_video_status');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.audit_log(text, text, uuid, jsonb)', 'EXECUTE'),
     'sec: anon cannot exec audit_log');
+
+-- 0028 internal helpers (purchase model): locked from anon even though
+-- several are granted to authenticated (staff checks are in-function).
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.redeem_unit_code(text)', 'EXECUTE'),
+    'sec: anon cannot exec redeem_unit_code');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_unit_price(uuid, numeric, numeric)', 'EXECUTE'),
+    'sec: anon cannot exec set_unit_price');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_student_grade(uuid, uuid)', 'EXECUTE'),
+    'sec: anon cannot exec set_student_grade');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_unit_codes_internal(uuid, integer, text)', 'EXECUTE'),
+    'sec: anon cannot exec create_unit_codes_internal');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_unit_codes_for_staff(uuid, integer, text)', 'EXECUTE'),
+    'sec: anon cannot exec create_unit_codes_for_staff');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_codes_by_unit(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec list_codes_by_unit');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.revoke_unit_code(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec revoke_unit_code');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_lesson_trial(uuid, boolean)', 'EXECUTE'),
+    'sec: anon cannot exec set_lesson_trial');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_all_unit_purchases(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec list_all_unit_purchases');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.unit_purchase_stats()', 'EXECUTE'),
+    'sec: anon cannot exec unit_purchase_stats');
 
 -- =====================================================================
 -- Cleanup

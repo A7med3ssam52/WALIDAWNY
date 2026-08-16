@@ -20,14 +20,14 @@ describe('StudentNotificationsPage', () => {
       makeNotification({ id: 'notif-1', title: 'درس جديد متاح', is_read: false }),
       makeNotification({
         id: 'notif-2',
-        title: 'اشتراكك يقترب من الانتهاء',
-        type: 'subscription_expiring',
+        title: 'تم نشر محتوى جديد في صفك',
+        type: 'system',
         is_read: true,
       }),
       makeNotification({
         id: 'notif-3',
-        title: 'تم تفعيل اشتراكك',
-        type: 'subscription_activated',
+        title: 'تم تفعيل وحدتك',
+        type: 'unit_activated',
         is_read: false,
       }),
     );
@@ -39,9 +39,11 @@ describe('StudentNotificationsPage', () => {
     expect(await screen.findByRole('heading', { name: 'الإشعارات' })).toBeInTheDocument();
     expect(await screen.findByText(/لديك 2 إشعار غير مقروء/)).toBeInTheDocument();
     expect(screen.getByText('درس جديد متاح')).toBeInTheDocument();
-    expect(screen.getByText('اشتراكك يقترب من الانتهاء')).toBeInTheDocument();
+    expect(screen.getByText('تم نشر محتوى جديد في صفك')).toBeInTheDocument();
+    expect(screen.getByText('تم تفعيل وحدتك')).toBeInTheDocument();
     expect(screen.getByText('محتوى جديد')).toBeInTheDocument();
-    expect(screen.getByText('تنبيه اشتراك')).toBeInTheDocument();
+    expect(screen.getByText('النظام')).toBeInTheDocument();
+    expect(screen.getByText('تفعيل وحدة')).toBeInTheDocument();
     const unread = screen.getByTestId('notification-notif-1');
     expect(unread).toHaveAttribute('data-unread', 'true');
     expect(screen.getByTestId('notification-notif-2')).toHaveAttribute('data-unread', 'false');

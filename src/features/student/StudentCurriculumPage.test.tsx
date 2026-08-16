@@ -6,6 +6,8 @@ import {
   makeLesson,
   makeProgress,
   makeUnit,
+  makeUnitPricing,
+  makeUnitPurchase,
   mockState,
   resetMockState,
   setAuthenticatedStudent,
@@ -19,6 +21,7 @@ describe('StudentCurriculumPage', () => {
     mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
     mockState.units.push(
       makeUnit({ id: 'unit-1', grade_id: 'grade-1', name: 'الوحدة الأولى', status: 'published' }),
+      makeUnit({ id: 'unit-2', grade_id: 'grade-1', name: 'الوحدة الثانية', status: 'published' }),
       makeUnit({ id: 'unit-draft', grade_id: 'grade-1', name: 'الوحدة المخفية', status: 'draft' }),
     );
     mockState.lessons.push(
@@ -26,13 +29,18 @@ describe('StudentCurriculumPage', () => {
       makeLesson({ id: 'lesson-2', unit_id: 'unit-1', title: 'الدرس الثاني', status: 'published' }),
       makeLesson({ id: 'lesson-hidden', unit_id: 'unit-1', title: 'درس مخفي', status: 'hidden' }),
     );
+    mockState.unitPricing.push(
+      makeUnitPricing({ id: 'pricing-1', unit_id: 'unit-1' }),
+      makeUnitPricing({ id: 'pricing-2', unit_id: 'unit-2' }),
+    );
+    mockState.unitPurchases.push(makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1' }));
   });
 
   it('shows the student grade and only published units and lessons', async () => {
     renderApp('/student/curriculum');
 
     expect(await screen.findByRole('heading', { name: 'المنهج الدراسي' })).toBeInTheDocument();
-    expect(await screen.findByText(/الصف الأول/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/الصف الأول/)).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: 'الوحدة الأولى' })).toBeInTheDocument();
     expect(screen.queryByText('الوحدة المخفية')).not.toBeInTheDocument();
     expect(screen.getByText('الدرس الأول')).toBeInTheDocument();
@@ -77,6 +85,17 @@ describe('StudentCurriculumPage', () => {
     expect(await screen.findByTestId('curriculum-progress-label')).toHaveTextContent(
       '1 من 2 درسًا',
     );
+  });
+
+  it('shows a locked unit card with the price for units without a purchase', async () => {
+    renderApp('/student/curriculum');
+
+    expect(await screen.findByText('الوحدة الثانية')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'تواصل لتفعيل الوحدة' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('wa.me/201000000000'),
+    );
+    expect(screen.queryByText('الدرس الأول')).toBeInTheDocument();
   });
 
   it('prompts to set the grade when the student has no grade', async () => {

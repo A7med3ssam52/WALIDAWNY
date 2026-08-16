@@ -1,9 +1,13 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0027, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0030, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
+-- Statements from legacy migrations 0001-0026 that reference the removed
+-- subscription subsystem are dropped at regen time; mixed statements are
+-- kept and logged as notes. 0028_units_purchase.sql performs the actual
+-- DROP of the subscription objects.
 -- Verified by the embedded-PostgreSQL harness (tests/local).
 -- =====================================================================
 
@@ -61,16 +65,6 @@ BEGIN
         CREATE TYPE public.account_status AS ENUM (
             'active',
             'disabled'
-        );
-    END IF;
-END$$;
-
-DO $$
-BEGIN
-    IF to_regtype('public.subscription_status') IS NULL THEN
-        CREATE TYPE public.subscription_status AS ENUM (
-            'active',
-            'expired'
         );
     END IF;
 END$$;
@@ -179,96 +173,6 @@ COMMENT ON TABLE public.profiles IS 'User profiles. One row per auth.users entry
 CREATE INDEX IF NOT EXISTS idx_profiles_grade     ON public.profiles (grade_id) WHERE grade_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_profiles_role      ON public.profiles (role);
 CREATE INDEX IF NOT EXISTS idx_profiles_trash     ON public.profiles (id) WHERE deleted_at IS NOT NULL;
-
--- =====================================================================
--- pricing_plans
--- =====================================================================
-CREATE TABLE IF NOT EXISTS public.pricing_plans (
-    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    grade_id     uuid NOT NULL REFERENCES public.grades (id) ON DELETE CASCADE,
-    duration_days integer NOT NULL CHECK (duration_days > 0),
-    base_price   numeric(10, 2) NOT NULL CHECK (base_price >= 0),
-    platform_fee numeric(10, 2) NOT NULL CHECK (platform_fee >= 0),
-    total_price  numeric(10, 2) NOT NULL CHECK (total_price = base_price + platform_fee),
-    is_active    boolean NOT NULL DEFAULT true,
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    updated_at   timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (grade_id, duration_days)
-);
-
-ALTER TABLE public.pricing_plans ENABLE ROW LEVEL SECURITY;
-
-COMMENT ON TABLE public.pricing_plans IS 'Duration-based pricing offers per grade. Referenced plans cannot be deleted (RESTRICT, binding B7); delete_pricing_plan deactivates instead.';
-
-CREATE INDEX IF NOT EXISTS idx_pricing_plans_grade ON public.pricing_plans (grade_id);
-
--- =====================================================================
--- subscription_codes
--- =====================================================================
-CREATE TABLE IF NOT EXISTS public.subscription_codes (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code            text NOT NULL UNIQUE,
-    pricing_plan_id uuid NOT NULL REFERENCES public.pricing_plans (id) ON DELETE RESTRICT,
-    status          public.code_status NOT NULL DEFAULT 'available',
-    created_by      uuid NOT NULL REFERENCES public.profiles (id),
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    used_at         timestamptz,
-    used_by         uuid REFERENCES public.profiles (id),
-    revoked_at      timestamptz,
-    revoked_by      uuid REFERENCES public.profiles (id),
-    note            text,
-    CHECK (code = upper(code)),
-    CHECK (code ~ '^WLDN-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$')
-);
-
-ALTER TABLE public.subscription_codes ENABLE ROW LEVEL SECURITY;
-
-COMMENT ON TABLE public.subscription_codes IS 'Redeemable subscription codes: stored uppercase, unambiguous charset (no 0/O, 1/I), format-enforced by CHECK (A22). Students never see raw codes.';
-
-CREATE INDEX IF NOT EXISTS idx_subscription_codes_status ON public.subscription_codes (status);
-
--- =====================================================================
--- subscriptions
--- =====================================================================
-CREATE TABLE IF NOT EXISTS public.subscriptions (
-    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    student_id       uuid NOT NULL REFERENCES public.profiles (id) ON DELETE CASCADE,
-    pricing_plan_id  uuid NOT NULL REFERENCES public.pricing_plans (id) ON DELETE RESTRICT,
-    base_price       numeric(10, 2) NOT NULL CHECK (base_price >= 0),
-    platform_fee     numeric(10, 2) NOT NULL CHECK (platform_fee >= 0),
-    total_price      numeric(10, 2) NOT NULL CHECK (total_price = base_price + platform_fee),
-    code_id          uuid REFERENCES public.subscription_codes (id) ON DELETE SET NULL,
-    source           text NOT NULL DEFAULT 'code' CHECK (source IN ('code', 'manual')),
-    started_at       timestamptz NOT NULL DEFAULT now(),
-    expires_at       timestamptz NOT NULL CHECK (expires_at > started_at),
-    status           public.subscription_status NOT NULL DEFAULT 'active',
-    created_at       timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
-
-COMMENT ON TABLE public.subscriptions IS 'Subscriptions. Prices are snapshots copied from the pricing plan at activation (MED-5); validity is derived live: status = active AND expires_at > now(). Direct DML is RPC-only.';
-
-CREATE INDEX IF NOT EXISTS idx_subs_student ON public.subscriptions (student_id, status);
-CREATE INDEX IF NOT EXISTS idx_subs_expires ON public.subscriptions (expires_at);
-
--- =====================================================================
--- code_redemptions
--- =====================================================================
-CREATE TABLE IF NOT EXISTS public.code_redemptions (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code_id         uuid NOT NULL REFERENCES public.subscription_codes (id) ON DELETE RESTRICT,
-    student_id      uuid NOT NULL REFERENCES public.profiles (id) ON DELETE CASCADE,
-    subscription_id uuid NOT NULL REFERENCES public.subscriptions (id) ON DELETE RESTRICT,
-    redeemed_at     timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (code_id)
-);
-
-ALTER TABLE public.code_redemptions ENABLE ROW LEVEL SECURITY;
-
-COMMENT ON TABLE public.code_redemptions IS 'Immutable redemption history; UNIQUE (code_id) physically prevents double redemption.';
-
-CREATE INDEX IF NOT EXISTS idx_code_redemptions_student ON public.code_redemptions (student_id);
 
 -- =====================================================================
 -- units
@@ -451,14 +355,6 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.app_settings IS 'Key/value application settings (platform_name, whatsapp_number, whatsapp_default_message, expiry_warning_days, ...).';
-
--- ---------------------------------------------------------------------
--- set_updated_at is created in 0004 and attached to every table with an
--- updated_at column: profiles, grades, pricing_plans, units, lessons,
--- lesson_videos, lesson_pdfs, progress, app_settings (per DATABASE.md
--- section 7 - subscriptions/notifications/code_redemptions/audit_logs
--- carry no updated_at).
--- ---------------------------------------------------------------------
 
 -- =====================================================================
 -- >>> included from migrations\0003_functions_role_helpers.sql
@@ -975,150 +871,6 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------
--- redeem_subscription_code(p_code) RETURNS uuid
--- Atomic redemption (SECURITY.md section 10.1): advisory lock per code
--- + FOR UPDATE + in-transaction re-validation + UNIQUE backstop.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.redeem_subscription_code(p_code text)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_code text := upper(btrim(p_code));
-    v_student uuid := auth.uid();
-    v_code_row public.subscription_codes%ROWTYPE;
-    v_plan public.pricing_plans%ROWTYPE;
-    v_grade_id uuid;
-    v_sub_id uuid;
-    v_expires timestamptz;
-    v_warning_days int;
-BEGIN
-    PERFORM pg_advisory_xact_lock(hashtext('wldn_redeem:' || lower(v_code)));
-
-    IF NOT public.is_student() THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    SELECT * INTO v_code_row
-    FROM public.subscription_codes
-    WHERE code = v_code
-    FOR UPDATE;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'code_not_found';
-    END IF;
-
-    IF v_code_row.status = 'used' THEN
-        RAISE EXCEPTION 'code_already_used';
-    END IF;
-    IF v_code_row.status = 'revoked' THEN
-        RAISE EXCEPTION 'code_revoked';
-    END IF;
-
-    SELECT grade_id INTO v_grade_id FROM public.profiles WHERE id = v_student;
-    IF v_grade_id IS NULL THEN
-        RAISE EXCEPTION 'no_grade_assigned';
-    END IF;
-
-    SELECT * INTO v_plan FROM public.pricing_plans WHERE id = v_code_row.pricing_plan_id;
-    IF NOT FOUND OR NOT v_plan.is_active THEN
-        RAISE EXCEPTION 'plan_not_available';
-    END IF;
-    -- BINDING B8: a plan on a grade that is inactive or soft-deleted is
-    -- not purchasable (grade deactivation = soft-delete equivalent).
-    IF NOT EXISTS (
-        SELECT 1 FROM public.grades
-        WHERE id = v_plan.grade_id AND is_active AND deleted_at IS NULL
-    ) THEN
-        RAISE EXCEPTION 'plan_not_available';
-    END IF;
-    IF v_plan.grade_id <> v_grade_id THEN
-        RAISE EXCEPTION 'plan_grade_mismatch';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM public.subscriptions
-        WHERE student_id = v_student AND status = 'active' AND expires_at > now()
-    ) THEN
-        RAISE EXCEPTION 'student_has_active_subscription';
-    END IF;
-
-    v_expires := now() + (v_plan.duration_days || ' days')::interval;
-
-    UPDATE public.subscription_codes
-    SET status = 'used', used_at = now(), used_by = v_student
-    WHERE id = v_code_row.id;
-
-    INSERT INTO public.subscriptions (
-        student_id, pricing_plan_id, base_price, platform_fee, total_price,
-        code_id, source, started_at, expires_at, status
-    )
-    VALUES (
-        v_student, v_plan.id, v_plan.base_price, v_plan.platform_fee, v_plan.total_price,
-        v_code_row.id, 'code', now(), v_expires, 'active'
-    )
-    RETURNING id INTO v_sub_id;
-
-    INSERT INTO public.code_redemptions (code_id, student_id, subscription_id)
-    VALUES (v_code_row.id, v_student, v_sub_id);
-
-    -- Activation notification (deduped).
-    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-    VALUES (v_student, 'subscription_activated', 'تم تفعيل اشتراكك', NULL,
-            'sub_activated:' || v_sub_id, 'subscription', v_sub_id)
-    ON CONFLICT (dedup_key) DO NOTHING;
-
-    -- 7-day warning in the same transaction when the plan already fits
-    -- inside the warning window (BLUEPRINT M7).
-    v_warning_days := COALESCE(
-        (SELECT (value #>> '{}')::int FROM public.app_settings WHERE key = 'expiry_warning_days'),
-        7
-    );
-    IF v_expires <= now() + (v_warning_days || ' days')::interval THEN
-        INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-        VALUES (v_student, 'subscription_expiring', 'اشتراكك يقترب من الانتهاء', NULL,
-                'sub_expiring:' || v_sub_id, 'subscription', v_sub_id)
-        ON CONFLICT (dedup_key) DO NOTHING;
-    END IF;
-
-    PERFORM public.audit_log('code.redeem', 'subscription', v_sub_id,
-        jsonb_build_object('code', v_code, 'plan_id', v_plan.id, 'code_id', v_code_row.id));
-
-    RETURN v_sub_id;
-END $$;
-
--- ---------------------------------------------------------------------
--- get_my_subscriptions() / get_my_current_subscription()
--- Own rows only; RLS (student_id = auth.uid()) scopes them.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_my_subscriptions()
-RETURNS SETOF public.subscriptions
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-AS $$
-    SELECT * FROM public.subscriptions
-    WHERE student_id = auth.uid()
-    ORDER BY created_at DESC;
-$$;
-
-CREATE OR REPLACE FUNCTION public.get_my_current_subscription()
-RETURNS public.subscriptions
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-AS $$
-    SELECT * FROM public.subscriptions
-    WHERE student_id = auth.uid()
-      AND status = 'active'
-      AND expires_at > now()
-    ORDER BY created_at DESC
-    LIMIT 1;
-$$;
-
--- ---------------------------------------------------------------------
 -- upsert_progress(p_lesson_id, p_position_seconds, p_percent)
 -- SECURITY DEFINER. Guard: is_student() + can_access_lesson().
 -- Single atomic INSERT ... ON CONFLICT (student_id, lesson_id) DO UPDATE
@@ -1505,166 +1257,6 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------
--- create_manual_subscription (bindings B6, B10)
--- Staff-created subscription with a price snapshot copied from the plan;
--- p_notes lands in audit metadata; no grade requirement.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_manual_subscription(
-    p_student_id uuid,
-    p_plan_id uuid,
-    p_started_at timestamptz,
-    p_notes text DEFAULT NULL
-)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_plan public.pricing_plans%ROWTYPE;
-    v_sub_id uuid;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_student_id AND role = 'student') THEN
-        RAISE EXCEPTION 'student_not_found';
-    END IF;
-
-    SELECT * INTO v_plan FROM public.pricing_plans WHERE id = p_plan_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'plan_not_found';
-    END IF;
-
-    INSERT INTO public.subscriptions (
-        student_id, pricing_plan_id, base_price, platform_fee, total_price,
-        source, started_at, expires_at, status
-    )
-    VALUES (
-        p_student_id, v_plan.id, v_plan.base_price, v_plan.platform_fee,
-        v_plan.total_price, 'manual', p_started_at,
-        p_started_at + (v_plan.duration_days || ' days')::interval, 'active'
-    )
-    RETURNING id INTO v_sub_id;
-
-    PERFORM public.audit_log('subscription.create_manual', 'subscription', v_sub_id,
-        jsonb_build_object('plan_id', v_plan.id, 'notes', p_notes));
-
-    RETURN v_sub_id;
-END $$;
-
--- ---------------------------------------------------------------------
--- generate_codes_internal(p_plan_id, p_count, p_note)
--- SECURITY DEFINER; called by Edge Function only - NO client grants.
--- Secure random codes via gen_random_bytes, unambiguous charset (A22).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.generate_codes_internal(
-    p_plan_id uuid,
-    p_count integer,
-    p_note text DEFAULT NULL
-)
-RETURNS SETOF public.subscription_codes
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_chars constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    v_actor uuid := COALESCE(auth.uid(), NULLIF(current_setting('app.system_actor_id', true), '')::uuid);
-    v_plan_exists boolean;
-    v_code text;
-    v_attempt int;
-    v_inserted int := 0;
-    v_byte bytea;
-    v_row public.subscription_codes%ROWTYPE;
-BEGIN
-    IF p_count < 1 OR p_count > 500 THEN
-        RAISE EXCEPTION 'invalid_count';
-    END IF;
-    IF v_actor IS NULL THEN
-        RAISE EXCEPTION 'system_actor_required';
-    END IF;
-
-    SELECT EXISTS (SELECT 1 FROM public.pricing_plans WHERE id = p_plan_id) INTO v_plan_exists;
-    IF NOT v_plan_exists THEN
-        RAISE EXCEPTION 'plan_not_found';
-    END IF;
-
-    v_attempt := 0;
-    WHILE v_inserted < p_count AND v_attempt < p_count * 5 LOOP
-        v_attempt := v_attempt + 1;
-        v_byte := gen_random_bytes(12);
-        v_code := 'WLDN-'
-            || substr(v_chars, get_byte(v_byte, 0) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 1) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 2) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 3) % 32 + 1, 1)
-            || '-'
-            || substr(v_chars, get_byte(v_byte, 4) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 5) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 6) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 7) % 32 + 1, 1)
-            || '-'
-            || substr(v_chars, get_byte(v_byte, 8) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 9) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 10) % 32 + 1, 1)
-            || substr(v_chars, get_byte(v_byte, 11) % 32 + 1, 1);
-
-        BEGIN
-            INSERT INTO public.subscription_codes (code, pricing_plan_id, created_by, note)
-            VALUES (v_code, p_plan_id, v_actor, p_note)
-            RETURNING * INTO v_row;
-            v_inserted := v_inserted + 1;
-            RETURN NEXT v_row;
-        EXCEPTION WHEN unique_violation THEN
-            NULL;
-        END;
-    END LOOP;
-
-    IF v_inserted < p_count THEN
-        RAISE EXCEPTION 'generation_failed';
-    END IF;
-
-    RETURN;
-END $$;
-
--- ---------------------------------------------------------------------
--- revoke_subscription_code(p_code_id)
--- available/used -> revoked; does NOT cancel the created subscription
--- (A29).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.revoke_subscription_code(p_code_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_prev public.code_status;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    SELECT status INTO v_prev FROM public.subscription_codes WHERE id = p_code_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'code_not_found';
-    END IF;
-
-    UPDATE public.subscription_codes
-    SET status = 'revoked', revoked_at = now(), revoked_by = auth.uid()
-    WHERE id = p_code_id AND status IN ('available', 'used');
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'code_not_revocable';
-    END IF;
-
-    PERFORM public.audit_log('code.revoke', 'subscription_code', p_code_id,
-        jsonb_build_object('previous_status', v_prev));
-END $$;
-
--- ---------------------------------------------------------------------
 -- Grade lifecycle (soft delete; binding B8 semantics)
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.delete_grade(p_grade_id uuid)
@@ -1946,88 +1538,6 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------
--- set_pricing_plan (admin only + audit)
--- Upsert on (grade_id, duration_days).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.set_pricing_plan(
-    p_grade_id uuid,
-    p_duration_days integer,
-    p_base_price numeric,
-    p_platform_fee numeric,
-    p_is_active boolean DEFAULT true
-)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_id uuid;
-BEGIN
-    IF NOT public.is_admin() THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    IF p_base_price < 0 OR p_platform_fee < 0 OR p_duration_days <= 0 THEN
-        RAISE EXCEPTION 'invalid_plan_values';
-    END IF;
-
-    INSERT INTO public.pricing_plans (grade_id, duration_days, base_price, platform_fee, total_price, is_active)
-    VALUES (p_grade_id, p_duration_days, p_base_price, p_platform_fee, p_base_price + p_platform_fee, p_is_active)
-    ON CONFLICT (grade_id, duration_days) DO UPDATE
-    SET base_price = EXCLUDED.base_price,
-        platform_fee = EXCLUDED.platform_fee,
-        total_price = EXCLUDED.total_price,
-        is_active = EXCLUDED.is_active
-    RETURNING id INTO v_id;
-
-    PERFORM public.audit_log('pricing.upsert', 'pricing_plan', v_id,
-        jsonb_build_object('grade_id', p_grade_id, 'duration_days', p_duration_days));
-    RETURN v_id;
-END $$;
-
--- ---------------------------------------------------------------------
--- delete_pricing_plan(p_plan_id) (binding B7)
--- Hard-deletes ONLY unreferenced plans; referenced plans are deactivated
--- (is_active = false) instead; every attempt is audited.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.delete_pricing_plan(p_plan_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_referenced boolean;
-BEGIN
-    IF NOT public.is_admin() THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    SELECT EXISTS (
-        SELECT 1 FROM public.subscriptions WHERE pricing_plan_id = p_plan_id
-        UNION ALL
-        SELECT 1 FROM public.subscription_codes WHERE pricing_plan_id = p_plan_id
-    ) INTO v_referenced;
-
-    IF v_referenced THEN
-        UPDATE public.pricing_plans SET is_active = false WHERE id = p_plan_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'plan_not_found';
-        END IF;
-        PERFORM public.audit_log('pricing.delete', 'pricing_plan', p_plan_id,
-            jsonb_build_object('deleted', false, 'deactivated', true));
-    ELSE
-        DELETE FROM public.pricing_plans WHERE id = p_plan_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'plan_not_found';
-        END IF;
-        PERFORM public.audit_log('pricing.delete', 'pricing_plan', p_plan_id,
-            jsonb_build_object('deleted', true));
-    END IF;
-END $$;
-
--- ---------------------------------------------------------------------
 -- finalize_pdf_upload(p_pdf_id)
 -- Marks the PDF ready and PROMOTES it to primary (demoting peers first
 -- so the partial unique index is never violated mid-statement).
@@ -2113,65 +1623,6 @@ BEGIN
             AND s.expires_at > now()
       )
     ON CONFLICT (dedup_key) DO NOTHING;
-END $$;
-
--- ---------------------------------------------------------------------
--- expire_subscriptions()
--- Idempotent (A7): flips expired labels, emits once-only expiring and
--- expired notifications (dedup ON CONFLICT), audits. Live authority is
--- expires_at > now() regardless of label (A8). Never invoked by
--- SELECT-side triggers (MED-4/R4).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.expire_subscriptions()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_sub record;
-    v_warning_days int;
-BEGIN
-    v_warning_days := COALESCE(
-        (SELECT (value #>> '{}')::int FROM public.app_settings WHERE key = 'expiry_warning_days'),
-        7
-    );
-
-    -- 1) Flip expired subscriptions; emit once-only expired notification.
-    FOR v_sub IN
-        SELECT id, student_id FROM public.subscriptions
-        WHERE status = 'active' AND expires_at <= now()
-        FOR UPDATE
-    LOOP
-        UPDATE public.subscriptions SET status = 'expired' WHERE id = v_sub.id;
-
-        INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-        VALUES (v_sub.student_id, 'subscription_expired', 'انتهى اشتراكك', NULL,
-                'sub_expired:' || v_sub.id, 'subscription', v_sub.id)
-        ON CONFLICT (dedup_key) DO NOTHING;
-
-        PERFORM public.audit_log('subscription.expire', 'subscription', v_sub.id);
-    END LOOP;
-
-    -- 2) Emit the 7-day warning for subscriptions inside the window
-    --    (once-only via UNIQUE(dedup_key)). Only ACTIVE, non-deleted
-    --    students are warned (LOW: disabled/soft-deleted students are
-    --    skipped here - the expiry flip above still applies to all).
-    FOR v_sub IN
-        SELECT s.id, s.student_id
-        FROM public.subscriptions s
-        JOIN public.profiles p ON p.id = s.student_id
-        WHERE s.status = 'active'
-          AND s.expires_at > now()
-          AND s.expires_at <= now() + (v_warning_days || ' days')::interval
-          AND p.status = 'active'
-          AND p.deleted_at IS NULL
-    LOOP
-        INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-        VALUES (v_sub.student_id, 'subscription_expiring', 'اشتراكك يقترب من الانتهاء', NULL,
-                'sub_expiring:' || v_sub.id, 'subscription', v_sub.id)
-        ON CONFLICT (dedup_key) DO NOTHING;
-    END LOOP;
 END $$;
 
 -- ---------------------------------------------------------------------
@@ -2353,14 +1804,6 @@ ALTER TABLE public.profiles            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles            FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.grades              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.grades              FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.pricing_plans       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.pricing_plans       FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.subscriptions       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.subscriptions       FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.subscription_codes  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.subscription_codes  FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.code_redemptions    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.code_redemptions    FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.units               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.units               FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.lessons             ENABLE ROW LEVEL SECURITY;
@@ -2422,47 +1865,6 @@ CREATE POLICY grades_dml_staff ON public.grades
     FOR ALL
     USING (public.is_admin() OR public.is_mr_walid())
     WITH CHECK (public.is_admin() OR public.is_mr_walid());
-
--- ---------------------------------------------------------------------
--- pricing_plans
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS pricing_plans_select_staff_or_active_students ON public.pricing_plans;
-CREATE POLICY pricing_plans_select_staff_or_active_students ON public.pricing_plans
-    FOR SELECT
-    USING (public.is_admin() OR public.is_mr_walid()
-           OR (public.is_student() AND is_active));
-
-DROP POLICY IF EXISTS pricing_plans_dml_admin ON public.pricing_plans;
-CREATE POLICY pricing_plans_dml_admin ON public.pricing_plans
-    FOR ALL
-    USING (public.is_admin())
-    WITH CHECK (public.is_admin());
-
--- ---------------------------------------------------------------------
--- subscriptions -- SELECT own/staff; DML RPC-only (WITH (NO POLICY)).
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS subscriptions_select_own_or_staff ON public.subscriptions;
-CREATE POLICY subscriptions_select_own_or_staff ON public.subscriptions
-    FOR SELECT
-    USING (student_id = auth.uid() OR public.is_admin() OR public.is_mr_walid());
-
-ALTER TABLE public.subscriptions FORCE ROW LEVEL SECURITY;
-
--- ---------------------------------------------------------------------
--- subscription_codes -- staff SELECT only; DML RPC/EF-only.
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS subscription_codes_select_staff ON public.subscription_codes;
-CREATE POLICY subscription_codes_select_staff ON public.subscription_codes
-    FOR SELECT
-    USING (public.is_admin() OR public.is_mr_walid());
-
--- ---------------------------------------------------------------------
--- code_redemptions -- SELECT own/staff; INSERT RPC-only.
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS code_redemptions_select_own_or_staff ON public.code_redemptions;
-CREATE POLICY code_redemptions_select_own_or_staff ON public.code_redemptions
-    FOR SELECT
-    USING (student_id = auth.uid() OR public.is_admin() OR public.is_mr_walid());
 
 -- ---------------------------------------------------------------------
 -- units
@@ -2600,29 +2002,6 @@ CREATE POLICY app_settings_write_staff ON public.app_settings
 -- >>> included from migrations\0010_views_grants_ownership.sql
 -- =====================================================================
 
--- =====================================================================
--- 0010_views_grants_ownership
--- Phase 1 | Supabase Foundation | Database
--- SECURITY INVOKER views, the RPC grant matrix (MED-6), table-level
--- revocations (binding B2), and SECURITY DEFINER ownership (B1).
--- Reference: DATABASE.md section 5, section 6.1; SECURITY.md section 8.
--- =====================================================================
-
--- ---------------------------------------------------------------------
--- Views (all SECURITY INVOKER by default - per-row RLS of the
--- underlying tables still applies to the invoking user, L5).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.v_active_subscriptions AS
-SELECT s.*
-FROM public.subscriptions s
-JOIN public.profiles p ON p.id = s.student_id
-WHERE s.status = 'active'
-  AND s.expires_at > now()
-  AND p.status = 'active'
-  AND p.deleted_at IS NULL;
-
-COMMENT ON VIEW public.v_active_subscriptions IS 'Live-valid subscriptions for eligible students.';
-
 CREATE OR REPLACE VIEW public.v_lesson_access AS
 SELECT l.*, public.can_access_lesson(l.id) AS can_access
 FROM public.lessons l
@@ -2686,7 +2065,6 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.update_own_profile(text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_student_profile(uuid, text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.redeem_subscription_code(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_my_subscriptions() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_my_current_subscription() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_progress(uuid, integer, numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_notification_read(uuid) TO authenticated;
@@ -2712,8 +2090,6 @@ GRANT EXECUTE ON FUNCTION public.restore_lesson(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_grade(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.restore_grade(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_app_setting(text, jsonb) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.set_pricing_plan(uuid, integer, numeric, numeric, boolean) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_pricing_plan(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_user_role(uuid, public.user_role) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.finalize_pdf_upload(uuid) TO authenticated;
 
@@ -3117,62 +2493,6 @@ GRANT EXECUTE ON FUNCTION public.update_grade(uuid, text, integer) TO authentica
 -- =====================================================================
 -- >>> included from migrations\0014_codes_ef_wrapper.sql
 -- =====================================================================
-
--- =====================================================================
--- 0014_codes_ef_wrapper
--- Phase 3 | Grades, Pricing & Subscriptions | Database
--- Staff-guarded EF entry point for generate_codes_internal (0007).
---
--- Problem fixed: generate_codes_internal attributes the actor via
--- COALESCE(auth.uid(), current_setting('app.system_actor_id', true))
--- and raises 'system_actor_required' when both are absent. A service-role
--- PostgREST client carries no sub claim and PostgREST exposes no
--- per-request GUC channel, so every Edge Function call over the service
--- role rejected. The fix: a SECURITY DEFINER wrapper that is granted to
--- authenticated and works when invoked over PostgREST with the CALLER'S
--- OWN user JWT (the EF forwards the verified caller token).
---
--- Semantics (verified in tests/local/sql/04_business.sql Section 15):
---   * The guard uses the request-scoped claims (request.jwt.claims) via
---     the is_admin()/is_mr_walid() helpers, exactly like list_trash()
---     (0012); SECURITY DEFINER does not clear session GUCs, so the
---     auth.uid()-based helpers keep working over PostgREST user-JWT
---     calls. Students calling the wrapper directly -> permission_denied.
---   * generate_codes_internal then reads the same auth.uid() (same
---     request claims) -> actor satisfied, created_by = caller uid.
---   * Called WITHOUT a JWT sub (service role / no claims): the guard
---     raises permission_denied BEFORE generate_codes_internal is ever
---     reached, so any GUC-free path stays denied.
---   * Plan validation (plan_not_found) and the count cap (1..500,
---     invalid_count) stay inside generate_codes_internal - NOT
---     duplicated here.
--- Bindings B6/B8/B9 are unaffected.
--- Append-only migration; nothing in 0007 is rewritten.
--- Reference: DATABASE.md section 6.4 (staff RPCs).
--- =====================================================================
-
--- ---------------------------------------------------------------------
--- create_codes_for_staff(p_plan_id, p_count, p_note)
--- RETURNS SETOF subscription_codes; staff-guarded EF entry point that
--- delegates to generate_codes_internal (0007) - validation stays there.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_codes_for_staff(
-    p_plan_id uuid,
-    p_count integer,
-    p_note text DEFAULT NULL
-)
-RETURNS SETOF public.subscription_codes
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    RETURN QUERY SELECT * FROM public.generate_codes_internal(p_plan_id, p_count, p_note);
-END $$;
 
 -- ---------------------------------------------------------------------
 -- Grant matrix: authenticated only, staff enforced in-function (same
@@ -4000,16 +3320,6 @@ CREATE POLICY profiles_update_own_self_service ON public.profiles
         AND deleted_at IS NULL
     );
 
-DROP POLICY IF EXISTS subscriptions_select_own_or_staff ON public.subscriptions;
-CREATE POLICY subscriptions_select_own_or_staff ON public.subscriptions
-    FOR SELECT
-    USING (student_id = (select auth.uid()) OR public.is_admin() OR public.is_mr_walid());
-
-DROP POLICY IF EXISTS code_redemptions_select_own_or_staff ON public.code_redemptions;
-CREATE POLICY code_redemptions_select_own_or_staff ON public.code_redemptions
-    FOR SELECT
-    USING (student_id = (select auth.uid()) OR public.is_admin() OR public.is_mr_walid());
-
 DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
 CREATE POLICY units_select_staff_or_published_own_grade ON public.units
     FOR SELECT
@@ -4076,19 +3386,6 @@ DROP POLICY IF EXISTS grades_delete_staff ON public.grades;
 CREATE POLICY grades_delete_staff ON public.grades
     FOR DELETE USING (public.is_admin() OR public.is_mr_walid());
 
-DROP POLICY IF EXISTS pricing_plans_dml_admin ON public.pricing_plans;
-DROP POLICY IF EXISTS pricing_plans_insert_admin ON public.pricing_plans;
-CREATE POLICY pricing_plans_insert_admin ON public.pricing_plans
-    FOR INSERT WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS pricing_plans_update_admin ON public.pricing_plans;
-CREATE POLICY pricing_plans_update_admin ON public.pricing_plans
-    FOR UPDATE
-    USING (public.is_admin())
-    WITH CHECK (public.is_admin());
-DROP POLICY IF EXISTS pricing_plans_delete_admin ON public.pricing_plans;
-CREATE POLICY pricing_plans_delete_admin ON public.pricing_plans
-    FOR DELETE USING (public.is_admin());
-
 DROP POLICY IF EXISTS units_dml_staff ON public.units;
 DROP POLICY IF EXISTS units_insert_staff ON public.units;
 CREATE POLICY units_insert_staff ON public.units
@@ -4134,45 +3431,7 @@ CREATE POLICY app_settings_update_staff ON public.app_settings
 -- S3: unindexed_foreign_keys - covering index per FK column.
 -- ---------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_app_settings_updated_by        ON public.app_settings (updated_by);
-CREATE INDEX IF NOT EXISTS idx_code_redemptions_subscription_id ON public.code_redemptions (subscription_id);
 CREATE INDEX IF NOT EXISTS idx_progress_video_id               ON public.progress (video_id);
-CREATE INDEX IF NOT EXISTS idx_subscription_codes_created_by   ON public.subscription_codes (created_by);
-CREATE INDEX IF NOT EXISTS idx_subscription_codes_pricing_plan ON public.subscription_codes (pricing_plan_id);
-CREATE INDEX IF NOT EXISTS idx_subscription_codes_revoked_by   ON public.subscription_codes (revoked_by);
-CREATE INDEX IF NOT EXISTS idx_subscription_codes_used_by      ON public.subscription_codes (used_by);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_code_id           ON public.subscriptions (code_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_pricing_plan      ON public.subscriptions (pricing_plan_id);
-
--- ---------------------------------------------------------------------
--- S4: function_search_path_mutable - pin search_path on the two
--- SECURITY INVOKER RPCs (bodies use fully-qualified names).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_my_subscriptions()
-RETURNS SETOF public.subscriptions
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path = public
-AS $$
-    SELECT * FROM public.subscriptions
-    WHERE student_id = auth.uid()
-    ORDER BY created_at DESC;
-$$;
-
-CREATE OR REPLACE FUNCTION public.get_my_current_subscription()
-RETURNS public.subscriptions
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path = public
-AS $$
-    SELECT * FROM public.subscriptions
-    WHERE student_id = auth.uid()
-      AND status = 'active'
-      AND expires_at > now()
-    ORDER BY created_at DESC
-    LIMIT 1;
-$$;
 
 -- =====================================================================
 -- >>> included from migrations\0023_add_teacher_role.sql
@@ -4336,47 +3595,6 @@ CREATE POLICY grades_update_staff ON public.grades
 DROP POLICY IF EXISTS grades_delete_staff ON public.grades;
 CREATE POLICY grades_delete_staff ON public.grades
     FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
-
--- ---------------------------------------------------------------------
--- pricing_plans - SELECT staff/active-students (0009:89-93)
--- DML stays admin-only (0009:95-99 / 0022:135-143).
--- Student branch is grade-bound: active plans for the student's own grade
--- only, and the plan's grade must itself be active and non-deleted
--- (SECURITY.md section 6; same shape as units/lessons below).
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS pricing_plans_select_staff_or_active_students ON public.pricing_plans;
-CREATE POLICY pricing_plans_select_staff_or_active_students ON public.pricing_plans
-    FOR SELECT
-    USING (
-        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
-        OR (
-            public.is_student()
-            AND is_active
-            AND grade_id IN (SELECT grade_id FROM public.profiles WHERE id = (select auth.uid()))
-            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
-        )
-    );
-
--- ---------------------------------------------------------------------
--- subscriptions / code_redemptions - SELECT own/staff (0022:62-65, 67-70)
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS subscriptions_select_own_or_staff ON public.subscriptions;
-CREATE POLICY subscriptions_select_own_or_staff ON public.subscriptions
-    FOR SELECT
-    USING (student_id = (select auth.uid()) OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
-
-DROP POLICY IF EXISTS code_redemptions_select_own_or_staff ON public.code_redemptions;
-CREATE POLICY code_redemptions_select_own_or_staff ON public.code_redemptions
-    FOR SELECT
-    USING (student_id = (select auth.uid()) OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
-
--- ---------------------------------------------------------------------
--- subscription_codes - SELECT staff (0009:114-117)
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS subscription_codes_select_staff ON public.subscription_codes;
-CREATE POLICY subscription_codes_select_staff ON public.subscription_codes
-    FOR SELECT
-    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
 
 -- ---------------------------------------------------------------------
 -- units - SELECT staff/published-own-grade (0022:72-84) + DML (0022:145-153)
@@ -4689,94 +3907,6 @@ BEGIN
     SELECT * FROM public.profiles
     WHERE deleted_at IS NOT NULL
     ORDER BY deleted_at DESC;
-END $$;
-
--- --- subscriptions / codes -------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_manual_subscription(
-    p_student_id uuid,
-    p_plan_id uuid,
-    p_started_at timestamptz,
-    p_notes text DEFAULT NULL
-)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_plan public.pricing_plans%ROWTYPE;
-    v_sub_id uuid;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_student_id AND role = 'student') THEN
-        RAISE EXCEPTION 'student_not_found';
-    END IF;
-
-    SELECT * INTO v_plan FROM public.pricing_plans WHERE id = p_plan_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'plan_not_found';
-    END IF;
-
-    -- mirror redeem_subscription_code (0006:116,124 / binding B8): inactive
-    -- plans and plans on inactive or deleted grades are not purchasable
-    IF NOT v_plan.is_active THEN
-        RAISE EXCEPTION 'plan_not_available';
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM public.grades
-        WHERE id = v_plan.grade_id AND is_active AND deleted_at IS NULL
-    ) THEN
-        RAISE EXCEPTION 'plan_not_available';
-    END IF;
-
-    INSERT INTO public.subscriptions (
-        student_id, pricing_plan_id, base_price, platform_fee, total_price,
-        source, started_at, expires_at, status
-    )
-    VALUES (
-        p_student_id, v_plan.id, v_plan.base_price, v_plan.platform_fee,
-        v_plan.total_price, 'manual', p_started_at,
-        p_started_at + (v_plan.duration_days || ' days')::interval, 'active'
-    )
-    RETURNING id INTO v_sub_id;
-
-    PERFORM public.audit_log('subscription.create_manual', 'subscription', v_sub_id,
-        jsonb_build_object('plan_id', v_plan.id, 'notes', p_notes));
-
-    RETURN v_sub_id;
-END $$;
-
-CREATE OR REPLACE FUNCTION public.revoke_subscription_code(p_code_id uuid)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_prev public.code_status;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    SELECT status INTO v_prev FROM public.subscription_codes WHERE id = p_code_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'code_not_found';
-    END IF;
-
-    UPDATE public.subscription_codes
-    SET status = 'revoked', revoked_at = now(), revoked_by = auth.uid()
-    WHERE id = p_code_id AND status IN ('available', 'used');
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'code_not_revocable';
-    END IF;
-
-    PERFORM public.audit_log('code.revoke', 'subscription_code', p_code_id,
-        jsonb_build_object('previous_status', v_prev));
 END $$;
 
 -- --- grades lifecycle ------------------------------------------------
@@ -5160,24 +4290,6 @@ BEGIN
         jsonb_build_object('lesson_id', v_lesson));
 END $$;
 
-CREATE OR REPLACE FUNCTION public.create_codes_for_staff(
-    p_plan_id uuid,
-    p_count integer,
-    p_note text DEFAULT NULL
-)
-RETURNS SETOF public.subscription_codes
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    RETURN QUERY SELECT * FROM public.generate_codes_internal(p_plan_id, p_count, p_note);
-END $$;
-
 CREATE OR REPLACE FUNCTION public.create_pdf_upload_record(
     p_lesson_id uuid,
     p_original_name text,
@@ -5457,26 +4569,6 @@ END $$;
 -- >>> included from migrations\0026_view_lockdown.sql
 -- =====================================================================
 
--- =====================================================================
--- 0026_view_lockdown
--- Phase 2 | Hardening | Security
--- The 6 public views (0010) are internal-only: consumed exclusively by
--- SECURITY DEFINER functions (owner postgres -> permission checks pass
--- even with zero client grants on the views). Hosted Supabase grants
--- ALL on every public view to anon/authenticated at project creation,
--- which would otherwise expose the admin analytics surface
--- (v_dashboard_metrics, v_audit_log, v_lesson_stats, per-student
--- aggregates, live subscriptions incl. financial columns) as raw
--- PostgREST endpoints for any role holding an API key.
--- REVOKE ALL closes that surface (L5 + SECURITY.md section 8 posture:
--- tables/views get per-role grants, RLS does the row filtering).
--- service_role intentionally keeps its grants (trusted backend/admin
--- tooling; it bypasses RLS anyway).
--- =====================================================================
-
-REVOKE ALL ON PUBLIC.v_active_subscriptions FROM PUBLIC;
-REVOKE ALL ON PUBLIC.v_active_subscriptions FROM anon, authenticated;
-
 REVOKE ALL ON PUBLIC.v_lesson_access FROM PUBLIC;
 REVOKE ALL ON PUBLIC.v_lesson_access FROM anon, authenticated;
 
@@ -5614,3 +4706,1883 @@ BEGIN
 
     RETURN NEW;
 END $$;
+
+-- =====================================================================
+-- >>> included from migrations\0028_units_purchase.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0028_units_purchase
+-- Phase 1 | Units Purchase | Database
+-- Replaces the time-based subscription system (pricing_plans /
+-- subscriptions / subscription_codes / code_redemptions) with PERMANENT
+-- per-unit purchases via codes only:
+--   unit_pricing    -> unit_codes -> unit_purchases (no expires_at)
+-- plus trial lessons (lessons.is_trial). Reference:
+-- IMPLEMENTATION-PLAN.md section 3.
+--
+-- Append-only migration: nothing in 0001..0027 is modified. All steps
+-- below run in the exact order required by the plan (IMPLEMENTATION-
+-- PLAN.md section 3.1).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) New enum: unit_purchase_status (additive - no conflict).
+-- ---------------------------------------------------------------------
+CREATE TYPE public.unit_purchase_status AS ENUM ('active', 'void');
+
+-- ---------------------------------------------------------------------
+-- 2) Cleanup BEFORE rebuilding notification_type: remove legacy
+--    subscription notification rows and the expiry setting, then rebuild
+--    the enum (ALTER COLUMN TYPE fails while old values remain).
+-- ---------------------------------------------------------------------
+DELETE FROM public.notifications
+WHERE type IN ('subscription_activated', 'subscription_expiring', 'subscription_expired');
+
+DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
+
+-- ---------------------------------------------------------------------
+-- 3) Rebuild notification_type: subscription_* -> unit_activated.
+--    Phase 6/7 add exam_submitted/exam_graded then lesson_comment/
+--    comment_reply via ALTER TYPE ... ADD VALUE (NOT here).
+-- ---------------------------------------------------------------------
+CREATE TYPE public.notification_type_new AS ENUM ('new_content', 'unit_activated', 'system');
+
+ALTER TABLE public.notifications
+    ALTER COLUMN type TYPE public.notification_type_new
+    USING (type::text::public.notification_type_new);
+
+DROP TYPE public.notification_type;
+ALTER TYPE public.notification_type_new RENAME TO notification_type;
+
+-- ---------------------------------------------------------------------
+-- 4) New tables (per-unit pricing, codes, permanent purchases).
+--    Prices are snapshotted from unit_pricing at activation (P12);
+--    NO expires_at / duration_days anywhere.
+-- ---------------------------------------------------------------------
+CREATE TABLE public.unit_pricing (
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    unit_id      uuid NOT NULL UNIQUE REFERENCES public.units(id) ON DELETE CASCADE,
+    base_price   numeric(10, 2) NOT NULL CHECK (base_price >= 0),
+    platform_fee numeric(10, 2) NOT NULL DEFAULT 0 CHECK (platform_fee >= 0),
+    total_price  numeric(10, 2) GENERATED ALWAYS AS (base_price + platform_fee) STORED,
+    is_active    boolean NOT NULL DEFAULT true,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.unit_pricing ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.unit_pricing FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.unit_pricing IS 'Permanent per-unit pricing (base + platform fee = generated total). Upserted via set_unit_price (admin only).';
+
+CREATE TABLE public.unit_codes (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    code            text NOT NULL UNIQUE CHECK (code ~ '^WLDN-[A-Z0-9]{8,12}$'),
+    unit_pricing_id uuid NOT NULL REFERENCES public.unit_pricing(id) ON DELETE RESTRICT,
+    status          public.code_status NOT NULL DEFAULT 'available',
+    created_by      uuid NOT NULL REFERENCES auth.users(id),
+    used_at         timestamptz,
+    used_by         uuid REFERENCES public.profiles(id),
+    revoked_at      timestamptz,
+    revoked_by      uuid REFERENCES auth.users(id),
+    note            text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX unit_codes_pricing_id_idx    ON public.unit_codes(unit_pricing_id);
+CREATE INDEX unit_codes_status_idx        ON public.unit_codes(status);
+
+ALTER TABLE public.unit_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.unit_codes FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.unit_codes IS 'Redeemable per-unit codes: stored uppercase, unambiguous charset, one-time redemption (status -> used). Students never see raw codes.';
+
+CREATE TABLE public.unit_purchases (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    unit_id       uuid NOT NULL REFERENCES public.units(id) ON DELETE RESTRICT,
+    base_price    numeric(10, 2) NOT NULL CHECK (base_price >= 0),
+    platform_fee  numeric(10, 2) NOT NULL DEFAULT 0 CHECK (platform_fee >= 0),
+    total_price   numeric(10, 2) GENERATED ALWAYS AS (base_price + platform_fee) STORED,
+    code_id       uuid REFERENCES public.unit_codes(id) ON DELETE SET NULL,
+    status        public.unit_purchase_status NOT NULL DEFAULT 'active',
+    purchased_at  timestamptz NOT NULL DEFAULT now(),
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX unit_purchases_student_unit_uniq ON public.unit_purchases(student_id, unit_id);
+CREATE INDEX unit_purchases_student_idx ON public.unit_purchases(student_id);
+CREATE INDEX unit_purchases_unit_idx    ON public.unit_purchases(unit_id);
+
+ALTER TABLE public.unit_purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.unit_purchases FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.unit_purchases IS 'PERMANENT per-unit purchases (no expiry). Writes exclusively via SECURITY DEFINER RPCs (redeem_unit_code); direct client INSERT blocked by the insert_via_rpc policy.';
+
+-- ---------------------------------------------------------------------
+-- 4b) RLS policies (named style of 0009/0025). No DML policies on any of
+--     the three tables: writes go exclusively through SECURITY DEFINER
+--     RPCs. anon never evaluates helper functions in a policy - its only
+--     price surface is the RPC get_public_unit_prices().
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS unit_pricing_select_staff_or_active_students ON public.unit_pricing;
+CREATE POLICY unit_pricing_select_staff_or_active_students ON public.unit_pricing
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR (
+            public.is_student()
+            AND is_active
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                WHERE u.status = 'published' AND u.deleted_at IS NULL
+                  AND u.grade_id = (SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid())
+                  AND u.grade_id IN (SELECT g.id FROM public.grades g WHERE g.is_active AND g.deleted_at IS NULL)
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS unit_codes_select_staff ON public.unit_codes;
+CREATE POLICY unit_codes_select_staff ON public.unit_codes
+    FOR SELECT
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS unit_purchases_select_own_or_staff ON public.unit_purchases;
+CREATE POLICY unit_purchases_select_own_or_staff ON public.unit_purchases
+    FOR SELECT
+    USING (student_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+-- Extra shield: no raw INSERT from any client role; only SECURITY
+-- DEFINER functions (owner postgres, superuser - RLS bypassed) write.
+DROP POLICY IF EXISTS unit_purchases_insert_via_rpc ON public.unit_purchases;
+CREATE POLICY unit_purchases_insert_via_rpc ON public.unit_purchases
+    FOR INSERT
+    WITH CHECK (false);
+
+-- ---------------------------------------------------------------------
+-- 5) lessons: trial-lesson flag + partial unique index (max one trial
+--    per unit among live lessons).
+-- ---------------------------------------------------------------------
+ALTER TABLE public.lessons
+    ADD COLUMN is_trial boolean NOT NULL DEFAULT false;
+
+CREATE UNIQUE INDEX lessons_trial_unique
+    ON public.lessons(unit_id)
+    WHERE is_trial AND deleted_at IS NULL;
+
+-- ---------------------------------------------------------------------
+-- 6) Extend the set_updated_at application list (0004) with the two new
+--    tables that carry updated_at. unit_purchases is intentionally NOT
+--    added (no updated_at column - set_updated_at() writes it blindly).
+--    Extend the audit_trigger inventory (0005) with all three new tables
+--    (entity_type is free text - no CHECK/CASE to update, 0005/0019 use
+--    substring matching only).
+-- ---------------------------------------------------------------------
+DROP TRIGGER IF EXISTS set_updated_at ON public.unit_pricing;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.unit_pricing
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.unit_codes;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.unit_codes
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DO $$
+DECLARE
+    v_table text;
+BEGIN
+    FOREACH v_table IN ARRAY ARRAY[
+        'unit_pricing', 'unit_codes', 'unit_purchases'
+    ] LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', v_table);
+        EXECUTE format(
+            'CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I
+             FOR EACH ROW EXECUTE FUNCTION public.audit_trigger()',
+            v_table
+        );
+    END LOOP;
+END$$;
+
+-- ---------------------------------------------------------------------
+-- 7) Rewrite can_access_lesson: staff see any live lesson; students need
+--    published lesson+unit in their own active grade, plus an active unit
+--    purchase OR a trial lesson. Existing grants (authenticated, 0010)
+--    are preserved by CREATE OR REPLACE.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+BEGIN
+    IF v_uid IS NULL THEN
+        RETURN false;
+    END IF;
+    IF public.is_admin() OR public.is_mr_walid() OR public.is_teacher() THEN
+        RETURN EXISTS (SELECT 1 FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL);
+    END IF;
+    RETURN EXISTS (
+        SELECT 1
+        FROM public.lessons l
+        JOIN public.units u      ON u.id = l.unit_id
+        JOIN public.profiles p   ON p.id = v_uid
+        JOIN public.grades g     ON g.id = p.grade_id
+        WHERE l.id = p_lesson_id
+          AND l.deleted_at IS NULL AND l.status = 'published'
+          AND u.deleted_at IS NULL AND u.status = 'published'
+          AND g.is_active AND g.deleted_at IS NULL
+          AND p.deleted_at IS NULL AND p.status = 'active'
+          AND (l.is_trial OR EXISTS (
+              SELECT 1 FROM public.unit_purchases up
+              WHERE up.student_id = v_uid
+                AND up.unit_id = u.id
+                AND up.status = 'active'
+          ))
+    );
+END $$;
+
+COMMENT ON FUNCTION public.can_access_lesson(uuid) IS
+    'Lesson access: staff see any live lesson; students need published lesson+unit in their own active grade, plus an active unit purchase OR a trial lesson.';
+
+-- set_lesson_trial: staff-guarded trial toggle with atomic clear of any
+-- previous trial in the same unit (decision D).
+CREATE OR REPLACE FUNCTION public.set_lesson_trial(p_lesson_id uuid, p_is_trial boolean)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_unit uuid;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT unit_id INTO v_unit
+    FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL;
+    IF v_unit IS NULL THEN
+        RAISE EXCEPTION 'lesson_not_found';
+    END IF;
+
+    -- Clear any previous trial in the unit first, then (optionally) set
+    -- the target - guarantees the partial unique index is never violated
+    -- mid-statement.
+    UPDATE public.lessons SET is_trial = false
+    WHERE unit_id = v_unit AND deleted_at IS NULL AND is_trial;
+
+    IF p_is_trial THEN
+        UPDATE public.lessons SET is_trial = true
+        WHERE id = p_lesson_id AND deleted_at IS NULL;
+    END IF;
+
+    PERFORM public.audit_log('unit.trial_set', 'lesson', p_lesson_id,
+        jsonb_build_object('is_trial', p_is_trial));
+END $$;
+
+COMMENT ON FUNCTION public.set_lesson_trial(uuid, boolean) IS 'Staff-guarded trial toggle; at most one trial lesson per unit (partial unique index).';
+
+-- ---------------------------------------------------------------------
+-- 8a) New unit functions. Created BEFORE dropping the subscription
+--     functions so the migration never hangs on references.
+-- ---------------------------------------------------------------------
+-- Student: redeem a unit code (permanent purchase).
+CREATE OR REPLACE FUNCTION public.redeem_unit_code(p_code text)
+RETURNS public.unit_purchases
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_code text := upper(btrim(p_code));
+    v_student uuid := auth.uid();
+    v_grade uuid;
+    v_code_row public.unit_codes%ROWTYPE;
+    v_pricing public.unit_pricing%ROWTYPE;
+    v_unit public.units%ROWTYPE;
+    v_purchase public.unit_purchases%ROWTYPE;
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('wldn_redeem_unit:' || COALESCE(v_code, '')));
+
+    IF NOT public.is_student() THEN
+        RAISE EXCEPTION 'access_denied';
+    END IF;
+
+    IF v_code IS NULL OR v_code = '' THEN
+        RAISE EXCEPTION 'code_not_found';
+    END IF;
+
+    SELECT * INTO v_code_row
+    FROM public.unit_codes
+    WHERE code = v_code
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'code_not_found';
+    END IF;
+
+    SELECT * INTO v_pricing FROM public.unit_pricing WHERE id = v_code_row.unit_pricing_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+    IF NOT v_pricing.is_active THEN
+        RAISE EXCEPTION 'unit_inactive';
+    END IF;
+
+    SELECT * INTO v_unit FROM public.units WHERE id = v_pricing.unit_id;
+    IF v_unit.id IS NULL OR v_unit.deleted_at IS NOT NULL OR v_unit.status <> 'published' THEN
+        RAISE EXCEPTION 'unit_inactive';
+    END IF;
+
+    IF v_code_row.status = 'revoked' THEN
+        RAISE EXCEPTION 'code_revoked';
+    END IF;
+    IF v_code_row.status = 'used' THEN
+        RAISE EXCEPTION 'code_already_used';
+    END IF;
+
+    SELECT grade_id INTO v_grade
+    FROM public.profiles
+    WHERE id = v_student AND role = 'student' AND deleted_at IS NULL;
+    IF v_grade IS NULL THEN
+        RAISE EXCEPTION 'no_grade_assigned';
+    END IF;
+
+    IF v_unit.grade_id <> v_grade THEN
+        RAISE EXCEPTION 'unit_not_in_student_grade';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.unit_purchases
+        WHERE student_id = v_student AND unit_id = v_unit.id AND status = 'active'
+    ) THEN
+        RAISE EXCEPTION 'unit_already_purchased';
+    END IF;
+
+    INSERT INTO public.unit_purchases (
+        student_id, unit_id, base_price, platform_fee, code_id, status
+    )
+    VALUES (
+        v_student, v_unit.id, v_pricing.base_price, v_pricing.platform_fee,
+        v_code_row.id, 'active'
+    )
+    RETURNING * INTO v_purchase;
+
+    UPDATE public.unit_codes
+    SET status = 'used', used_at = now(), used_by = v_student
+    WHERE id = v_code_row.id;
+
+    PERFORM public.audit_log('unit_purchase.create', 'unit_purchases', v_purchase.id,
+        jsonb_build_object('unit_id', v_unit.id, 'price', v_purchase.total_price));
+
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+    VALUES (v_student, 'unit_activated', 'تم تفعيل الوحدة', v_unit.name,
+            'unit_activated:' || v_purchase.id, 'unit_purchases', v_purchase.id)
+    ON CONFLICT (dedup_key) DO NOTHING;
+
+    RETURN v_purchase;
+END $$;
+
+-- Student: my purchases (own rows via RLS).
+CREATE OR REPLACE FUNCTION public.get_my_unit_purchases()
+RETURNS SETOF public.unit_purchases
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+    SELECT * FROM public.unit_purchases
+    WHERE student_id = auth.uid()
+    ORDER BY purchased_at DESC;
+$$;
+
+-- Student/staff/EF: lesson access info for the lesson player gates.
+CREATE OR REPLACE FUNCTION public.get_my_lesson_access(p_lesson_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_lesson_id uuid;
+    v_unit_id uuid;
+    v_unit_name text;
+    v_is_trial boolean;
+    v_has_purchase boolean;
+    v_price numeric(10, 2);
+BEGIN
+    SELECT l.id, l.unit_id, l.is_trial, u.name
+    INTO v_lesson_id, v_unit_id, v_is_trial, v_unit_name
+    FROM public.lessons l
+    JOIN public.units u ON u.id = l.unit_id
+    WHERE l.id = p_lesson_id AND l.deleted_at IS NULL;
+
+    IF v_lesson_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'has_access', false, 'has_purchase', false, 'is_trial', false,
+            'unit_id', NULL::uuid, 'unit_name', NULL::text, 'price', NULL::numeric);
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1 FROM public.unit_purchases
+        WHERE student_id = v_uid AND unit_id = v_unit_id AND status = 'active'
+    ) INTO v_has_purchase;
+
+    SELECT total_price INTO v_price
+    FROM public.unit_pricing
+    WHERE unit_id = v_unit_id AND is_active;
+
+    RETURN jsonb_build_object(
+        'has_access', public.can_access_lesson(p_lesson_id),
+        'has_purchase', v_has_purchase,
+        'is_trial', COALESCE(v_is_trial, false),
+        'unit_id', v_unit_id,
+        'unit_name', v_unit_name,
+        'price', v_price);
+END $$;
+
+-- Staff code functions.
+-- create_unit_codes_internal: no client grants; actor via auth.uid() or
+-- app.system_actor_id (same posture as the 0014 wrapper fix).
+CREATE OR REPLACE FUNCTION public.create_unit_codes_internal(
+    p_unit_pricing_id uuid,
+    p_count integer,
+    p_note text DEFAULT NULL
+)
+RETURNS SETOF public.unit_codes
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_chars constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    v_actor uuid := COALESCE(auth.uid(), NULLIF(current_setting('app.system_actor_id', true), '')::uuid);
+    v_pricing_active boolean;
+    v_code text;
+    v_attempt int;
+    v_inserted int := 0;
+    v_row public.unit_codes%ROWTYPE;
+BEGIN
+    IF p_count < 1 OR p_count > 500 THEN
+        RAISE EXCEPTION 'invalid_count';
+    END IF;
+    IF v_actor IS NULL THEN
+        RAISE EXCEPTION 'system_actor_required';
+    END IF;
+
+    SELECT is_active INTO v_pricing_active FROM public.unit_pricing WHERE id = p_unit_pricing_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unit_pricing_not_found';
+    END IF;
+    IF NOT v_pricing_active THEN
+        RAISE EXCEPTION 'unit_inactive';
+    END IF;
+
+    v_attempt := 0;
+    WHILE v_inserted < p_count AND v_attempt < p_count * 5 LOOP
+        v_attempt := v_attempt + 1;
+        v_code := 'WLDN-';
+        FOR i IN 1..12 LOOP
+            v_code := v_code || substr(v_chars, get_byte(gen_random_bytes(1), 0) % 32 + 1, 1);
+        END LOOP;
+
+        BEGIN
+            INSERT INTO public.unit_codes (code, unit_pricing_id, created_by, note)
+            VALUES (v_code, p_unit_pricing_id, v_actor, p_note)
+            RETURNING * INTO v_row;
+            v_inserted := v_inserted + 1;
+            RETURN NEXT v_row;
+        EXCEPTION WHEN unique_violation THEN
+            NULL;
+        END;
+    END LOOP;
+
+    IF v_inserted < p_count THEN
+        RAISE EXCEPTION 'generation_failed';
+    END IF;
+    RETURN;
+END $$;
+
+-- Staff-guarded wrapper over create_unit_codes_internal (replaces the
+-- subscription create_codes_for_staff, 0014).
+CREATE OR REPLACE FUNCTION public.create_unit_codes_for_staff(
+    p_unit_id uuid,
+    p_count integer,
+    p_note text DEFAULT NULL
+)
+RETURNS SETOF public.unit_codes
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_pricing_id uuid;
+    v_pricing_active boolean;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+
+    SELECT id, is_active INTO v_pricing_id, v_pricing_active
+    FROM public.unit_pricing WHERE unit_id = p_unit_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+    IF NOT v_pricing_active THEN
+        RAISE EXCEPTION 'unit_inactive';
+    END IF;
+
+    RETURN QUERY SELECT * FROM public.create_unit_codes_internal(v_pricing_id, p_count, p_note);
+END $$;
+
+-- Staff: codes of a unit (validation + count caps stay in the internal fn).
+CREATE OR REPLACE FUNCTION public.list_codes_by_unit(p_unit_id uuid)
+RETURNS SETOF public.unit_codes
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+
+    RETURN QUERY
+        SELECT uc.*
+        FROM public.unit_codes uc
+        JOIN public.unit_pricing up ON up.id = uc.unit_pricing_id
+        WHERE up.unit_id = p_unit_id
+        ORDER BY uc.created_at DESC;
+END $$;
+
+-- Staff: revoke an available code (used codes are NOT revocable).
+CREATE OR REPLACE FUNCTION public.revoke_unit_code(p_code_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_prev public.code_status;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT status INTO v_prev FROM public.unit_codes WHERE id = p_code_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'code_not_found';
+    END IF;
+    IF v_prev = 'used' THEN
+        RAISE EXCEPTION 'code_already_used';
+    END IF;
+    IF v_prev = 'revoked' THEN
+        RAISE EXCEPTION 'code_not_revocable';
+    END IF;
+
+    UPDATE public.unit_codes
+    SET status = 'revoked', revoked_at = now(), revoked_by = auth.uid()
+    WHERE id = p_code_id AND status = 'available';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'code_not_revocable';
+    END IF;
+
+    PERFORM public.audit_log('unit_code.revoke', 'unit_codes', p_code_id,
+        jsonb_build_object('previous_status', v_prev));
+END $$;
+
+-- Pricing functions.
+-- set_unit_price: ADMIN ONLY (decision J - teachers never modify prices).
+CREATE OR REPLACE FUNCTION public.set_unit_price(
+    p_unit_id uuid,
+    p_base_price numeric(10, 2),
+    p_platform_fee numeric(10, 2) DEFAULT 0
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_pricing_id uuid;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+
+    IF p_base_price < 0 OR p_platform_fee < 0 THEN
+        RAISE EXCEPTION 'invalid_price';
+    END IF;
+
+    INSERT INTO public.unit_pricing (unit_id, base_price, platform_fee)
+    VALUES (p_unit_id, p_base_price, p_platform_fee)
+    ON CONFLICT (unit_id) DO UPDATE
+    SET base_price = EXCLUDED.base_price,
+        platform_fee = EXCLUDED.platform_fee
+    RETURNING id INTO v_pricing_id;
+
+    PERFORM public.audit_log('unit_pricing.set', 'unit_pricing', v_pricing_id,
+        jsonb_build_object('unit_id', p_unit_id, 'base_price', p_base_price,
+                           'platform_fee', p_platform_fee));
+END $$;
+
+-- Staff: full pricing list with unit + grade names.
+CREATE OR REPLACE FUNCTION public.list_unit_pricing()
+RETURNS TABLE (
+    id uuid, unit_id uuid, base_price numeric(10, 2), platform_fee numeric(10, 2),
+    total_price numeric(10, 2), is_active boolean, unit_name text, grade_name text
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    RETURN QUERY
+        SELECT up.id, up.unit_id, up.base_price, up.platform_fee, up.total_price,
+               up.is_active, u.name, g.name
+        FROM public.unit_pricing up
+        JOIN public.units u ON u.id = up.unit_id
+        JOIN public.grades g ON g.id = u.grade_id
+        ORDER BY g.sort_order, u.sort_order;
+END $$;
+
+-- Public (anon + authenticated): active prices of published units on live
+-- grades (decision M) - the landing-page price surface.
+CREATE OR REPLACE FUNCTION public.get_public_unit_prices()
+RETURNS TABLE (
+    unit_id uuid, unit_name text, grade_name text,
+    base_price numeric(10, 2), platform_fee numeric(10, 2), total_price numeric(10, 2)
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT u.id AS unit_id, u.name AS unit_name, g.name AS grade_name,
+           up.base_price, up.platform_fee, up.total_price
+    FROM public.unit_pricing up
+    JOIN public.units u ON u.id = up.unit_id
+    JOIN public.grades g ON g.id = u.grade_id
+    WHERE up.is_active
+      AND u.status = 'published' AND u.deleted_at IS NULL
+      AND g.is_active AND g.deleted_at IS NULL;
+$$;
+
+-- Stats functions.
+-- Staff: all purchases, optionally filtered by student (with names).
+CREATE OR REPLACE FUNCTION public.list_all_unit_purchases(p_student_id uuid DEFAULT NULL)
+RETURNS TABLE (
+    id uuid, student_id uuid, unit_id uuid, base_price numeric(10, 2),
+    platform_fee numeric(10, 2), total_price numeric(10, 2), code_id uuid,
+    status public.unit_purchase_status, purchased_at timestamptz,
+    unit_name text, grade_name text
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    RETURN QUERY
+        SELECT up.id, up.student_id, up.unit_id, up.base_price, up.platform_fee,
+               up.total_price, up.code_id, up.status, up.purchased_at,
+               u.name, g.name
+        FROM public.unit_purchases up
+        JOIN public.units u ON u.id = up.unit_id
+        JOIN public.grades g ON g.id = u.grade_id
+        WHERE (p_student_id IS NULL OR up.student_id = p_student_id)
+        ORDER BY up.purchased_at DESC;
+END $$;
+
+-- Staff: purchase analytics JSON.
+CREATE OR REPLACE FUNCTION public.unit_purchase_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_stats jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT jsonb_build_object(
+        'total_purchases', (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+        'total_revenue', (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases WHERE status = 'active'),
+        'revenue_this_month', (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases
+                               WHERE status = 'active' AND purchased_at >= date_trunc('month', now())),
+        'by_grade', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'grade_name', r.grade_name, 'purchases', r.purchases, 'revenue', r.revenue
+            ) ORDER BY r.sort_order)
+            FROM (
+                SELECT g.name AS grade_name, g.sort_order,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up
+                JOIN public.units u ON u.id = up.unit_id
+                JOIN public.grades g ON g.id = u.grade_id
+                WHERE up.status = 'active'
+                GROUP BY g.id, g.name, g.sort_order
+            ) r
+        ), '[]'::jsonb),
+        'top_units', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'unit_name', r.unit_name, 'purchases', r.purchases, 'revenue', r.revenue
+            ) ORDER BY r.revenue DESC)
+            FROM (
+                SELECT u.name AS unit_name,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up
+                JOIN public.units u ON u.id = up.unit_id
+                WHERE up.status = 'active'
+                GROUP BY u.id, u.name
+                ORDER BY revenue DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb)
+    ) INTO v_stats;
+
+    RETURN v_stats;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 8b) DROP the subscription functions (original signatures from
+--     0006/0007/0014/0022/0025; verified against each source).
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.redeem_subscription_code(text);
+DROP FUNCTION IF EXISTS public.get_my_subscriptions();
+DROP FUNCTION IF EXISTS public.get_my_current_subscription();
+DROP FUNCTION IF EXISTS public.revoke_subscription_code(uuid);
+DROP FUNCTION IF EXISTS public.create_manual_subscription(uuid, uuid, timestamptz, text);
+DROP FUNCTION IF EXISTS public.set_pricing_plan(uuid, integer, numeric, numeric, boolean);
+DROP FUNCTION IF EXISTS public.delete_pricing_plan(uuid);
+DROP FUNCTION IF EXISTS public.expire_subscriptions();
+DROP FUNCTION IF EXISTS public.create_codes_for_staff(uuid, integer, text);
+DROP FUNCTION IF EXISTS public.generate_codes_internal(uuid, integer, text);
+
+-- ---------------------------------------------------------------------
+-- 9) Views (order is MANDATORY): redefine the student/stats views
+--    without any v_active_subscriptions dependency FIRST, then drop
+--    v_active_subscriptions. v_lesson_stats / v_audit_log are unchanged
+--    (no references to removed columns). v_lesson_access must be
+--    DROPPED+recreated (not CREATE OR REPLACE): lessons gained is_trial,
+--    which shifts the l.* column expansion and would "rename" the
+--    trailing can_access column.
+-- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS public.v_lesson_access;
+CREATE VIEW public.v_lesson_access AS
+SELECT l.*, public.can_access_lesson(l.id) AS can_access
+FROM public.lessons l
+JOIN public.units u ON u.id = l.unit_id
+WHERE l.status = 'published' AND l.deleted_at IS NULL
+  AND u.status = 'published' AND u.deleted_at IS NULL;
+
+COMMENT ON VIEW public.v_lesson_access IS 'Lesson list with live access flag (new can_access_lesson: unit purchase or trial). Staff can read all published rows; students see published lessons of their own live grade only via RLS on lessons.';
+
+-- Decision E: progress aggregates count ONLY lessons of the student's
+-- purchased units, excluding trial lessons from numerator and denominator.
+CREATE OR REPLACE VIEW public.v_student_progress_summary AS
+SELECT p.student_id, g.id AS grade_id, u.id AS unit_id,
+       ROUND(AVG(p.percent_completed), 2) AS percent,
+       COUNT(*) FILTER (WHERE p.is_completed) AS completed_lessons,
+       COUNT(*) AS total_lessons
+FROM public.progress p
+JOIN public.lessons l ON l.id = p.lesson_id AND l.deleted_at IS NULL AND NOT l.is_trial
+JOIN public.units u ON u.id = l.unit_id AND u.deleted_at IS NULL
+JOIN public.grades g ON g.id = u.grade_id AND g.deleted_at IS NULL
+JOIN public.unit_purchases up
+      ON up.student_id = p.student_id AND up.unit_id = u.id AND up.status = 'active'
+GROUP BY p.student_id, g.id, u.id;
+
+COMMENT ON VIEW public.v_student_progress_summary IS 'Per-student percent + completion counts per grade/unit over PURCHASED units only; trial lessons excluded (decision E).';
+
+-- v_dashboard_metrics: no subscription columns; fed from unit_purchases.
+-- DROPPED+recreated (CREATE OR REPLACE cannot drop the removed
+-- subscription columns).
+DROP VIEW IF EXISTS public.v_dashboard_metrics;
+CREATE VIEW public.v_dashboard_metrics AS
+SELECT
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL)                         AS total_students,
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active')   AS active_students,
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled') AS disabled_students,
+  (SELECT COUNT(*) FROM public.unit_purchases WHERE status = 'active')                    AS active_purchases,
+  (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published') AS published_lessons,
+  (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status <> 'published') AS hidden_or_draft_lessons;
+
+COMMENT ON VIEW public.v_dashboard_metrics IS 'Admin operational metrics fed from unit_purchases (no subscription columns).';
+
+DROP VIEW IF EXISTS public.v_active_subscriptions;
+
+-- Re-assert the 0026 view lockdown for the redefined views (CREATE OR
+-- REPLACE preserves ACLs, this is belt & braces for the same posture).
+REVOKE ALL ON PUBLIC.v_lesson_access FROM PUBLIC;
+REVOKE ALL ON PUBLIC.v_lesson_access FROM anon, authenticated;
+REVOKE ALL ON PUBLIC.v_student_progress_summary FROM PUBLIC;
+REVOKE ALL ON PUBLIC.v_student_progress_summary FROM anon, authenticated;
+REVOKE ALL ON PUBLIC.v_dashboard_metrics FROM PUBLIC;
+REVOKE ALL ON PUBLIC.v_dashboard_metrics FROM anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 10) Unified get_dashboard_stats (CREATE OR REPLACE - keeps grants).
+--     No subscription keys remain: students / purchases / content /
+--     engagement / by_grade / top_units / recent_purchases.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_stats jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT jsonb_build_object(
+        'students', jsonb_build_object(
+            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL),
+            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active'),
+            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled'),
+            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL),
+            'new_this_month', (SELECT count(*) FROM public.profiles
+                               WHERE deleted_at IS NULL AND created_at >= date_trunc('month', now()))
+        ),
+        'purchases', jsonb_build_object(
+            'total',               (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+            'total_revenue',       (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases WHERE status = 'active'),
+            'revenue_this_month',  (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases
+                                    WHERE status = 'active' AND purchased_at >= date_trunc('month', now()))
+        ),
+        'content', jsonb_build_object(
+            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
+            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
+            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
+            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
+            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
+            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
+            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
+            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
+        ),
+        'engagement', jsonb_build_object(
+            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
+            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
+            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress)
+        ),
+        'by_grade', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'grade_name', r.grade_name,
+                'students', r.students,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.sort_order)
+            FROM (
+                SELECT g.name AS grade_name, g.sort_order,
+                       count(DISTINCT p.id) AS students,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.grades g
+                LEFT JOIN public.profiles p
+                       ON p.grade_id = g.id AND p.deleted_at IS NULL
+                LEFT JOIN public.unit_purchases up
+                       ON up.student_id = p.id AND up.status = 'active'
+                WHERE g.deleted_at IS NULL
+                GROUP BY g.id, g.name, g.sort_order
+            ) r
+        ), '[]'::jsonb),
+        'top_units', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'unit_name', r.unit_name,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.revenue DESC)
+            FROM (
+                SELECT u.name AS unit_name,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up
+                JOIN public.units u ON u.id = up.unit_id
+                WHERE up.status = 'active'
+                GROUP BY u.id, u.name
+                ORDER BY revenue DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_purchases', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', p.full_name,
+                'grade_name', g.name,
+                'unit_name', u.name,
+                'total_price', up.total_price,
+                'purchased_at', up.purchased_at
+            ) ORDER BY up.purchased_at DESC)
+            FROM public.unit_purchases up
+            JOIN public.profiles p ON p.id = up.student_id
+            JOIN public.units u ON u.id = up.unit_id
+            JOIN public.grades g ON g.id = u.grade_id
+            WHERE up.status = 'active'
+            LIMIT 5
+        ), '[]'::jsonb)
+    ) INTO v_stats;
+
+    RETURN v_stats;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 11) notify_new_content: audience = active purchasers of the unit.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notify_new_content(p_lesson_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_unit uuid;
+BEGIN
+    SELECT unit_id INTO v_unit FROM public.lessons WHERE id = p_lesson_id;
+    IF v_unit IS NULL THEN
+        RAISE EXCEPTION 'lesson_not_found';
+    END IF;
+
+    INSERT INTO public.notifications (user_id, type, entity_type, entity_id, title, body, dedup_key)
+    SELECT up.student_id, 'new_content', 'lesson', p_lesson_id,
+           'محتوى جديد', l.title,
+           'new_content:' || p_lesson_id || ':' || up.student_id
+    FROM public.unit_purchases up
+    JOIN public.lessons l ON l.id = p_lesson_id
+    WHERE up.unit_id = v_unit
+      AND up.status = 'active'
+      AND NOT EXISTS (
+          SELECT 1 FROM public.notifications n
+          WHERE n.dedup_key = 'new_content:' || p_lesson_id || ':' || up.student_id
+      );
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 12) Drop the old subscription tables (order mandatory: referential
+--     leaves first).
+-- ---------------------------------------------------------------------
+DROP TABLE IF EXISTS public.code_redemptions;
+DROP TABLE IF EXISTS public.subscriptions;
+DROP TABLE IF EXISTS public.subscription_codes;
+DROP TABLE IF EXISTS public.pricing_plans;
+
+-- ---------------------------------------------------------------------
+-- 13) Drop the subscription_status enum (last - after the table is gone).
+-- ---------------------------------------------------------------------
+DROP TYPE IF EXISTS public.subscription_status;
+
+-- ---------------------------------------------------------------------
+-- 14) Grants for the new functions (updated matrix, plan section 3.13).
+--     Every new function: REVOKE FROM PUBLIC first, then explicit grant.
+--     create_unit_codes_internal stays UNGRANTED (internal only); it is
+--     SECURITY DEFINER-owned so the REVOKE below does not affect the
+--     staff wrapper that calls it.
+--     Subscription functions were dropped in step 8b, so no subscription
+--     grant survives. can_access_lesson keeps its authenticated grant
+--     from 0010 (CREATE OR REPLACE preserves it).
+-- ---------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.create_unit_codes_internal(uuid, integer, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.redeem_unit_code(text) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.redeem_unit_code(text) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_my_unit_purchases() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_my_unit_purchases() TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_my_lesson_access(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_my_lesson_access(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_public_unit_prices() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_public_unit_prices() TO anon, authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.set_unit_price(uuid, numeric, numeric) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.set_unit_price(uuid, numeric, numeric) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.list_unit_pricing() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_unit_pricing() TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.list_codes_by_unit(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_codes_by_unit(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.revoke_unit_code(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.revoke_unit_code(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.create_unit_codes_for_staff(uuid, integer, text) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.create_unit_codes_for_staff(uuid, integer, text) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.list_all_unit_purchases(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_all_unit_purchases(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.unit_purchase_stats() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.unit_purchase_stats() TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.set_lesson_trial(uuid, boolean) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.set_lesson_trial(uuid, boolean) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 15) Enumeration constraints on notifications.entity_type /
+--     audit_logs.entity_type: both are free TEXT columns (0002), no
+--     CHECK/CASE enumeration exists anywhere in 0005/0019 to replace
+--     (verified). Nothing further to do.
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+-- >>> included from migrations\0029_exams.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0029_exams
+-- Phase 6 | Exams | Database
+-- Adds the exam system on top of the unit-purchase model
+-- (IMPLEMENTATION-PLAN.md section 8):
+--   exams / exam_questions / exam_attempts / exam_answers
+-- MCQ is auto-graded at submit time; essays are graded by staff via
+-- grade_exam_attempt. notification_type gains exam_submitted (staff) and
+-- exam_graded (student) via ALTER TYPE ... ADD VALUE (PG 12+).
+--
+-- Append-only migration: nothing in 0001..0028 is modified.
+-- Access: reads gated on can_access_lesson(exam.lesson_id); staff DML via
+-- RLS; student writes only through the SECURITY DEFINER submit RPC.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) notification_type: exam_submitted (staff) / exam_graded (student).
+--    ADD VALUE is idempotent and safe on PG 12+; the new values are only
+--    referenced inside function bodies below (runtime casts), so no
+--    in-file enum usage exists.
+-- ---------------------------------------------------------------------
+ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'exam_submitted';
+ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'exam_graded';
+
+-- ---------------------------------------------------------------------
+-- 2) New enum: exam_question_type (additive - no conflict).
+-- ---------------------------------------------------------------------
+CREATE TYPE public.exam_question_type AS ENUM ('mcq', 'essay');
+
+-- ---------------------------------------------------------------------
+-- 3) New tables. exams carries created_at/updated_at (set_updated_at);
+--    attempts/answers are high-volume student-owned rows and are EXCLUDED
+--    from the audit_trigger inventory (DATABASE.md section 7 MED-8).
+-- ---------------------------------------------------------------------
+CREATE TABLE public.exams (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    lesson_id     uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
+    title         text NOT NULL CHECK (length(btrim(title)) > 0),
+    sort_order    integer NOT NULL DEFAULT 0,
+    passing_score integer NOT NULL DEFAULT 50 CHECK (passing_score BETWEEN 0 AND 100),
+    deleted_at    timestamptz,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX exams_lesson_idx ON public.exams(lesson_id);
+
+ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exams FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.exams IS 'Per-lesson exam (one exam per lesson is the UI contract; UNIQUE(lesson_id) is NOT enforced to allow future variants). Soft-deletable; student reads gated on can_access_lesson(lesson_id).';
+
+CREATE TABLE public.exam_questions (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
+    type          public.exam_question_type NOT NULL DEFAULT 'mcq',
+    prompt        text NOT NULL CHECK (length(btrim(prompt)) > 0),
+    choices       jsonb,
+    correct_index integer,
+    max_score     numeric(5, 2) NOT NULL DEFAULT 1 CHECK (max_score > 0),
+    sort_order    integer NOT NULL DEFAULT 0,
+    CONSTRAINT exam_questions_mcq_shape CHECK (
+        type <> 'mcq'
+        OR (
+            choices IS NOT NULL
+            AND jsonb_typeof(choices) = 'array'
+            AND jsonb_array_length(choices) >= 2
+            AND correct_index IS NOT NULL
+            AND correct_index BETWEEN 0 AND jsonb_array_length(choices) - 1
+        )
+    )
+);
+CREATE INDEX exam_questions_exam_idx ON public.exam_questions(exam_id);
+
+ALTER TABLE public.exam_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_questions FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.exam_questions IS 'Exam questions (mcq with choices/correct_index, or essay). correct_index is exposed to staff only (sanitized by get_exam_questions for students).';
+
+CREATE TABLE public.exam_attempts (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
+    student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    status        text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'graded')),
+    auto_score    numeric(5, 2),
+    manual_score  numeric(5, 2),
+    final_score   numeric(5, 2),
+    graded_by     uuid REFERENCES public.profiles(id),
+    graded_at     timestamptz,
+    submitted_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (exam_id, student_id)
+);
+CREATE INDEX exam_attempts_exam_idx ON public.exam_attempts(exam_id);
+
+ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_attempts FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.exam_attempts IS 'One attempt per (exam, student) - UNIQUE enforced. MCQ auto-graded on submit; essays via grade_exam_attempt; final_score set when fully graded.';
+
+CREATE TABLE public.exam_answers (
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    attempt_id   uuid NOT NULL REFERENCES public.exam_attempts(id) ON DELETE CASCADE,
+    question_id  uuid NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
+    choice_index integer,
+    answer_text  text,
+    score        numeric(5, 2),
+    UNIQUE (attempt_id, question_id)
+);
+CREATE INDEX exam_answers_attempt_idx ON public.exam_answers(attempt_id);
+
+ALTER TABLE public.exam_answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exam_answers FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.exam_answers IS 'Per-question answers of an attempt. choice_index for mcq, answer_text for essay; score set at submit (mcq) or grading (essay).';
+
+-- ---------------------------------------------------------------------
+-- 4) Triggers: set_updated_at + audit_trigger on exams only (attempts and
+--    answers are student-owned, excluded from the audit inventory; exam
+--    questions are pure content but not part of the documented inventory).
+-- ---------------------------------------------------------------------
+DROP TRIGGER IF EXISTS set_updated_at ON public.exams;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.exams
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS audit_trigger ON public.exams;
+CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.exams
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger();
+
+-- ---------------------------------------------------------------------
+-- 5) RLS policies (named style of 0009/0025/0028). Student reads are
+--    gated on can_access_lesson(lesson_id); student writes happen only
+--    through SECURITY DEFINER RPCs; staff hold full DML.
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS exams_select_gated ON public.exams;
+CREATE POLICY exams_select_gated ON public.exams
+    FOR SELECT
+    USING (
+        deleted_at IS NULL
+        AND (
+            public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+            OR public.can_access_lesson(lesson_id)
+        )
+    );
+
+DROP POLICY IF EXISTS exams_insert_staff ON public.exams;
+CREATE POLICY exams_insert_staff ON public.exams
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exams_update_staff ON public.exams;
+CREATE POLICY exams_update_staff ON public.exams
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exams_delete_staff ON public.exams;
+CREATE POLICY exams_delete_staff ON public.exams
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_questions_select_gated ON public.exam_questions;
+CREATE POLICY exam_questions_select_gated ON public.exam_questions
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR EXISTS (
+            SELECT 1 FROM public.exams e
+            WHERE e.id = exam_id
+              AND e.deleted_at IS NULL
+              AND public.can_access_lesson(e.lesson_id)
+        )
+    );
+
+DROP POLICY IF EXISTS exam_questions_insert_staff ON public.exam_questions;
+CREATE POLICY exam_questions_insert_staff ON public.exam_questions
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_questions_update_staff ON public.exam_questions;
+CREATE POLICY exam_questions_update_staff ON public.exam_questions
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_questions_delete_staff ON public.exam_questions;
+CREATE POLICY exam_questions_delete_staff ON public.exam_questions
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_attempts_select_own_or_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_select_own_or_staff ON public.exam_attempts
+    FOR SELECT
+    USING (
+        student_id = auth.uid()
+        OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+    );
+
+DROP POLICY IF EXISTS exam_attempts_dml_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_dml_staff ON public.exam_attempts
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_attempts_update_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_update_staff ON public.exam_attempts
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_attempts_delete_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_delete_staff ON public.exam_attempts
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_answers_select_own_or_staff ON public.exam_answers;
+CREATE POLICY exam_answers_select_own_or_staff ON public.exam_answers
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR attempt_id IN (
+            SELECT a.id FROM public.exam_attempts a
+            WHERE a.student_id = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS exam_answers_dml_staff ON public.exam_answers;
+CREATE POLICY exam_answers_dml_staff ON public.exam_answers
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_answers_update_staff ON public.exam_answers;
+CREATE POLICY exam_answers_update_staff ON public.exam_answers
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS exam_answers_delete_staff ON public.exam_answers;
+CREATE POLICY exam_answers_delete_staff ON public.exam_answers
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+-- ---------------------------------------------------------------------
+-- 6) Read helpers (SECURITY DEFINER; access-gated on the exam's lesson).
+--    get_exam_questions sanitizes correct_index for students so the
+--    answer key can never leak through the student surface.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.list_exams(p_lesson_id uuid)
+RETURNS SETOF public.exams
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT e.*
+    FROM public.exams e
+    WHERE e.deleted_at IS NULL
+      AND e.lesson_id = p_lesson_id
+      AND (
+          public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+          OR public.can_access_lesson(e.lesson_id)
+      )
+    ORDER BY e.sort_order, e.created_at;
+$$;
+
+COMMENT ON FUNCTION public.list_exams(uuid) IS 'Exams of a lesson visible to the caller (staff: all live; students: only lessons they can access).';
+
+CREATE OR REPLACE FUNCTION public.get_exam_questions(p_exam_id uuid)
+RETURNS SETOF public.exam_questions
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT q.id, q.exam_id, q.type, q.prompt, q.choices,
+           CASE WHEN (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+                THEN q.correct_index ELSE NULL END AS correct_index,
+           q.max_score, q.sort_order
+    FROM public.exam_questions q
+    JOIN public.exams e ON e.id = q.exam_id AND e.deleted_at IS NULL
+    WHERE q.exam_id = p_exam_id
+      AND (
+          public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+          OR public.can_access_lesson(e.lesson_id)
+      )
+    ORDER BY q.sort_order;
+$$;
+
+COMMENT ON FUNCTION public.get_exam_questions(uuid) IS 'Questions of an exam; correct_index is masked for non-staff callers (answer key never leaks).';
+
+CREATE OR REPLACE FUNCTION public.get_my_exam_attempt(p_exam_id uuid)
+RETURNS SETOF public.exam_attempts
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT a.*
+    FROM public.exam_attempts a
+    JOIN public.exams e ON e.id = a.exam_id AND e.deleted_at IS NULL
+    WHERE a.exam_id = p_exam_id
+      AND a.student_id = auth.uid()
+      AND (
+          public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+          OR public.can_access_lesson(e.lesson_id)
+      );
+$$;
+
+COMMENT ON FUNCTION public.get_my_exam_attempt(uuid) IS 'The caller''s own attempt for an exam (at most one row due to UNIQUE(exam_id, student_id)).';
+
+-- ---------------------------------------------------------------------
+-- 7) submit_exam_attempt: student-only SECURITY DEFINER write path.
+--    Validates the answer payload, stores the answers, auto-grades MCQ,
+--    sends exam_submitted to staff, and - when no essay question exists -
+--    grades the attempt immediately (exam_graded to the student).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.submit_exam_attempt(p_exam_id uuid, p_answers jsonb)
+RETURNS public.exam_attempts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid         uuid := auth.uid();
+    v_exam        public.exams%ROWTYPE;
+    v_attempt     public.exam_attempts;
+    v_auto        numeric(5, 2) := 0;
+    v_has_essays  boolean;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'auth_required';
+    END IF;
+    IF NOT public.is_student() THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT * INTO v_exam
+    FROM public.exams
+    WHERE id = p_exam_id AND deleted_at IS NULL;
+    IF v_exam.id IS NULL THEN
+        RAISE EXCEPTION 'exam_not_found';
+    END IF;
+
+    IF NOT public.can_access_lesson(v_exam.lesson_id) THEN
+        RAISE EXCEPTION 'access_denied';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.exam_attempts
+        WHERE exam_id = p_exam_id AND student_id = v_uid
+    ) THEN
+        RAISE EXCEPTION 'attempt_already_exists';
+    END IF;
+
+    IF jsonb_typeof(p_answers) IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION 'invalid_answers';
+    END IF;
+
+    -- every supplied answer must reference a question of this exam
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_to_recordset(p_answers)
+             AS r(question_id uuid, choice_index integer, answer_text text)
+        LEFT JOIN public.exam_questions q
+               ON q.id = r.question_id AND q.exam_id = p_exam_id
+        WHERE q.id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'invalid_answers';
+    END IF;
+
+    -- every answer must be well-formed for its question type
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_to_recordset(p_answers)
+             AS r(question_id uuid, choice_index integer, answer_text text)
+        JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = p_exam_id
+        WHERE (q.type = 'mcq'
+               AND (r.choice_index IS NULL
+                    OR r.choice_index < 0
+                    OR r.choice_index > jsonb_array_length(q.choices) - 1))
+           OR (q.type = 'essay'
+               AND length(btrim(COALESCE(r.answer_text, ''))) = 0)
+    ) THEN
+        RAISE EXCEPTION 'invalid_answers';
+    END IF;
+
+    INSERT INTO public.exam_attempts (exam_id, student_id, status)
+    VALUES (p_exam_id, v_uid, 'submitted')
+    RETURNING * INTO v_attempt;
+
+    INSERT INTO public.exam_answers (attempt_id, question_id, choice_index, answer_text, score)
+    SELECT v_attempt.id, q.id, r.choice_index, r.answer_text,
+           CASE WHEN q.type = 'mcq' AND r.choice_index = q.correct_index
+                THEN q.max_score ELSE NULL END
+    FROM jsonb_to_recordset(p_answers)
+         AS r(question_id uuid, choice_index integer, answer_text text)
+    JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = p_exam_id;
+
+    SELECT COALESCE(sum(score), 0) INTO v_auto
+    FROM public.exam_answers
+    WHERE attempt_id = v_attempt.id;
+
+    SELECT EXISTS (
+        SELECT 1 FROM public.exam_questions
+        WHERE exam_id = p_exam_id AND type = 'essay'
+    ) INTO v_has_essays;
+
+    UPDATE public.exam_attempts SET auto_score = v_auto
+    WHERE id = v_attempt.id
+    RETURNING * INTO v_attempt;
+
+    IF NOT v_has_essays THEN
+        UPDATE public.exam_attempts
+        SET status = 'graded', manual_score = 0,
+            final_score = v_auto, graded_at = now()
+        WHERE id = v_attempt.id
+        RETURNING * INTO v_attempt;
+
+        INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+        VALUES (v_uid, 'exam_graded', 'تم تصحيح الاختبار', v_exam.title,
+                'exam_graded:' || v_attempt.id, 'exam_attempts', v_attempt.id)
+        ON CONFLICT (dedup_key) DO NOTHING;
+    END IF;
+
+    -- supervising staff are notified of every submission (one notification
+    -- per recipient; dedup_key scoped by user so the fan-out never collapses)
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+    SELECT u.id, 'exam_submitted', 'اختبار بانتظار المراجعة', v_exam.title,
+           'exam_submitted:' || u.id || ':' || v_attempt.id, 'exam_attempts', v_attempt.id
+    FROM public.profiles u
+    WHERE u.role IN ('admin', 'mr_walid', 'teacher')
+      AND u.status = 'active' AND u.deleted_at IS NULL
+    ON CONFLICT (dedup_key) DO NOTHING;
+
+    PERFORM public.audit_log('exam.submitted', 'exam_attempts', v_attempt.id,
+        jsonb_build_object('exam_id', p_exam_id, 'auto_score', v_auto));
+
+    RETURN v_attempt;
+END $$;
+
+COMMENT ON FUNCTION public.submit_exam_attempt(uuid, jsonb) IS 'Student submit path: one attempt per (exam, student); MCQ auto-graded, essays pending grade_exam_attempt; notifies staff (exam_submitted) and, when fully auto-graded, the student (exam_graded).';
+
+-- ---------------------------------------------------------------------
+-- 8) grade_exam_attempt: staff-only SECURITY DEFINER essay grading.
+--    Applies per-essay scores, sets manual_score/final_score and the
+--    graded status, and notifies the student (exam_graded).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.grade_exam_attempt(p_attempt_id uuid, p_scores jsonb)
+RETURNS public.exam_attempts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_attempt public.exam_attempts%ROWTYPE;
+    v_manual  numeric(5, 2) := 0;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT * INTO v_attempt
+    FROM public.exam_attempts
+    WHERE id = p_attempt_id;
+    IF v_attempt.id IS NULL THEN
+        RAISE EXCEPTION 'attempt_not_found';
+    END IF;
+    IF v_attempt.status = 'graded' THEN
+        RAISE EXCEPTION 'already_graded';
+    END IF;
+
+    -- every score must target an essay question of the attempt's exam
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_to_recordset(COALESCE(p_scores, '[]'::jsonb))
+             AS r(question_id uuid, score numeric)
+        LEFT JOIN public.exam_questions q
+               ON q.id = r.question_id
+              AND q.exam_id = v_attempt.exam_id
+              AND q.type = 'essay'
+        WHERE q.id IS NULL OR r.score IS NULL OR r.score < 0
+    ) THEN
+        RAISE EXCEPTION 'invalid_scores';
+    END IF;
+
+    UPDATE public.exam_answers a
+    SET score = r.score
+    FROM jsonb_to_recordset(COALESCE(p_scores, '[]'::jsonb))
+         AS r(question_id uuid, score numeric)
+    WHERE a.attempt_id = v_attempt.id AND a.question_id = r.question_id;
+
+    SELECT COALESCE(sum(a.score), 0) INTO v_manual
+    FROM public.exam_answers a
+    JOIN public.exam_questions q ON q.id = a.question_id
+    WHERE a.attempt_id = v_attempt.id AND q.type = 'essay';
+
+    UPDATE public.exam_attempts
+    SET status = 'graded',
+        manual_score = v_manual,
+        final_score = COALESCE(auto_score, 0) + v_manual,
+        graded_by = auth.uid(),
+        graded_at = now()
+    WHERE id = v_attempt.id
+    RETURNING * INTO v_attempt;
+
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+    SELECT v_attempt.student_id, 'exam_graded', 'تم تصحيح الاختبار', e.title,
+           'exam_graded:' || v_attempt.id, 'exam_attempts', v_attempt.id
+    FROM public.exams e
+    WHERE e.id = v_attempt.exam_id
+    ON CONFLICT (dedup_key) DO NOTHING;
+
+    PERFORM public.audit_log('exam.graded', 'exam_attempts', p_attempt_id,
+        jsonb_build_object('final_score', v_attempt.final_score, 'graded_by', auth.uid()));
+
+    RETURN v_attempt;
+END $$;
+
+COMMENT ON FUNCTION public.grade_exam_attempt(uuid, jsonb) IS 'Staff essay grading: applies per-essay scores, finalizes the attempt and notifies the student (exam_graded).';
+
+-- ---------------------------------------------------------------------
+-- 9) Grants (SECURITY.md 8.2 pattern): every new function is revoked from
+--    PUBLIC and granted to authenticated. No anon surface is added.
+-- ---------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.list_exams(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_exams(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_exam_questions(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_exam_questions(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.get_my_exam_attempt(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_my_exam_attempt(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.submit_exam_attempt(uuid, jsonb) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.submit_exam_attempt(uuid, jsonb) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.grade_exam_attempt(uuid, jsonb) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.grade_exam_attempt(uuid, jsonb) TO authenticated;
+
+-- =====================================================================
+-- >>> included from migrations\0030_comments.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0030_comments
+-- Phase 7 | Comments | Database
+-- Lesson discussions on top of the unit-purchase model
+-- (IMPLEMENTATION-PLAN.md section 9):
+--   lesson_comments: top-level comments + self-referencing replies.
+-- notification_type gains lesson_comment (reply to your comment) and
+-- comment_reply (staff oversight of every added comment/reply) via
+-- ALTER TYPE ... ADD VALUE (PG 12+).
+--
+-- Append-only migration: nothing in 0001..0029 is modified.
+-- Access: reads gated on can_access_lesson(lesson.lesson_id) or staff;
+-- writes via the SECURITY DEFINER RPCs (add_lesson_comment /
+-- delete_lesson_comment / list_lesson_comments); RLS keeps direct DML
+-- to own rows (students) or any row (staff).
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) notification_type: lesson_comment / comment_reply (ADD VALUE only,
+--    idempotent; only referenced at runtime inside function bodies).
+-- ---------------------------------------------------------------------
+ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'lesson_comment';
+ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'comment_reply';
+
+-- ---------------------------------------------------------------------
+-- 2) lesson_comments table (DATABASE.md section 4.19).
+--    No updated_at column, so set_updated_at is NOT attached; the table
+--    joins the audit_trigger inventory (MED-8).
+-- ---------------------------------------------------------------------
+CREATE TABLE public.lesson_comments (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    lesson_id  uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
+    author_id  uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    parent_id  uuid REFERENCES public.lesson_comments(id) ON DELETE CASCADE,
+    body       text NOT NULL CHECK (length(btrim(body)) > 0 AND length(btrim(body)) <= 1000),
+    status     text NOT NULL DEFAULT 'visible' CHECK (status IN ('visible', 'removed')),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX lesson_comments_lesson_idx ON public.lesson_comments(lesson_id);
+CREATE INDEX lesson_comments_parent_idx ON public.lesson_comments(parent_id) WHERE parent_id IS NOT NULL;
+
+ALTER TABLE public.lesson_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lesson_comments FORCE ROW LEVEL SECURITY;
+
+COMMENT ON TABLE public.lesson_comments IS 'Lesson comments with self-referencing replies. Students with lesson access may read visible rows and write their own; staff read everything (incl. removed) and moderate.';
+
+-- ---------------------------------------------------------------------
+-- 3) Parent/lesson consistency guard for direct DML: a reply must point
+--    to a visible comment of the SAME lesson (the RPC validates too).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.lesson_comments_parent_check()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NEW.parent_id IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM public.lesson_comments p
+           WHERE p.id = NEW.parent_id
+             AND p.lesson_id = NEW.lesson_id
+             AND p.status = 'visible'
+       ) THEN
+        RAISE EXCEPTION 'invalid_parent';
+    END IF;
+    RETURN NEW;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.lesson_comments_parent_check() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS lesson_comments_parent_check ON public.lesson_comments;
+CREATE TRIGGER lesson_comments_parent_check BEFORE INSERT OR UPDATE ON public.lesson_comments
+    FOR EACH ROW EXECUTE FUNCTION public.lesson_comments_parent_check();
+
+-- ---------------------------------------------------------------------
+-- 4) audit_trigger on lesson_comments (MED-8 inventory; progress and
+--    notifications remain excluded). No set_updated_at: the table has no
+--    updated_at column.
+-- ---------------------------------------------------------------------
+DROP TRIGGER IF EXISTS audit_trigger ON public.lesson_comments;
+CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.lesson_comments
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger();
+
+-- ---------------------------------------------------------------------
+-- 5) RLS policies (named style of 0009/0025/0028/0029). Students read
+--    visible rows only when they can access the lesson (or their own);
+--    writes to own rows; staff read everything and moderate.
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lesson_comments_select_gated ON public.lesson_comments;
+CREATE POLICY lesson_comments_select_gated ON public.lesson_comments
+    FOR SELECT
+    USING (
+        (
+            public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+            OR author_id = auth.uid()
+            OR public.can_access_lesson(lesson_id)
+        )
+        AND (
+            status = 'visible'
+            OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+            OR author_id = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS lesson_comments_insert_gated ON public.lesson_comments;
+CREATE POLICY lesson_comments_insert_gated ON public.lesson_comments
+    FOR INSERT
+    WITH CHECK (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR public.can_access_lesson(lesson_id)
+    );
+
+DROP POLICY IF EXISTS lesson_comments_update_own_or_staff ON public.lesson_comments;
+CREATE POLICY lesson_comments_update_own_or_staff ON public.lesson_comments
+    FOR UPDATE
+    USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    WITH CHECK (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS lesson_comments_delete_own_or_staff ON public.lesson_comments;
+CREATE POLICY lesson_comments_delete_own_or_staff ON public.lesson_comments
+    FOR DELETE
+    USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+-- ---------------------------------------------------------------------
+-- 6) add_lesson_comment: SECURITY DEFINER student/staff writer.
+--    Validates access + body + parent, inserts, then notifies:
+--      - comment_reply -> every supervising staff member (moderation
+--        visibility for every new comment/reply; dedup scoped per user).
+--      - lesson_comment -> the parent comment's author when a reply is
+--        posted to their comment (not self).
+--    The audit_trigger captures lesson_comments.insert automatically.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.add_lesson_comment(p_lesson_id uuid, p_body text, p_parent_id uuid DEFAULT NULL)
+RETURNS public.lesson_comments
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid     uuid := auth.uid();
+    v_comment public.lesson_comments%ROWTYPE;
+    v_lesson  text;
+    v_parent  public.lesson_comments%ROWTYPE;
+BEGIN
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+            OR public.can_access_lesson(p_lesson_id)) THEN
+        RAISE EXCEPTION 'access_denied';
+    END IF;
+
+    IF length(btrim(COALESCE(p_body, ''))) = 0
+       OR length(btrim(COALESCE(p_body, ''))) > 1000 THEN
+        RAISE EXCEPTION 'invalid_body';
+    END IF;
+
+    IF p_parent_id IS NOT NULL THEN
+        SELECT * INTO v_parent
+        FROM public.lesson_comments
+        WHERE id = p_parent_id;
+        IF v_parent.id IS NULL OR v_parent.status <> 'visible'
+           OR v_parent.lesson_id <> p_lesson_id THEN
+            RAISE EXCEPTION 'invalid_parent';
+        END IF;
+    END IF;
+
+    SELECT title INTO v_lesson FROM public.lessons WHERE id = p_lesson_id;
+
+    INSERT INTO public.lesson_comments (lesson_id, author_id, parent_id, body)
+    VALUES (p_lesson_id, v_uid, p_parent_id, btrim(p_body))
+    RETURNING * INTO v_comment;
+
+    -- staff moderation visibility (one notification per recipient)
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+    SELECT u.id, 'comment_reply', 'تعليق جديد على الدرس', v_lesson,
+           'comment_reply:' || u.id || ':' || v_comment.id, 'lesson_comments', v_comment.id
+    FROM public.profiles u
+    WHERE u.role IN ('admin', 'mr_walid', 'teacher')
+      AND u.status = 'active' AND u.deleted_at IS NULL
+      AND u.id <> v_uid
+    ON CONFLICT (dedup_key) DO NOTHING;
+
+    -- reply to your comment (skip self)
+    IF v_parent.id IS NOT NULL AND v_parent.author_id <> v_uid THEN
+        INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
+        VALUES (v_parent.author_id, 'lesson_comment', 'تم الرد على تعليقك', v_lesson,
+                'lesson_comment:' || v_comment.id, 'lesson_comments', v_comment.id)
+        ON CONFLICT (dedup_key) DO NOTHING;
+    END IF;
+
+    RETURN v_comment;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 7) delete_lesson_comment: hard delete of own comment, or any comment
+--    by staff (moderation). audit_trigger captures the DELETE.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.delete_lesson_comment(p_comment_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_row public.lesson_comments%ROWTYPE;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT * INTO v_row FROM public.lesson_comments WHERE id = p_comment_id;
+    IF v_row.id IS NULL THEN
+        RAISE EXCEPTION 'comment_not_found';
+    END IF;
+
+    IF v_row.author_id <> auth.uid()
+       AND NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    DELETE FROM public.lesson_comments WHERE id = p_comment_id;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 8) list_lesson_comments: access-gated reader. Staff see every status
+--    (moderation); students see visible rows only. Replies are returned
+--    as flat rows; the client groups by parent_id.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.list_lesson_comments(p_lesson_id uuid)
+RETURNS TABLE (
+    id          uuid,
+    lesson_id   uuid,
+    author_id   uuid,
+    author_name text,
+    parent_id   uuid,
+    body        text,
+    status      text,
+    created_at  timestamptz
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+            OR public.can_access_lesson(p_lesson_id)) THEN
+        RAISE EXCEPTION 'access_denied';
+    END IF;
+
+    RETURN QUERY
+    SELECT c.id, c.lesson_id, c.author_id, COALESCE(p.full_name, ''),
+           c.parent_id, c.body, c.status, c.created_at
+    FROM public.lesson_comments c
+    JOIN public.lessons l ON l.id = c.lesson_id
+    LEFT JOIN public.profiles p ON p.id = c.author_id
+    WHERE c.lesson_id = p_lesson_id
+      AND (c.status = 'visible'
+           OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    ORDER BY c.created_at, c.id;
+END $$;
+
+COMMENT ON FUNCTION public.add_lesson_comment(uuid, text, uuid) IS 'Student/staff comment writer: access-gated, body-validated, parent must be a visible comment of the same lesson; notifies staff (comment_reply) and the parent author on replies (lesson_comment).';
+COMMENT ON FUNCTION public.delete_lesson_comment(uuid) IS 'Deletes the caller''s own comment, or any comment when staff (moderation).';
+COMMENT ON FUNCTION public.list_lesson_comments(uuid) IS 'Access-gated comment list: students see visible rows, staff see all statuses (incl. removed) for moderation.';
+
+-- ---------------------------------------------------------------------
+-- 9) Grants (SECURITY.md 8.2 pattern): every new function is revoked from
+--    PUBLIC and granted to authenticated. No anon surface is added.
+--    lesson_comments_parent_check is internal (no client grant).
+-- ---------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.add_lesson_comment(uuid, text, uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.add_lesson_comment(uuid, text, uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.delete_lesson_comment(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.delete_lesson_comment(uuid) TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.list_lesson_comments(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_lesson_comments(uuid) TO authenticated;

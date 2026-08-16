@@ -9,22 +9,22 @@
 // the server resolves the PRIMARY READY pdf of the lesson:
 //
 //   POST { "lesson_id": "<uuid>" }
-//   -> { pdf_url, pdf_id, lesson_id, original_name, expires_at }
+//   -> { pdf_url, pdf_id, lesson_id, original_name }
 //
 // `pdf_url` is a Supabase Storage short-lived signed URL (service-role
 // `createSignedUrl`, TTL 15 minutes) on the PRIVATE `pdfs` bucket
 // (0011_storage_and_seeds.sql: private, no anon/authenticated object
 // policies — content only ever leaves via this EF).
 //
-// Access control mirrors get-video-playback-url (the same single
-// content-access gate, public.can_access_lesson 0003):
+// Access control (student-facing only):
 //   * STUDENT: lesson must be reachable — lesson published, unit
 //     published, own live grade, grade active AND not soft-deleted (B8),
-//     lesson not soft-deleted — and the student needs an ACTIVE,
-//     UNEXPIRED subscription (A33). Evaluated with RLS-scoped SELECTs
-//     over the caller token (the four RLS-policy helpers are not part of
-//     the PostgREST RPC surface; the lessons SELECT policy 0009 already
-//     filters published/own-grade/live-grade rows). Any failure ->
+//     lesson not soft-deleted — and the student needs access to THIS
+//     lesson: a lifetime unit purchase OR an active trial lesson
+//     (public.get_my_lesson_access, 0028; replaces the old A33 access
+//     gate). The gate is evaluated by calling the RPC
+//     get_my_lesson_access(p_lesson_id) with the caller's own JWT; if
+//     has_access = false -> access_denied (403). Any failure ->
 //     access_denied (403).
 //   * STAFF and other roles -> forbidden (403): PDFs are student-facing
 //     only.
@@ -40,10 +40,12 @@
 //   forbidden                 -> 403 (role insufficient / no profile)
 //   account_inactive_or_deleted -> 403
 //   validation_error          -> 422 (missing/illegal lesson_id)
-//   access_denied             -> 403 (student gate: lesson/subscription)
+//   access_denied             -> 403 (student gate: lesson access)
 //   pdf_not_ready             -> 409 (no primary ready PDF yet)
 //   internal_error            -> 500 (query/URL-build failures; raw
 //                                  message never echoed)
+//
+// Success: { pdf_url, pdf_id, lesson_id, original_name }.
 //
 // No secrets are logged anywhere in this module.
 // =====================================================================
@@ -80,6 +82,10 @@ export interface SvcClient {
     }>;
   };
   from(table: string): SvcFrom;
+  rpc(
+    fn: string,
+    args?: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: DbError | null }>;
   storage: {
     from(bucket: string): {
       createSignedUrl(
@@ -100,7 +106,7 @@ export interface Deps {
   /** service-role client (hosted env secret) for storage signing. */
   makeServiceClient: (url: string) => SvcClient;
   ttlSeconds?: number;
-  /** Unix seconds (injectable for deterministic expires_at). */
+  /** Unix seconds (injectable for deterministic TTL vectors). */
   nowUnix?: () => number;
 }
 
@@ -224,24 +230,21 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // --- 5) Student subscription gate (A33) ---
-  const { data: subscription, error: subError } = await client
-    .from('subscriptions')
-    .select('id')
-    .eq('student_id', user.id)
-    .eq('status', 'active')
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
-  if (subError) {
-    console.error('get-pdf-signed-url: subscription query failed', subError.code ?? 'unknown');
+  // --- 5) Student lesson-access gate (lifetime purchase OR trial lesson) ---
+  const { data: access, error: accessError } = await client.rpc('get_my_lesson_access', {
+    p_lesson_id: lessonId,
+  });
+  if (accessError) {
+    console.error('get-pdf-signed-url: lesson access check failed', accessError.code ?? 'unknown');
     return jsonResponse(
-      { error: { code: 'internal_error', message: 'Failed to validate subscription.' } },
+      { error: { code: 'internal_error', message: 'Failed to validate lesson access.' } },
       500,
     );
   }
-  if (!subscription) {
+  const accessInfo = access as { has_access: boolean } | null;
+  if (!accessInfo || accessInfo.has_access !== true) {
     return jsonResponse(
-      { error: { code: 'access_denied', message: 'An active subscription is required.' } },
+      { error: { code: 'access_denied', message: 'Lesson access is required.' } },
       403,
     );
   }
@@ -289,14 +292,12 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         500,
       );
     }
-    const now = deps.nowUnix ? deps.nowUnix() : Math.floor(Date.now() / 1000);
     return jsonResponse(
       {
         pdf_url: signed.signedUrl,
         pdf_id: pdfRow.id,
         lesson_id: lessonId,
         original_name: pdfRow.original_name,
-        expires_at: new Date((now + (deps.ttlSeconds ?? DEFAULT_TTL_SECONDS)) * 1000).toISOString(),
       },
       200,
     );
