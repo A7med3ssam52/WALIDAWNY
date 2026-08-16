@@ -6,7 +6,7 @@ project_id = "nfusbrktrqfrnaetetmr"
 verify_jwt = true
 
 [functions.bunny-video-webhook]
-verify_jwt = true
+verify_jwt = false
 
 [functions.export-audit-log]
 verify_jwt = true
