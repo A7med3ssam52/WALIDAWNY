@@ -3,37 +3,42 @@
 -- ---------------------------------------------------------------------
 -- Verifies the MED-6 allowlist exactly: anon -> ONLY get_public_settings
 -- + list_active_grades (0027 registration picker) + get_public_unit_prices
--- (0028 landing page); authenticated -> the 62 client RPCs incl. the
--- 12 new purchase/trial RPCs (0028) + the 5 new exam RPCs (0029) + the
--- 3 new comment RPCs (0030) + the 5 RLS policy helpers; every
--- internal/system function stays non-executable (0028 REVOKEs
--- create_unit_codes_internal - the staff wrapper is SECURITY DEFINER).
+-- (0028 landing page) + get_platform_fee (0031 public read); authenticated
+-- -> the 64 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
+-- 5 new exam RPCs (0029) + the 3 new comment RPCs (0030) + the pricing
+-- RPCs (0031) + the 5 RLS policy helpers; every internal/system function
+-- stays non-executable (0028 REVOKEs create_unit_codes_internal - the
+-- staff wrapper is SECURITY DEFINER).
 -- Also verifies binding B2 (notifications DML revoked from clients) and
 -- the view lockdown (5 internal views; v_active_subscriptions is dropped).
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- anon: exactly THREE executable public functions
+-- anon: exactly FOUR executable public functions
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM pg_proc
+    (SELECT count(*) = 4 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
        AND has_function_privilege('anon', oid, 'EXECUTE')),
-    'anon: exactly three executable public functions');
+    'anon: exactly four executable public functions');
 SELECT tests.assert(has_function_privilege('anon', 'public.get_public_settings()', 'EXECUTE'),
     'anon: get_public_settings executable (LOW-15)');
 SELECT tests.assert(has_function_privilege('anon', 'public.list_active_grades()', 'EXECUTE'),
     'anon: list_active_grades executable (0027 registration picker)');
 SELECT tests.assert(has_function_privilege('anon', 'public.get_public_unit_prices()', 'EXECUTE'),
     'anon: get_public_unit_prices executable (0028 landing page)');
+SELECT tests.assert(has_function_privilege('anon', 'public.get_platform_fee()', 'EXECUTE'),
+    'anon: get_platform_fee executable (0031 public read)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_unit_codes_internal(uuid, integer, text)', 'EXECUTE'),
     'anon: create_unit_codes_internal NOT executable (0028 REVOKE)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'),
     'anon: update_own_profile NOT executable');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.redeem_unit_code(text)', 'EXECUTE'),
     'anon: redeem_unit_code NOT executable');
-SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_unit_price(uuid, numeric, numeric)', 'EXECUTE'),
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_unit_price(uuid, numeric)', 'EXECUTE'),
     'anon: set_unit_price NOT executable');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_platform_fee(numeric)', 'EXECUTE'),
+    'anon: set_platform_fee NOT executable');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.upsert_progress(uuid, integer, numeric)', 'EXECUTE'),
     'anon: upsert_progress NOT executable');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.is_admin()', 'EXECUTE'),
@@ -62,13 +67,13 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_lesson_comme
     'anon: list_lesson_comments NOT executable (0030)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (62 functions)
+-- authenticated: the full client allowlist (64 functions)
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 62 FROM pg_proc
+    (SELECT count(*) = 64 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 62 executable public functions');
+    'authenticated: exactly 64 executable public functions');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -88,8 +93,8 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.create_unit(
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_unit(uuid, text, integer)', 'EXECUTE'), 'g: update_unit');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_unit(uuid)', 'EXECUTE'), 'g: delete_unit');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.restore_unit(uuid)', 'EXECUTE'), 'g: restore_unit');
-SELECT tests.assert(has_function_privilege('authenticated', 'public.create_lesson(uuid, text, text, integer)', 'EXECUTE'), 'g: create_lesson');
-SELECT tests.assert(has_function_privilege('authenticated', 'public.update_lesson(uuid, text, text, integer)', 'EXECUTE'), 'g: update_lesson');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.create_lesson(uuid, text, text, integer, boolean)', 'EXECUTE'), 'g: create_lesson (0031 trial flag)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.update_lesson(uuid, text, text, integer, boolean)', 'EXECUTE'), 'g: update_lesson (0031 trial flag)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.publish_lesson(uuid)', 'EXECUTE'), 'g: publish_lesson');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.hide_lesson(uuid)', 'EXECUTE'), 'g: hide_lesson');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.soft_delete_lesson(uuid)', 'EXECUTE'), 'g: soft_delete_lesson');
@@ -111,7 +116,9 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.list_audit_l
 SELECT tests.assert(has_function_privilege('authenticated', 'public.count_audit_logs(timestamp with time zone, timestamp with time zone, text, text, uuid)', 'EXECUTE'), 'g: count_audit_logs');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_public_settings()', 'EXECUTE'), 'g: get_public_settings');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_public_unit_prices()', 'EXECUTE'), 'g: get_public_unit_prices (0028)');
-SELECT tests.assert(has_function_privilege('authenticated', 'public.set_unit_price(uuid, numeric, numeric)', 'EXECUTE'), 'g: set_unit_price (0028)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.set_unit_price(uuid, numeric)', 'EXECUTE'), 'g: set_unit_price (0031 staff base price)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.set_platform_fee(numeric)', 'EXECUTE'), 'g: set_platform_fee (0031 admin fee)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_platform_fee()', 'EXECUTE'), 'g: get_platform_fee (0031)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_unit_pricing()', 'EXECUTE'), 'g: list_unit_pricing (0028)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_codes_by_unit(uuid)', 'EXECUTE'), 'g: list_codes_by_unit (0028)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.revoke_unit_code(uuid)', 'EXECUTE'), 'g: revoke_unit_code (0028)');

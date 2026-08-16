@@ -876,49 +876,114 @@ SELECT tests.expect_rows(
 RESET ROLE;
 RESET "app.current_user_id";
 
--- set_unit_price (0028): admin-only upsert, generated total + audit;
--- teachers are denied, negative prices raise, unknown units raise.
+-- set_unit_price / set_platform_fee (0031): staff (incl. teachers) sets
+-- the BASE price; the ADMIN sets ONE fixed platform fee applied to every
+-- unit; total_price is generated (base + fee). Non-staff denied, negative
+-- values raise, unknown units raise.
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.expect_rows(
-    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 90, 9)',
-    1, 'staff: admin re-prices u1 (90 + 9)');
+    'SELECT public.set_platform_fee(9)',
+    1, 'staff: admin sets the fixed platform fee (9)');
+SELECT tests.assert(
+    (SELECT platform_fee = 9.00 AND total_price = 109.00
+     FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
+    'staff: fixed fee applied to existing rows');
+SELECT tests.assert(
+    (SELECT public.get_platform_fee() = 9.00),
+    'staff: get_platform_fee returns 9');
+SELECT tests.expect_rows(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 90)',
+    1, 'staff: admin re-prices u1 base 90');
 SELECT tests.assert(
     (SELECT base_price = 90.00 AND platform_fee = 9.00 AND total_price = 99.00
      FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
-    'staff: total_price generated from base + platform');
+    'staff: total_price generated from base + fixed fee');
 SELECT tests.assert(
     (SELECT EXISTS (SELECT 1 FROM public.audit_logs
         WHERE action = 'unit_pricing.set'
           AND metadata ->> 'unit_id' = '30000000-0000-0000-0000-000000000001')),
     'staff: set_unit_price audited');
--- teacher is denied (decision J - prices are admin-only)
+SELECT tests.assert(
+    (SELECT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'platform_fee.set')),
+    'staff: set_platform_fee audited');
+-- teacher (T) CAN set the base price (owner decision: teachers price
+-- their own units) but CANNOT change the platform fee.
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
 SET LOCAL ROLE authenticated;
+SELECT tests.expect_rows(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 80)',
+    1, 'staff: teacher sets base price 80');
+SELECT tests.assert(
+    (SELECT base_price = 80.00 AND platform_fee = 9.00 AND total_price = 89.00
+     FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
+    'staff: teacher price keeps the admin fee');
 SELECT tests.expect_error(
-    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 80, 8)',
+    'SELECT public.set_platform_fee(50)',
     'P0001', 'permission_denied');
 RESET ROLE;
 RESET "app.current_user_id";
--- negative price and unknown unit still raise (as admin)
+-- student denied on pricing functions
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 80)',
+    'P0001', 'permission_denied');
+SELECT tests.expect_error(
+    'SELECT public.set_platform_fee(50)',
+    'P0001', 'permission_denied');
+RESET ROLE;
+RESET "app.current_user_id";
+-- negative price/fee and unknown unit still raise (as admin)
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.expect_error(
-    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', -1, 0)',
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', -1)',
     'P0001', 'invalid_price');
 SELECT tests.expect_error(
-    'SELECT public.set_unit_price(gen_random_uuid(), 10, 1)',
+    'SELECT public.set_platform_fee(-5)',
+    'P0001', 'invalid_fee');
+SELECT tests.expect_error(
+    'SELECT public.set_unit_price(gen_random_uuid(), 10)',
     'P0001', 'unit_not_found');
--- restore fixture price 100 + 10
+-- restore fixture price 100 + fee 10
 SELECT tests.expect_rows(
-    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 100, 10)',
+    'SELECT public.set_platform_fee(10)',
+    1, 'staff: fixture fee restored (10)');
+SELECT tests.expect_rows(
+    'SELECT public.set_unit_price(''30000000-0000-0000-0000-000000000001'', 100)',
     1, 'staff: fixture price restored (100 + 10)');
 SELECT tests.assert(
     (SELECT base_price = 100.00 AND platform_fee = 10.00 AND total_price = 110.00
      FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
     'staff: fixture price restored');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- create_lesson / update_lesson trial support (0031): teachers mark the
+-- ONE free (trial) lesson per unit; a second trial in the same unit is
+-- rejected by the partial unique index.
+INSERT INTO public.units (id, grade_id, name, sort_order, status, deleted_at)
+VALUES ('30000000-0000-0000-0000-00000000000c', '10000000-0000-0000-0000-000000000001', 'Trial Scratch Unit', 98, 'published', NULL)
+ON CONFLICT (id) DO UPDATE SET grade_id = EXCLUDED.grade_id, status = 'published', deleted_at = NULL;
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
+SET LOCAL ROLE authenticated;
+SELECT tests.expect_rows(
+    'SELECT public.create_lesson(''30000000-0000-0000-0000-00000000000c'', ''Trial L1'', NULL, 1, true)',
+    1, 'staff: teacher creates a trial lesson');
+SELECT tests.expect_error(
+    'SELECT public.create_lesson(''30000000-0000-0000-0000-00000000000c'', ''Trial L2'', NULL, 2, true)',
+    '23505', 'duplicate key value violates unique constraint "lessons_trial_unique"');
+SELECT tests.expect_rows(
+    'SELECT public.update_lesson((SELECT id FROM public.lessons WHERE unit_id = ''30000000-0000-0000-0000-00000000000c'' AND is_trial), NULL, NULL, NULL, false)',
+    1, 'staff: teacher can un-set the trial flag');
+SELECT tests.expect_rows(
+    'SELECT public.update_lesson((SELECT id FROM public.lessons WHERE unit_id = ''30000000-0000-0000-0000-00000000000c'' AND NOT is_trial), NULL, NULL, NULL, true)',
+    1, 'staff: teacher can re-set the trial flag');
+DELETE FROM public.lessons WHERE unit_id = '30000000-0000-0000-0000-00000000000c';
+DELETE FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000c';
 RESET ROLE;
 RESET "app.current_user_id";
 

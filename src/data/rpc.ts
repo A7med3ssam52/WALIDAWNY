@@ -349,6 +349,7 @@ export interface CreateLessonInput {
   title: string;
   description?: string | null;
   sortOrder: number;
+  isTrial?: boolean;
 }
 
 export async function createLesson(input: CreateLessonInput): Promise<string> {
@@ -357,6 +358,7 @@ export async function createLesson(input: CreateLessonInput): Promise<string> {
     p_title: input.title,
     p_description: input.description ?? null,
     p_sort_order: input.sortOrder,
+    p_is_trial: input.isTrial ?? false,
   });
   if (error) {
     throw error;
@@ -369,6 +371,7 @@ export interface UpdateLessonInput {
   title?: string | null;
   description?: string | null;
   sortOrder?: number | null;
+  isTrial?: boolean | null;
 }
 
 export async function updateLesson(input: UpdateLessonInput): Promise<void> {
@@ -377,6 +380,7 @@ export async function updateLesson(input: UpdateLessonInput): Promise<void> {
     p_title: input.title ?? null,
     p_description: input.description ?? null,
     p_sort_order: input.sortOrder ?? null,
+    p_is_trial: input.isTrial ?? null,
   });
   if (error) {
     throw error;
@@ -735,10 +739,7 @@ async function fetchGradeNames(gradeIds: string[]): Promise<Map<string, string>>
   if (ids.length === 0) {
     return new Map();
   }
-  const { data, error } = await getSupabaseClient()
-    .from('grades')
-    .select('id, name')
-    .in('id', ids);
+  const { data, error } = await getSupabaseClient().from('grades').select('id, name').in('id', ids);
   if (error) {
     throw error;
   }
@@ -808,18 +809,33 @@ export async function getPublicUnitPrices(): Promise<PublicUnitPrice[]> {
 export interface UnitPriceInput {
   unitId: string;
   basePrice: number;
-  platformFee: number;
 }
 
 export async function setUnitPrice(input: UnitPriceInput): Promise<void> {
   const { error } = await getSupabaseClient().rpc('set_unit_price', {
     p_unit_id: input.unitId,
     p_base_price: input.basePrice,
-    p_platform_fee: input.platformFee,
   });
   if (error) {
     throw error;
   }
+}
+
+export async function setPlatformFee(fee: number): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_platform_fee', {
+    p_fee: fee,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getPlatformFee(): Promise<number> {
+  const { data, error } = await getSupabaseClient().rpc('get_platform_fee');
+  if (error) {
+    throw error;
+  }
+  return (data ?? 0) as number;
 }
 
 export async function listUnitPricing(): Promise<UnitPricingWithUnit[]> {
@@ -875,7 +891,9 @@ export async function createUnitCodesForStaff(
   return (data ?? []) as UnitCode[];
 }
 
-export async function listAllUnitPurchases(studentId?: string | null): Promise<UnitPurchaseWithUnit[]> {
+export async function listAllUnitPurchases(
+  studentId?: string | null,
+): Promise<UnitPurchaseWithUnit[]> {
   const { data, error } = await getSupabaseClient().rpc('list_all_unit_purchases', {
     p_student_id: studentId ?? null,
   });
@@ -1065,8 +1083,8 @@ export async function createExamQuestion(input: CreateExamQuestionInput): Promis
       exam_id: input.examId,
       type: input.type,
       prompt: input.prompt,
-      choices: input.type === 'mcq' ? input.choices ?? [] : null,
-      correct_index: input.type === 'mcq' ? input.correctIndex ?? null : null,
+      choices: input.type === 'mcq' ? (input.choices ?? []) : null,
+      correct_index: input.type === 'mcq' ? (input.correctIndex ?? null) : null,
       max_score: input.maxScore ?? 1,
       sort_order: input.sortOrder ?? 0,
     })
@@ -1118,10 +1136,7 @@ export async function updateExamQuestion(input: UpdateExamQuestionInput): Promis
 }
 
 export async function deleteExamQuestion(questionId: string): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .from('exam_questions')
-    .delete()
-    .eq('id', questionId);
+  const { error } = await getSupabaseClient().from('exam_questions').delete().eq('id', questionId);
   if (error) {
     throw error;
   }

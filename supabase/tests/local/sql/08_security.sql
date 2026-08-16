@@ -286,10 +286,10 @@ RESET "app.current_user_id";
 -- function silently widening the anon executable surface.
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM pg_proc
+    (SELECT count(*) = 4 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
        AND has_function_privilege('anon', oid, 'EXECUTE')),
-    'sec: anon still has exactly three executable public functions (get_public_settings + list_active_grades + get_public_unit_prices)');
+    'sec: anon still has exactly four executable public functions (get_public_settings + list_active_grades + get_public_unit_prices + get_platform_fee)');
 
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_audit_logs(timestamptz, timestamptz, text, text, uuid, integer, integer)', 'EXECUTE'),
     'sec: anon cannot exec list_audit_logs');
@@ -318,7 +318,7 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.audit_log(text, t
 -- several are granted to authenticated (staff checks are in-function).
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.redeem_unit_code(text)', 'EXECUTE'),
     'sec: anon cannot exec redeem_unit_code');
-SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_unit_price(uuid, numeric, numeric)', 'EXECUTE'),
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_unit_price(uuid, numeric)', 'EXECUTE'),
     'sec: anon cannot exec set_unit_price');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_student_grade(uuid, uuid)', 'EXECUTE'),
     'sec: anon cannot exec set_student_grade');

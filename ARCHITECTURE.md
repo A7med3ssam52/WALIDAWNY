@@ -22,7 +22,7 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
 | Role | Capability summary | Notes |
 |---|---|---|
 | `student` | Browse curriculum, watch videos, read PDFs, track progress, manage own profile/password, read own notifications, redeem one unit code, view own purchases | Cannot change grade/role/email, cannot modify purchase state, cannot touch other users' data |
-| `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), unit codes (generate/revoke), read-only pricing, WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage pricing |
+| `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), unit codes (generate/revoke), pricing (base price per unit), WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage platform fee |
 | `admin` | Everything Mr. Walid can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
 | `teacher` | Curriculum/lesson management, trial flagging, student grade assignment, progress analytics (added 0023) | Cannot manage pricing, roles, audit logs, or WhatsApp settings |
 
@@ -119,8 +119,8 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
 |---|---|---|---|
 | **auth** | `/login`, `/register` | Email+password signUp/signIn (grade picker via `list_active_grades` at sign-up), profile creation via trigger, password change, session persistence, login error mapping (`account_inactive_or_deleted` → friendly Arabic) | `supabase.auth.*`, `handle_new_user()` trigger, sign-in gate trigger |
 | **student** | `/student/*` | Dashboard, curriculum tree, lesson page (video player + PDF viewer), progress (resume/completion), units (per-unit prices + purchase history), redeem code, notifications, profile | `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `can_access_lesson` (via RLS/EFs), `get-video-playback-url`, `get-pdf-signed-url`, `mark_*_read` |
-| **walid** | `/walid/*` | Students (disable/enable/trash/restore, profile edits via `update_student_profile` — 4-column whitelist, audited [BINDING B3]), grades, curriculum manager, codes, read-only pricing, video/PDF management, analytics, WhatsApp settings | Staff RPCs (`disable_student`, `set_student_grade`, `update_student_profile`, CRUD RPCs, `set_lesson_trial`), `create-video-upload-session`, `upload-pdf`, `generate-unit-codes`, `list_trash`, `v_lesson_stats` |
-| **admin** | `/admin/*` + all `/walid/*` | Audit log (filter/export), pricing management (`set_unit_price`), roles (`set_user_role`), app settings, operational stats | `v_audit_log`, `v_dashboard_metrics`, `export-audit-log`, `set_unit_price`, `set_app_setting`, `set_user_role` |
+| **walid** | `/walid/*` | Students (disable/enable/trash/restore, profile edits via `update_student_profile` — 4-column whitelist, audited [BINDING B3]), grades, curriculum manager, codes, pricing (base price via `set_unit_price`), video/PDF management, analytics, WhatsApp settings | Staff RPCs (`disable_student`, `set_student_grade`, `update_student_profile`, CRUD RPCs, `set_lesson_trial`), `create-video-upload-session`, `upload-pdf`, `generate-unit-codes`, `list_trash`, `v_lesson_stats` |
+| **admin** | `/admin/*` + all `/walid/*` | Audit log (filter/export), pricing management (global platform fee `set_platform_fee`), roles (`set_user_role`), app settings, operational stats | `v_audit_log`, `v_dashboard_metrics`, `export-audit-log`, `set_platform_fee`, `set_app_setting`, `set_user_role` |
 
 ### 3.2 Frontend project layout (BP §13.1)
 
@@ -198,8 +198,9 @@ Admin can also reach all `/walid/*` routes (permission check allows `admin`).
 | Manage students (disable/enable/trash/restore) | — | ✓ | ✓ | — |
 | Manage grades / units / lessons / assets / trial flag | — | ✓ | ✓ | ✓ |
 | Generate/revoke unit codes | — | ✓ | ✓ | — |
-| Read pricing | — | ✓ (read-only) | ✓ (manage) | ✓ (read-only) |
-| Manage per-unit pricing / platform fees (`set_unit_price`) | — | — | ✓ | — |
+| Read pricing | — | ✓ | ✓ | ✓ |
+| Set per-unit base price (`set_unit_price`) | — | ✓ | ✓ | ✓ |
+| Set global platform fee (`set_platform_fee`) | — | — | ✓ | — |
 | Manage WhatsApp settings | — | ✓ (`whatsapp%` keys only) | ✓ (all settings) | — |
 | Manage roles (`set_user_role`) | — | — | ✓ | — |
 | Read audit logs / export | — | — | ✓ | — |
@@ -347,7 +348,8 @@ Result: exactly one success per code; second concurrent redemption sees status='
 Manual purchase grants: NOT allowed (P12) — the ONLY path to a purchase is redeem_unit_code.
 Code revocation: revoke_unit_code(code_id) flips any available/used code to 'revoked'; it does
         NOT cancel purchases already created from it.
-Pricing lifecycle (admin): set_unit_price(unit_id, base, fee) upserts the per-unit price row;
+Pricing lifecycle (staff sets the base via set_unit_price; admin sets the single global fee via
+        set_platform_fee) upserts the per-unit price row (total = base + fee, generated);
         direct DML on unit_pricing is blocked by FORCE RLS.
 ```
 

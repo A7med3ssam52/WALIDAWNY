@@ -99,6 +99,48 @@ describe('CurriculumPage', () => {
     expect(await screen.findByText('الوحدة الثالثة')).toBeInTheDocument();
   });
 
+  it('creates a unit with a price and applies it via set_unit_price', async () => {
+    seedGradeWithUnits();
+    const user = userEvent.setup();
+    renderApp('/walid/curriculum');
+
+    await user.type(await screen.findByLabelText('اسم الوحدة'), 'الوحدة المسعرة');
+    await user.type(screen.getByLabelText('سعر الباب (ج.م — اختياري)'), '150');
+    await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('set_unit_price')).toEqual({
+        p_unit_id: 'unit-created-1',
+        p_base_price: 150,
+      });
+    });
+    expect(await screen.findByText('تم إنشاء الوحدة بنجاح')).toBeInTheDocument();
+  });
+
+  it('creates a trial lesson when the free-lesson checkbox is checked', async () => {
+    seedGradeWithUnits();
+    const user = userEvent.setup();
+    renderApp('/walid/curriculum');
+
+    await selectUnit(user, 'unit-1');
+    await user.type(await screen.findByLabelText('عنوان الدرس'), 'درس مجاني');
+    await user.click(
+      screen.getByLabelText('درس مجاني (تجريبي) — فيديو واحد يُفتح للطلاب بدون شراء لكل باب'),
+    );
+    await user.click(screen.getByRole('button', { name: 'إضافة درس' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('create_lesson')).toEqual({
+        p_unit_id: 'unit-1',
+        p_title: 'درس مجاني',
+        p_description: null,
+        p_sort_order: 0,
+        p_is_trial: true,
+      });
+    });
+    expect(await screen.findByText('تم إنشاء الدرس بنجاح')).toBeInTheDocument();
+  });
+
   it('rejects an empty unit name without calling the RPC', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
@@ -210,6 +252,7 @@ describe('CurriculumPage', () => {
         p_title: 'درس جديد',
         p_description: 'شرح مبسط',
         p_sort_order: 0,
+        p_is_trial: false,
       });
     });
     expect(await screen.findByText('تم إنشاء الدرس بنجاح')).toBeInTheDocument();
@@ -236,6 +279,7 @@ describe('CurriculumPage', () => {
         p_title: 'الدرس المعدل',
         p_description: null,
         p_sort_order: 1,
+        p_is_trial: false,
       });
     });
     expect(await screen.findByText('الدرس المعدل')).toBeInTheDocument();

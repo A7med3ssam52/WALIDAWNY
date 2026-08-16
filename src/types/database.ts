@@ -157,7 +157,7 @@ export type UnitCode = {
   revoked_at: string | null;
   revoked_by: string | null;
   note: string | null;
-}
+};
 
 export type UnitCodeWithUnit = UnitCode & {
   unit_name: string;
@@ -173,7 +173,7 @@ export type UnitPurchase = {
   code_id: string | null;
   status: UnitPurchaseStatus;
   purchased_at: string;
-}
+};
 
 export type UnitPurchaseWithUnit = UnitPurchase & {
   unit_name: string;
@@ -528,10 +528,11 @@ export interface Database {
         Args: {
           p_unit_id: string;
           p_base_price: number;
-          p_platform_fee?: number | null;
         };
         Returns: void;
       };
+      set_platform_fee: { Args: { p_fee: number }; Returns: void };
+      get_platform_fee: { Args: never; Returns: number };
       list_unit_pricing: { Args: never; Returns: UnitPricingWithUnit[] };
       list_codes_by_unit: { Args: { p_unit_id: string }; Returns: UnitCode[] };
       revoke_unit_code: { Args: { p_code_id: string }; Returns: void };
@@ -561,6 +562,7 @@ export interface Database {
           p_title: string;
           p_description?: string | null;
           p_sort_order?: number;
+          p_is_trial?: boolean;
         };
         Returns: string;
       };
@@ -570,6 +572,7 @@ export interface Database {
           p_title: string | null;
           p_description?: string | null;
           p_sort_order?: number | null;
+          p_is_trial?: boolean | null;
         };
         Returns: void;
       };
@@ -620,8 +623,14 @@ export interface Database {
       list_exams: { Args: { p_lesson_id: string }; Returns: Exam[] };
       get_exam_questions: { Args: { p_exam_id: string }; Returns: ExamQuestion[] };
       get_my_exam_attempt: { Args: { p_exam_id: string }; Returns: ExamAttempt[] };
-      submit_exam_attempt: { Args: { p_exam_id: string; p_answers: unknown }; Returns: ExamAttempt };
-      grade_exam_attempt: { Args: { p_attempt_id: string; p_scores: unknown }; Returns: ExamAttempt };
+      submit_exam_attempt: {
+        Args: { p_exam_id: string; p_answers: unknown };
+        Returns: ExamAttempt;
+      };
+      grade_exam_attempt: {
+        Args: { p_attempt_id: string; p_scores: unknown };
+        Returns: ExamAttempt;
+      };
       add_lesson_comment: {
         Args: { p_lesson_id: string; p_body: string; p_parent_id?: string | null };
         Returns: LessonComment;

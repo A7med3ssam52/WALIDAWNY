@@ -138,7 +138,7 @@ Every table: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEVEL 
 
 ### `unit_pricing`
 - SELECT: `is_admin() OR is_mr_walid() OR is_teacher()` OR (student: own active grade, published unit, pricing active). anon has **no** direct SELECT — its only price surface is the RPC `get_public_unit_prices()` (never evaluates helper functions in a policy)
-- INSERT/UPDATE/DELETE: RPC-only (`set_unit_price`, admin audited); `FORCE ROW LEVEL SECURITY`
+- INSERT/UPDATE/DELETE: RPC-only (`set_unit_price` — staff base price, audited; `set_platform_fee` — admin global fee, audited); `FORCE ROW LEVEL SECURITY`
 
 ### `unit_codes`
 - SELECT: `is_admin() OR is_mr_walid() OR is_teacher()` (students never see raw codes)
@@ -214,7 +214,7 @@ Common rules:
 
 ### 8.2 Client-callable allowlist (`GRANT EXECUTE TO authenticated`; `anon` additionally for `get_public_settings`)
 
-`update_own_profile`, `update_student_profile` **[BINDING B3]**, `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `mark_notification_read`, `mark_all_notifications_read`, `set_student_grade`, `set_lesson_trial`, `disable_student`, `enable_student`, `soft_delete_student`, `restore_student`, `list_trash`, `create_unit`, `update_unit`, `delete_unit`, `restore_unit`, `create_lesson`, `update_lesson`, `publish_lesson`, `hide_lesson`, `soft_delete_lesson`, `restore_lesson`, `create_grade`, `update_grade`, `delete_grade`, `restore_grade`, `set_app_setting`, `set_unit_price`, `list_unit_pricing`, `list_codes_by_unit`, `revoke_unit_code`, `create_unit_codes_for_staff`, `list_all_unit_purchases`, `unit_purchase_stats`, `set_user_role`, `set_role_by_email`, `finalize_pdf_upload`, `create_pdf_upload_record`, `create_video_upload_record`, `delete_video_upload_record`, `get_dashboard_stats`, `list_audit_logs`, `count_audit_logs`, `get_public_settings`, `list_active_grades`. (anon additionally: `get_public_settings`, `list_active_grades`, `get_public_unit_prices`.)
+`update_own_profile`, `update_student_profile` **[BINDING B3]**, `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `mark_notification_read`, `mark_all_notifications_read`, `set_student_grade`, `set_lesson_trial`, `disable_student`, `enable_student`, `soft_delete_student`, `restore_student`, `list_trash`, `create_unit`, `update_unit`, `delete_unit`, `restore_unit`, `create_lesson`, `update_lesson`, `publish_lesson`, `hide_lesson`, `soft_delete_lesson`, `restore_lesson`, `create_grade`, `update_grade`, `delete_grade`, `restore_grade`, `set_app_setting`, `set_unit_price`, `set_platform_fee`, `get_platform_fee`, `list_unit_pricing`, `list_codes_by_unit`, `revoke_unit_code`, `create_unit_codes_for_staff`, `list_all_unit_purchases`, `unit_purchase_stats`, `set_user_role`, `set_role_by_email`, `finalize_pdf_upload`, `create_pdf_upload_record`, `create_video_upload_record`, `delete_video_upload_record`, `get_dashboard_stats`, `list_audit_logs`, `count_audit_logs`, `get_public_settings`, `list_active_grades`. (anon additionally: `get_public_settings`, `list_active_grades`, `get_public_unit_prices`, `get_platform_fee`.)
 
 Everything else is REVOKEd; the allowlist is enforced by a pgTAP grant test.
 

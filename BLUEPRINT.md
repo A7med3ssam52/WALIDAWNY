@@ -139,7 +139,7 @@ CREATE TYPE public.notification_type AS ENUM ('new_content','unit_activated','sy
 | `is_active` | boolean | NOT NULL DEFAULT true |
 | `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
 
-- Upserted exclusively via `set_unit_price` (admin, audited). FORCE RLS; no direct DML policies.
+- Upserted exclusively via `set_unit_price` (staff — base price only) and `set_platform_fee` (admin — global fixed fee), both audited. FORCE RLS; no direct DML policies.
 
 **`unit_codes`** — one-time activation codes for a unit.
 | Column | Type | Constraints |
@@ -350,7 +350,9 @@ update_student_profile(p_student_id uuid, p_full_name text, p_phone text, p_guar
 disable_student(p_student_id uuid) / enable_student(p_student_id uuid)   -- SECURITY DEFINER + audit; disable also revokes auth.sessions via service role (A34)
 soft_delete_student(p_student_id uuid) / restore_student(p_student_id uuid) -- SECURITY DEFINER + audit; delete also revokes auth.sessions via service role (A34)
 list_trash() RETURNS SETOF profiles   SECURITY DEFINER  -- deleted_at IS NOT NULL; mr_walid/admin
-set_unit_price(p_unit_id uuid, p_base_price numeric, p_platform_fee numeric) -- SECURITY DEFINER + audit (unit_pricing.upsert); admin only
+set_unit_price(p_unit_id uuid, p_base_price numeric) -- SECURITY DEFINER + audit (unit_pricing.upsert); staff (admin/mr_walid/teacher); fee read from app_settings
+set_platform_fee(p_fee numeric)               -- SECURITY DEFINER + audit; ADMIN ONLY; global fixed fee -> app_settings + every unit_pricing row
+get_platform_fee() RETURNS numeric            -- public read (anon + authenticated); base + fee + total for the landing page
 list_unit_pricing() RETURNS SETOF unit_pricing        -- read-only, no audit; staff surface
 create_unit_codes_internal(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes  -- SECURITY DEFINER; Edge-Function-only — NO client grants (REVOKEd from PUBLIC)
 create_unit_codes_for_staff(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes  -- SECURITY DEFINER + audit; staff-guarded EF entry point (is_admin() OR is_mr_walid() → permission_denied); delegates to create_unit_codes_internal; granted to authenticated
@@ -450,7 +452,7 @@ Every table has `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEV
 
 **grades** — SELECT: `is_admin() OR is_mr_walid() OR (is_student() AND deleted_at IS NULL AND is_active)` (students read active, non-deleted grades only — architecture-gate binding B8). INSERT/UPDATE/DELETE: `is_admin() OR is_mr_walid()`; WITH CHECK prevents `role` escalation (none present). (Admin-only hard delete; app soft-deletes.)
 
-**unit_pricing** — SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND is_active AND unit's grade = student's grade)`. INSERT/UPDATE/DELETE: **FORCE RLS + no direct DML policies** — pricing is managed only via `set_unit_price` (SECURITY DEFINER).
+**unit_pricing** — SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND is_active AND unit's grade = student's grade)`. INSERT/UPDATE/DELETE: **FORCE RLS + no direct DML policies** — pricing is managed only via `set_unit_price` (staff base price) and `set_platform_fee` (admin global fee), both SECURITY DEFINER.
 
 **unit_codes** — SELECT: `is_admin() OR is_mr_walid()` (students never see raw codes). INSERT/UPDATE/DELETE: RPC/Edge-Function-only; `WITH (NO POLICY)`.
 
@@ -843,8 +845,8 @@ Test data: seeded via migrations (fixture grades, units, pricing, codes) — nev
 12. **Trigger hygiene (R-A):** all `auth.users` triggers (`block_email_change`, `block_sign_in_for_inactive_accounts`, `handle_new_user`) are version-pinned (digest recorded) and unit-tested in CI so silent Supabase changes can't break or weaken them.
 13. **Account-status enumeration tradeoff (LOW-13):** the `account_inactive_or_deleted` sign-in error reveals that an account exists but is inactive (vs. generic "invalid credentials" for unknown emails). **Accepted tradeoff** — the error is required for a clear Arabic user message (I6) and the accounts are UUID-keyed/unguessable; documented in SECURITY.md, not treated as a defect.
 14. **RPC grant hygiene (MED-6) — explicit matrix.** All SECURITY DEFINER functions are created with `SET search_path = public`. Default posture: `REVOKE EXECUTE ON FUNCTION ... FROM anon, authenticated` for **all internal functions**: `create_unit_codes_internal`, `set_video_status` (internal; no public variant exists — see §8.2 naming note), `set_video_status_ef` (if ever introduced, same treatment), `recheck_video_states`, `notify_new_content`, `audit_log`, `handle_new_user`, `block_email_change`, `block_sign_in_for_inactive_accounts`, `set_updated_at`, `is_student`, `is_mr_walid`, `is_admin`, `is_teacher`, `get_current_role`, `can_access_lesson` (used inside RLS/EFs, not callable by clients).
-    **Client-callable allowlist** (GRANT EXECUTE TO authenticated; plus `anon` for `get_public_settings` and `list_active_grades`; `get_public_unit_prices` is granted to anon + authenticated):
-    `update_own_profile`, `update_student_profile` (binding B3), `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `mark_notification_read`, `mark_all_notifications_read`, `set_student_grade`, `disable_student`, `enable_student`, `soft_delete_student`, `restore_student`, `list_trash`, `set_unit_price`, `list_unit_pricing`, `create_unit_codes_for_staff`, `list_codes_by_unit`, `revoke_unit_code`, `list_all_unit_purchases`, `unit_purchase_stats`, `set_lesson_trial`, `create_unit`, `update_unit`, `delete_unit`, `restore_unit`, `create_lesson`, `update_lesson`, `publish_lesson`, `hide_lesson`, `soft_delete_lesson`, `restore_lesson`, `delete_grade`, `restore_grade`, `set_app_setting`, `set_user_role`, `set_role_by_email`, `finalize_pdf_upload`, `get_public_settings`, `list_active_grades`, `get_public_unit_prices`, `get_dashboard_stats`, `list_audit_logs`, `count_audit_logs`.
+    **Client-callable allowlist** (GRANT EXECUTE TO authenticated; plus `anon` for `get_public_settings`, `list_active_grades` and `get_platform_fee`; `get_public_unit_prices` is granted to anon + authenticated):
+    `update_own_profile`, `update_student_profile` (binding B3), `redeem_unit_code`, `get_my_unit_purchases`, `get_my_lesson_access`, `upsert_progress`, `mark_notification_read`, `mark_all_notifications_read`, `set_student_grade`, `disable_student`, `enable_student`, `soft_delete_student`, `restore_student`, `list_trash`, `set_unit_price`, `set_platform_fee`, `get_platform_fee`, `list_unit_pricing`, `create_unit_codes_for_staff`, `list_codes_by_unit`, `revoke_unit_code`, `list_all_unit_purchases`, `unit_purchase_stats`, `set_lesson_trial`, `create_unit`, `update_unit`, `delete_unit`, `restore_unit`, `create_lesson`, `update_lesson`, `publish_lesson`, `hide_lesson`, `soft_delete_lesson`, `restore_lesson`, `delete_grade`, `restore_grade`, `set_app_setting`, `set_user_role`, `set_role_by_email`, `finalize_pdf_upload`, `get_public_settings`, `list_active_grades`, `get_public_unit_prices`, `get_dashboard_stats`, `list_audit_logs`, `count_audit_logs`.
     Everything else is REVOKEd; the allowlist is enforced by a pgTAP grant test.
 
 ---

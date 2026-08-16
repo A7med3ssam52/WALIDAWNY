@@ -179,7 +179,7 @@ Student with an active unit purchase has grade changed by staff (`set_student_gr
 
 ### 6.7 Staff RPC semantics
 
-- `set_unit_price(unit_id, base_price, platform_fee)` **[BINDING B6]**: admin only; upserts `unit_pricing`; generated `total_price = base_price + platform_fee`; audit `unit_pricing.upsert`.
+- `set_unit_price(unit_id, base_price)` **[BINDING B6]**: staff (admin/mr_walid/teacher) sets the base price; `set_platform_fee(fee)` admin-only sets ONE global fixed fee applied to every `unit_pricing` row; generated `total_price = base_price + platform_fee`; both audited.
 - `set_student_grade` / `set_lesson_trial`: staff-guarded (`is_admin() OR is_mr_walid() OR is_teacher()`); audited; `set_lesson_trial` clears any prior trial in the unit atomically (decision D).
 - `create_unit_codes_internal(p_unit_pricing_id, p_count, p_note)`: SECURITY DEFINER, **no client grants** (EF entry point: `create_unit_codes_for_staff`); validates count cap (≤500) and format (`^WLDN-[A-Z0-9]{8,12}$`, uppercase — A22).
 - `create_unit_codes_for_staff(...)`: staff-guarded EF entry point (`is_admin() OR is_mr_walid()` → `permission_denied`); delegates to `create_unit_codes_internal`; granted to `authenticated`.

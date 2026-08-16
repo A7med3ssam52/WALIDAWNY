@@ -18,6 +18,7 @@ interface MockState {
   lessonPdfs: AnyRecord[];
   lessonVideos: AnyRecord[];
   unitPricing: AnyRecord[];
+  platformFee: number;
   unitCodes: AnyRecord[];
   unitPurchases: AnyRecord[];
   progress: AnyRecord[];
@@ -68,6 +69,7 @@ const state: MockState = {
   lessonPdfs: [],
   lessonVideos: [],
   unitPricing: [],
+  platformFee: 0,
   unitCodes: [],
   unitPurchases: [],
   progress: [],
@@ -568,14 +570,14 @@ function createQueryBuilder(table: string): QueryBuilder {
         tableRows(table).push(row);
         return row;
       });
-      return { data: single ? inserted[0] ?? null : inserted, error: null };
+      return { data: single ? (inserted[0] ?? null) : inserted, error: null };
     }
     let rows = applyFilters(tableRows(table));
     if (op === 'update') {
       rows.forEach((row) => {
         Object.assign(row, opValues ?? {});
       });
-      return { data: single ? rows[0] ?? null : rows, error: null };
+      return { data: single ? (rows[0] ?? null) : rows, error: null };
     }
     if (op === 'delete') {
       const removed = [...rows];
@@ -586,7 +588,7 @@ function createQueryBuilder(table: string): QueryBuilder {
           store.splice(index, 1);
         }
       });
-      return { data: single ? removed[0] ?? null : removed, error: null };
+      return { data: single ? (removed[0] ?? null) : removed, error: null };
     }
     rows = applyFilters(tableRows(table));
     if (single) {
@@ -892,6 +894,7 @@ function createMockClient() {
         title,
         description: args?.p_description ?? null,
         sort_order: sortOrder,
+        is_trial: args?.p_is_trial === true,
         created_at: nowIso(),
         updated_at: nowIso(),
       });
@@ -913,6 +916,9 @@ function createMockClient() {
       }
       if (args?.p_sort_order != null) {
         lesson.sort_order = args.p_sort_order;
+      }
+      if (args?.p_is_trial != null) {
+        lesson.is_trial = args.p_is_trial === true;
       }
       lesson.updated_at = nowIso();
       return { data: null, error: null };
@@ -976,9 +982,9 @@ function createMockClient() {
   const applyUnitPricingRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     if (fn === 'set_unit_price') {
       const base = Number(args?.p_base_price);
-      const fee = Number(args?.p_platform_fee);
+      const fee = state.platformFee;
       const unitId = String(args?.p_unit_id ?? '');
-      if (Number.isNaN(base) || Number.isNaN(fee) || base < 0 || fee < 0) {
+      if (Number.isNaN(base) || base < 0) {
         return error('invalid_price_values');
       }
       const unit = state.units.find((item) => item.id === unitId);
@@ -1007,14 +1013,27 @@ function createMockClient() {
       state.unitPricing.push(row);
       return { data: row.id, error: null };
     }
+    if (fn === 'set_platform_fee') {
+      const fee = Number(args?.p_fee);
+      if (Number.isNaN(fee) || fee < 0) {
+        return error('invalid_fee');
+      }
+      state.platformFee = fee;
+      state.unitPricing.forEach((item) => {
+        item.platform_fee = fee;
+        item.total_price = Number(item.base_price ?? 0) + fee;
+      });
+      return { data: null, error: null };
+    }
+    if (fn === 'get_platform_fee') {
+      return { data: state.platformFee, error: null };
+    }
     return null;
   };
 
   const enrichUnitPricing = (item: AnyRecord): AnyRecord => {
     const unit = state.units.find((candidate) => candidate.id === item.unit_id);
-    const grade = unit
-      ? state.grades.find((candidate) => candidate.id === unit.grade_id)
-      : null;
+    const grade = unit ? state.grades.find((candidate) => candidate.id === unit.grade_id) : null;
     return {
       ...item,
       unit_name: unit?.name ?? item.unit_id,
@@ -1425,10 +1444,7 @@ function createMockClient() {
         return error('access_denied');
       }
       const rows = state.lessonComments
-        .filter(
-          (item) =>
-            item.lesson_id === lessonId && (item.status === 'visible' || isStaff),
-        )
+        .filter((item) => item.lesson_id === lessonId && (item.status === 'visible' || isStaff))
         .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
       return { data: rows, error: null };
     }

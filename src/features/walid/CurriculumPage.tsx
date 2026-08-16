@@ -37,6 +37,7 @@ import {
   publishLesson,
   restoreLesson,
   restoreUnit,
+  setUnitPrice,
   softDeleteLesson,
   updateLesson,
   updateUnit,
@@ -197,6 +198,7 @@ export function CurriculumPage() {
 
   const [unitName, setUnitName] = useState('');
   const [unitOrder, setUnitOrder] = useState('0');
+  const [unitPrice, setUnitPriceInput] = useState('');
   const [unitCreateError, setUnitCreateError] = useState<string | null>(null);
   const [unitCreateBusy, setUnitCreateBusy] = useState(false);
 
@@ -213,6 +215,7 @@ export function CurriculumPage() {
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonDescription, setLessonDescription] = useState('');
   const [lessonOrder, setLessonOrder] = useState('0');
+  const [lessonIsTrial, setLessonIsTrial] = useState(false);
   const [lessonCreateError, setLessonCreateError] = useState<string | null>(null);
   const [lessonCreateBusy, setLessonCreateBusy] = useState(false);
 
@@ -220,6 +223,7 @@ export function CurriculumPage() {
   const [editLessonTitle, setEditLessonTitle] = useState('');
   const [editLessonDescription, setEditLessonDescription] = useState('');
   const [editLessonOrder, setEditLessonOrder] = useState('0');
+  const [editLessonIsTrial, setEditLessonIsTrial] = useState(false);
   const [editLessonError, setEditLessonError] = useState<string | null>(null);
   const [editLessonBusy, setEditLessonBusy] = useState(false);
 
@@ -307,8 +311,21 @@ export function CurriculumPage() {
     }
     setUnitCreateBusy(true);
     try {
-      await createUnit({ gradeId: selectedGradeId, name, sortOrder: Number(unitOrder) || 0 });
+      const unitId = await createUnit({
+        gradeId: selectedGradeId,
+        name,
+        sortOrder: Number(unitOrder) || 0,
+      });
+      if (unitPrice.trim() !== '') {
+        const price = Number(unitPrice);
+        if (Number.isNaN(price) || price < 0) {
+          setUnitCreateError('سعر الباب يجب أن يكون قيمة صحيحة غير سالبة');
+          return;
+        }
+        await setUnitPrice({ unitId, basePrice: price });
+      }
       setUnitName('');
+      setUnitPriceInput('');
       showToast('تم إنشاء الوحدة بنجاح');
       await loadUnits();
     } catch (err) {
@@ -399,9 +416,11 @@ export function CurriculumPage() {
         title,
         description: lessonDescription.trim() ? lessonDescription.trim() : null,
         sortOrder: Number(lessonOrder) || 0,
+        isTrial: lessonIsTrial,
       });
       setLessonTitle('');
       setLessonDescription('');
+      setLessonIsTrial(false);
       showToast('تم إنشاء الدرس بنجاح');
       await loadLessons();
     } catch (err) {
@@ -416,6 +435,7 @@ export function CurriculumPage() {
     setEditLessonTitle(lesson.title);
     setEditLessonDescription(lesson.description ?? '');
     setEditLessonOrder(String(lesson.sort_order));
+    setEditLessonIsTrial(lesson.is_trial === true);
     setEditLessonError(null);
   };
 
@@ -431,6 +451,7 @@ export function CurriculumPage() {
         title: editLessonTitle.trim() ? editLessonTitle.trim() : null,
         description: editLessonDescription.trim() ? editLessonDescription.trim() : null,
         sortOrder: editLessonOrder.trim() ? Number(editLessonOrder) : null,
+        isTrial: editLessonIsTrial,
       });
       showToast('تم تحديث الدرس بنجاح');
       setEditingLesson(null);
@@ -566,7 +587,10 @@ export function CurriculumPage() {
                     ))}
                   </Select>
 
-                  <ol aria-label="مسار التحكم" className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                  <ol
+                    aria-label="مسار التحكم"
+                    className="flex items-center gap-1.5 overflow-x-auto py-0.5"
+                  >
                     <StepChip
                       index={1}
                       label={selectedGradeName ?? 'الصف المختار'}
@@ -585,7 +609,11 @@ export function CurriculumPage() {
 
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <MetricTile label="وحدات نشطة" value={metricValue(units?.length)} tone="indigo" />
-                  <MetricTile label="وحدات محذوفة" value={metricValue(deletedUnits?.length)} tone="rose" />
+                  <MetricTile
+                    label="وحدات محذوفة"
+                    value={metricValue(deletedUnits?.length)}
+                    tone="rose"
+                  />
                   <MetricTile label="دروس" value={metricValue(lessons?.length)} tone="sky" />
                   <MetricTile
                     label="دروس منشورة"
@@ -642,6 +670,16 @@ export function CurriculumPage() {
                       type="number"
                       value={unitOrder}
                       onChange={(event) => setUnitOrder(event.target.value)}
+                    />
+                    <Input
+                      label="سعر الباب (ج.م — اختياري)"
+                      name="unit-price"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="مثال: 100"
+                      value={unitPrice}
+                      onChange={(event) => setUnitPriceInput(event.target.value)}
                     />
                   </div>
                   <Button
@@ -804,6 +842,16 @@ export function CurriculumPage() {
                     onChange={(event) => setLessonDescription(event.target.value)}
                     className="mt-3"
                   />
+                  <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-foreground-muted">
+                    <input
+                      type="checkbox"
+                      name="lesson-is-trial"
+                      checked={lessonIsTrial}
+                      onChange={(event) => setLessonIsTrial(event.target.checked)}
+                      className="h-4 w-4 rounded border-border accent-[#818cf8]"
+                    />
+                    درس مجاني (تجريبي) — فيديو واحد يُفتح للطلاب بدون شراء لكل باب
+                  </label>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Input
                       label="الترتيب"
@@ -842,6 +890,11 @@ export function CurriculumPage() {
                               <span className="truncate text-sm font-medium text-foreground">
                                 {lesson.title}
                               </span>
+                              {lesson.is_trial ? (
+                                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                                  مجاني
+                                </span>
+                              ) : null}
                               <LessonStatusBadge status={lesson.status} />
                             </div>
                             <p className="mt-1 text-xs text-foreground-subtle">
@@ -1026,6 +1079,16 @@ export function CurriculumPage() {
             value={editLessonOrder}
             onChange={(event) => setEditLessonOrder(event.target.value)}
           />
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground-muted">
+            <input
+              type="checkbox"
+              name="edit-lesson-is-trial"
+              checked={editLessonIsTrial}
+              onChange={(event) => setEditLessonIsTrial(event.target.checked)}
+              className="h-4 w-4 rounded border-border accent-[#818cf8]"
+            />
+            درس مجاني (تجريبي) — يُفتح للطلاب بدون شراء (واحد لكل باب)
+          </label>
         </div>
       </Modal>
 
