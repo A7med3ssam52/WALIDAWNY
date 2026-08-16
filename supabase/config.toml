@@ -1,5 +1,27 @@
 project_id = "nfusbrktrqfrnaetetmr"
 
 [functions]
-enabled = true
 
+[functions.upload-pdf]
+verify_jwt = true
+
+[functions.bunny-video-webhook]
+verify_jwt = true
+
+[functions.export-audit-log]
+verify_jwt = true
+
+[functions.generate-unit-codes]
+verify_jwt = true
+
+[functions.get-pdf-signed-url]
+verify_jwt = true
+
+[functions.get-video-playback-url]
+verify_jwt = true
+
+[functions.get-video-thumbnail-url]
+verify_jwt = true
+
+[functions.recheck-video-states]
+verify_jwt = true
