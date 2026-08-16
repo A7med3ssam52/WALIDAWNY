@@ -28,15 +28,25 @@
 -- =====================================================================
 -- Section 1: search_path hardening lock (NEW)
 -- Every SECURITY DEFINER function in public MUST pin `search_path = public`
--- (binding B1). Before 08 this was only spot-checked; now it is a hard
--- regression lock so any future SECURITY DEFINER without the pin fails CI.
+-- or `search_path = public, extensions` (binding B1; the extensions form is
+-- the canonical Supabase pattern for extension functions like
+-- gen_random_bytes — 0032). Before 08 this was only spot-checked; now it is
+-- a hard regression lock so any future SECURITY DEFINER without the pin
+-- fails CI.
 -- =====================================================================
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_proc p
      JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public' AND p.prosecdef
-       AND NOT (p.proconfig @> ARRAY['search_path=public'])),
-    'sec: every public SECURITY DEFINER function pins search_path=public');
+       AND NOT (p.proconfig @> ARRAY['search_path=public']
+                OR p.proconfig @> ARRAY['search_path=public, extensions'])),
+    'sec: every public SECURITY DEFINER function pins search_path=public (or public, extensions)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_proc
+     WHERE proname = 'create_unit_codes_internal'
+       AND proconfig @> ARRAY['search_path=public, extensions']),
+    'sec: create_unit_codes_internal pins search_path=public, extensions (0032)');
 
 -- =====================================================================
 -- Section 2: storage.objects policy inventory lock (REVISED, 0021)
