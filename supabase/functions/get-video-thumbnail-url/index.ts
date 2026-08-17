@@ -1,7 +1,7 @@
 // =====================================================================
-// get-video-thumbnail-url — Phase 5 | Edge Function | Function 6
-// ARCHITECTURE.md §8.4 row 3 / §7.2 (Bunny video pipeline) / SECURITY.md
-// §7 (EF security model). GET/HEAD, JWT-verified (config.toml:
+// get-video-thumbnail-url â€” Phase 5 | Edge Function | Function 6
+// ARCHITECTURE.md آ§8.4 row 3 / آ§7.2 (Bunny video pipeline) / SECURITY.md
+// آ§7 (EF security model). GET/HEAD, JWT-verified (config.toml:
 // [functions.get-video-thumbnail-url] verify_jwt = true).
 //
 // Returns a short-lived signed thumbnail URL for a lesson video:
@@ -11,7 +11,7 @@
 //
 // The thumbnail lives in the video's Bunny directory
 // (`/{videoId}/thumbnail.jpg`) and is covered by the same IP-locked
-// DIRECTORY token as the HLS chain — verified against the real pull zone
+// DIRECTORY token as the HLS chain â€” verified against the real pull zone
 // by scripts/smoke-bunny.mjs (thumbnail.jpg returned 200 with the
 // directory token). This EF exists because the raw thumbnail_url column
 // on lesson_videos is UNSIGNED and must never reach the client
@@ -24,7 +24,7 @@
 //     video of a live lesson (missing lesson -> lesson_not_found 404,
 //     soft-deleted -> lesson_deleted 422).
 //   * STUDENT: the lesson must be reachable (published, own live grade)
-//     and the student must have access to the lesson — a lifetime unit
+//     and the student must have access to the lesson â€” a lifetime unit
 //     purchase OR an active trial lesson (public.get_my_lesson_access,
 //     0028; replaces the old A33 access gate); the video must be
 //     the READY PRIMARY row (the 0009 lesson_videos SELECT policy yields
@@ -72,6 +72,7 @@ export interface SvcQueryResult extends Promise<{
   error: DbError | null;
 }> {
   eq(column: string, value: unknown): SvcQueryResult;
+  is(column: string, value: unknown): SvcQueryResult;
   gt(column: string, value: unknown): SvcQueryResult;
   maybeSingle(): Promise<{ data: unknown; error: DbError | null }>;
 }
@@ -92,7 +93,7 @@ export interface SvcClient {
 
 export interface Deps {
   url: string;
-  /** key is the caller's Bearer token (request-scoped); anon-key position. */
+  /** Caller-scoped client: anon key in the key slot, caller JWT in Authorization. */
   makeClient: (url: string, jwt: string) => SvcClient;
   bunnySigningKey: string;
   bunnyHostname: string;
@@ -108,7 +109,8 @@ export function defaultDeps(): Deps {
   return {
     url: Deno.env.get('SUPABASE_URL') ?? '',
     makeClient: (url, jwt) =>
-      createClient(url, jwt, {
+      createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
     bunnySigningKey: Deno.env.get('BUNNY_SIGNING_KEY') ?? '',
@@ -196,13 +198,13 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   const videoId = parsed.videoId;
 
   // --- 4) The video row (RLS-scoped; students only see the READY PRIMARY
-  // row of an accessible lesson — the 0009 SELECT policy). The explicit
+  // row of an accessible lesson â€” the 0009 SELECT policy). The explicit
   // filters keep the staff branch to the same contract. ---
   const { data: video, error: videoError } = await client
     .from('lesson_videos')
     .select('id,lesson_id,bunny_video_id,status,is_primary,deleted_at')
     .eq('id', videoId)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .maybeSingle();
   if (videoError) {
     console.error('get-video-thumbnail-url: video query failed', videoError.code ?? 'unknown');

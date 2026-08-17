@@ -1,11 +1,11 @@
 // =====================================================================
-// get-pdf-signed-url — Phase 6 | Edge Function | Function 4
-// ARCHITECTURE.md §8.4 row 4 / BLUEPRINT.md §14 row 4 / SECURITY.md §7.
+// get-pdf-signed-url â€” Phase 6 | Edge Function | Function 4
+// ARCHITECTURE.md آ§8.4 row 4 / BLUEPRINT.md آ§14 row 4 / SECURITY.md آ§7.
 // POST + JWT (config.toml: [functions.get-pdf-signed-url] verify_jwt =
-// true). STUDENT-ONLY (S7): staff previews are out of scope for PDFs —
+// true). STUDENT-ONLY (S7): staff previews are out of scope for PDFs â€”
 // this EF serves the student lesson page's PDF viewer.
 //
-// Accepts `lesson_id` ONLY (client never passes a storage path — MED-7);
+// Accepts `lesson_id` ONLY (client never passes a storage path â€” MED-7);
 // the server resolves the PRIMARY READY pdf of the lesson:
 //
 //   POST { "lesson_id": "<uuid>" }
@@ -14,12 +14,12 @@
 // `pdf_url` is a Supabase Storage short-lived signed URL (service-role
 // `createSignedUrl`, TTL 15 minutes) on the PRIVATE `pdfs` bucket
 // (0011_storage_and_seeds.sql: private, no anon/authenticated object
-// policies — content only ever leaves via this EF).
+// policies â€” content only ever leaves via this EF).
 //
 // Access control (student-facing only):
-//   * STUDENT: lesson must be reachable — lesson published, unit
+//   * STUDENT: lesson must be reachable â€” lesson published, unit
 //     published, own live grade, grade active AND not soft-deleted (B8),
-//     lesson not soft-deleted — and the student needs access to THIS
+//     lesson not soft-deleted â€” and the student needs access to THIS
 //     lesson: a lifetime unit purchase OR an active trial lesson
 //     (public.get_my_lesson_access, 0028; replaces the old A33 access
 //     gate). The gate is evaluated by calling the RPC
@@ -31,7 +31,7 @@
 //
 // The primary ready PDF lookup is RLS-scoped as well: the lesson_pdfs
 // SELECT policy (0009) lets students see only the READY PRIMARY row of an
-// accessible lesson — the same filter is applied explicitly here
+// accessible lesson â€” the same filter is applied explicitly here
 // (is_primary + is_ready + not deleted), so exactly one candidate is
 // resolved.
 //
@@ -70,6 +70,7 @@ export interface SvcQueryResult extends Promise<{
   error: DbError | null;
 }> {
   eq(column: string, value: unknown): SvcQueryResult;
+  is(column: string, value: unknown): SvcQueryResult;
   gt(column: string, value: unknown): SvcQueryResult;
   maybeSingle(): Promise<{ data: unknown; error: DbError | null }>;
 }
@@ -101,7 +102,7 @@ export interface SvcClient {
 
 export interface Deps {
   url: string;
-  /** key is the caller's Bearer token (request-scoped); anon-key position. */
+  /** Caller-scoped client: anon key in the key slot, caller JWT in Authorization. */
   makeClient: (url: string, jwt: string) => SvcClient;
   /** service-role client (hosted env secret) for storage signing. */
   makeServiceClient: (url: string) => SvcClient;
@@ -115,7 +116,8 @@ export function defaultDeps(): Deps {
   return {
     url: Deno.env.get('SUPABASE_URL') ?? '',
     makeClient: (url, jwt) =>
-      createClient(url, jwt, {
+      createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
     makeServiceClient: (url) =>
@@ -154,8 +156,8 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // Request-scoped client: the caller's own token (anon-key position; the
-  // token overrides the key). Never a service-role client — see header.
+  // Request-scoped client: anon key in the key slot, caller JWT in
+  // Authorization (never a service-role client) — see header.
   const client = deps.makeClient(deps.url, jwt);
   const {
     data: { user },
@@ -257,7 +259,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     .eq('lesson_id', lessonId)
     .eq('is_primary', true)
     .eq('is_ready', true)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .maybeSingle();
   if (pdfError) {
     console.error('get-pdf-signed-url: pdf query failed', pdfError.code ?? 'unknown');

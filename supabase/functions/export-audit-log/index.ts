@@ -103,7 +103,8 @@ export function defaultDeps(): Deps {
   return {
     url: Deno.env.get('SUPABASE_URL') ?? '',
     makeClient: (url, jwt) =>
-      createClient(url, jwt, {
+      createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
     makeServiceClient: (url) =>

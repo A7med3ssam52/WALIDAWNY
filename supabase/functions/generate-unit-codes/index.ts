@@ -75,7 +75,7 @@ export interface SvcClient {
 
 export interface Deps {
   url: string;
-  /** key is the caller's Bearer token (request-scoped); anon-key position. */
+  /** Caller-scoped client: anon key in the key slot, caller JWT in Authorization. */
   makeClient: (url: string, jwt: string) => SvcClient;
 }
 
@@ -84,7 +84,8 @@ export function defaultDeps(): Deps {
   return {
     url: Deno.env.get('SUPABASE_URL') ?? '',
     makeClient: (url, jwt) =>
-      createClient(url, jwt, {
+      createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
   };
@@ -135,8 +136,8 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // Request-scoped client: the caller's own token (anon-key position; the
-  // token overrides the key). Never a service-role client — see header.
+  // Request-scoped client: anon key in the key slot, caller JWT in
+  // Authorization. Never a service-role client — see header.
   const client = deps.makeClient(deps.url, jwt);
   const {
     data: { user },

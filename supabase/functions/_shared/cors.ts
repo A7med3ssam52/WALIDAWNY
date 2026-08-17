@@ -6,8 +6,8 @@
 // working in every environment; the internal job endpoint additionally
 // allows the `x-internal-token` header through preflight.
 //
-// Internal-only endpoints (bunny-video-webhook, recheck-video-states)
-// are never called from a browser, so they reply
+// Internal-only endpoints (bunny-video-webhook, expire-subscriptions,
+// recheck-video-states) are never called from a browser, so they reply
 // WITHOUT CORS headers (noCors = true): no permissive surface is
 // advertised and OPTIONS is rejected. Callers are server-side only
 // (Bunny webhook, cron/scheduler chain).

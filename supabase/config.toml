@@ -24,4 +24,4 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.recheck-video-states]
-verify_jwt = true
+verify_jwt = false

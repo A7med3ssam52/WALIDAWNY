@@ -76,6 +76,7 @@ export interface SvcQueryResult extends Promise<{
   error: DbError | null;
 }> {
   eq(column: string, value: unknown): SvcQueryResult;
+  is(column: string, value: unknown): SvcQueryResult;
   lt(column: string, value: unknown): SvcQueryResult;
   in(column: string, values: unknown[]): SvcQueryResult;
 }
@@ -259,7 +260,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     .from('lesson_videos')
     .select('id,lesson_id,status,bunny_video_id')
     .in('status', STUCK_STATES)
-    .eq('deleted_at', null)
+    .is('deleted_at', null)
     .lt('created_at', cutoff);
   if (listError) {
     console.error('recheck-video-states: candidate query failed', listError.code ?? 'unknown');

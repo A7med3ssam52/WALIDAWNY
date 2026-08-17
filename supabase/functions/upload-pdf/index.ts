@@ -48,8 +48,8 @@
 //     fast with file_too_large when it exceeds 50MiB (client-visible
 //     UX; the platform still enforces the real bytes).
 //
-// Actor plumbing: request-scoped client from the caller's Bearer token
-// (anon-key position; the token overrides the key) — never a
+// Actor plumbing: request-scoped client with the anon key in the key slot
+// and the caller's JWT in Authorization — never a
 // service-role client (Phase 3 pattern, 0014).
 //
 // Error envelope: { error: { code, message } } with stable codes:
@@ -132,7 +132,7 @@ export interface SvcClient {
 
 export interface Deps {
   url: string;
-  /** key is the caller's Bearer token (request-scoped); anon-key position. */
+  /** Caller-scoped client: anon key in the key slot, caller JWT in Authorization. */
   makeClient: (url: string, jwt: string) => SvcClient;
 }
 
@@ -141,7 +141,8 @@ export function defaultDeps(): Deps {
   return {
     url: Deno.env.get('SUPABASE_URL') ?? '',
     makeClient: (url, jwt) =>
-      createClient(url, jwt, {
+      createClient(url, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
   };
@@ -251,8 +252,8 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // Request-scoped client: the caller's own token (anon-key position; the
-  // token overrides the key). Never a service-role client — see header.
+  // Request-scoped client: anon key in the key slot, caller JWT in
+  // Authorization. Never a service-role client — see header.
   const client = deps.makeClient(deps.url, jwt);
   const {
     data: { user },

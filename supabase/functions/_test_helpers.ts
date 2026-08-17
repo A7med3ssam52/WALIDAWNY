@@ -38,6 +38,7 @@ type TableResult = { data: unknown; count?: number; error: StubError | null };
 export type StubBuilder = Promise<TableResult> & {
   select(columns: string, opts?: { count?: 'exact'; head?: boolean }): StubBuilder;
   eq(column: string, value: unknown): StubBuilder;
+  is(column: string, value: unknown): StubBuilder;
   gt(column: string, value: unknown): StubBuilder;
   lt(column: string, value: unknown): StubBuilder;
   lte(column: string, value: unknown): StubBuilder;
@@ -168,6 +169,8 @@ export function makeStubClient(cfg: StubConfig): StubClientHandle {
       select: (_cols: string, opts?: { count?: 'exact'; head?: boolean }) =>
         builder(table, filters, opts?.count === 'exact'),
       eq: (column: string, value: unknown) =>
+        builder(table, [...filters, [column, value]], wantsCount),
+      is: (column: string, value: unknown) =>
         builder(table, [...filters, [column, value]], wantsCount),
       gt: (column: string, value: unknown) =>
         builder(table, [...filters, [`>${column}`, value]], wantsCount),
