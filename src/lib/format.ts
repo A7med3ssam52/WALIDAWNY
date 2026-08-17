@@ -53,7 +53,7 @@ export function toWhatsAppDigits(value?: string | null): string {
   if (!value) {
     return '';
   }
-  const digits = value.replace(/[^0-9]/g, '');
+  const digits = value.replace(/[^0-9]/g, '').replace(/^0020/, '20');
   if (digits.startsWith('20')) {
     return digits;
   }

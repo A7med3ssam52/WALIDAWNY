@@ -81,8 +81,8 @@ describe('StudentDetailPage', () => {
     expect(expectRpcCall('update_student_profile')).toEqual({
       p_student_id: 's1',
       p_full_name: 'طالب محدث',
-      p_phone: '01001234567',
-      p_guardian_phone: '01112345678',
+      p_phone: '+201001234567',
+      p_guardian_phone: '+201112345678',
       p_address: 'القاهرة',
     });
     expect(expectRpcCall('set_student_grade')).toEqual({ p_student_id: 's1', p_grade_id: 'g1' });

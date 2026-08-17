@@ -26,7 +26,7 @@ import {
   updateStudentProfile,
 } from '../../data/rpc';
 import { formatDateTime, formatPrice } from '../../lib/format';
-import { validateProfileForm, type ProfileFormValues } from '../../lib/validation';
+import { toCanonicalPhone, validateProfileForm, type ProfileFormValues } from '../../lib/validation';
 import type { Grade, Profile, UnitPurchaseWithUnit } from '../../types/database';
 
 type PendingAction = 'disable' | 'enable' | 'delete' | 'restore' | null;
@@ -165,8 +165,8 @@ export function StudentDetailPage() {
       await updateStudentProfile({
         studentId: student.id,
         fullName: form.fullName.trim(),
-        phone: form.phone.trim(),
-        guardianPhone: form.guardianPhone.trim(),
+        phone: toCanonicalPhone(form.phone),
+        guardianPhone: toCanonicalPhone(form.guardianPhone),
         address: form.address.trim(),
       });
       if (selectedGradeId !== (student.grade_id ?? '')) {

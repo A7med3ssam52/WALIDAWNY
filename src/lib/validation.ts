@@ -11,8 +11,8 @@ export function normalizePhone(value: string): string {
     .trim()
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
-    .replace(/[\s\-().]/g, '')
-    .replace(/^\+/, '');
+    .replace(/\D/g, '')
+    .replace(/^0020/, '20');
 }
 
 export function isValidEgyptianPhone(value: string): boolean {
