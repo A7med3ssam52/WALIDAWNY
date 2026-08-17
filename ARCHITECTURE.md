@@ -200,7 +200,7 @@ Admin can also reach all `/walid/*` routes (permission check allows `admin`).
 | Generate/revoke unit codes | — | ✓ | ✓ | — |
 | Read pricing | — | ✓ | ✓ | ✓ |
 | Set per-unit base price (`set_unit_price`) | — | ✓ | ✓ | ✓ |
-| Set global platform fee (`set_platform_fee`) | — | — | ✓ | — |
+| Set global platform fee (`set_platform_fee`) | — | — | ✓ | ✓ |
 | Manage WhatsApp settings | — | ✓ (`whatsapp%` keys only) | ✓ (all settings) | — |
 | Manage roles (`set_user_role`) | — | — | ✓ | — |
 | Read audit logs / export | — | — | ✓ | — |

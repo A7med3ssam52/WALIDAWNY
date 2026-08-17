@@ -5,7 +5,7 @@
 -- fee that is added automatically on top of every unit
 -- (total = base_price + platform_fee, generated column).
 --   * set_unit_price(uuid, numeric)   -> staff (teacher/mr_walid/admin)
---   * set_platform_fee(numeric)       -> ADMIN ONLY (global fixed fee)
+--   * set_platform_fee(numeric)       -> OWNER (mr_walid) or ADMIN only (global fixed fee)
 --   * get_platform_fee()              -> public read (anon + auth)
 -- Plus: create_lesson/update_lesson accept p_is_trial so the teacher can
 -- mark the ONE free (trial) lesson per unit from the UI (decision: trial

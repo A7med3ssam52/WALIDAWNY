@@ -63,7 +63,7 @@ const EMPTY_FORM: PriceFormState = {
 export function PricingPage() {
   const { role } = useAuth();
   const { showToast } = useToast();
-  const isAdmin = role === 'admin';
+  const canSetPlatformFee = role === 'admin' || role === 'mr_walid';
   const [pricing, setPricing] = useState<UnitPricingWithUnit[] | null>(null);
   const [platformFee, setPlatformFeeValue] = useState<number | null>(null);
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -315,10 +315,10 @@ export function PricingPage() {
           </div>
         </Card>
 
-        {isAdmin ? (
+        {canSetPlatformFee ? (
           <Card
             title="رسوم المنصة الثابتة"
-            subtitle="قيمة واحدة يحددها المدير وتُضاف تلقائيًا على سعر كل وحدة"
+            subtitle="قيمة واحدة يحددها مالك المنصة وتُضاف تلقائيًا على سعر كل وحدة"
           >
             <div className="flex flex-col gap-3">
               <div className="grid gap-3 sm:max-w-xs">

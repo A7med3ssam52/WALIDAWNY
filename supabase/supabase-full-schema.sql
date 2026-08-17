@@ -1,7 +1,7 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0032, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0033, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
@@ -6598,7 +6598,7 @@ GRANT  EXECUTE ON FUNCTION public.list_lesson_comments(uuid) TO authenticated;
 -- fee that is added automatically on top of every unit
 -- (total = base_price + platform_fee, generated column).
 --   * set_unit_price(uuid, numeric)   -> staff (teacher/mr_walid/admin)
---   * set_platform_fee(numeric)       -> ADMIN ONLY (global fixed fee)
+--   * set_platform_fee(numeric)       -> OWNER (mr_walid) or ADMIN only (global fixed fee)
 --   * get_platform_fee()              -> public read (anon + auth)
 -- Plus: create_lesson/update_lesson accept p_is_trial so the teacher can
 -- mark the ONE free (trial) lesson per unit from the UI (decision: trial
@@ -6881,3 +6881,48 @@ REVOKE EXECUTE ON FUNCTION public.create_unit_codes_internal(uuid, integer, text
 
 COMMENT ON FUNCTION public.create_unit_codes_internal(uuid, integer, text) IS
 'Generates WLDN-* codes for a pricing row (unambiguous charset A22, pgcrypto randomness). search_path = public, extensions so gen_random_bytes resolves on Supabase (extensions schema) and locally (public). Edge-Function-only entry: create_unit_codes_for_staff.';
+
+-- =====================================================================
+-- >>> included from migrations\0033_platform_fee_owner_access.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0033_platform_fee_owner_access
+-- Pricing | Owner access
+-- The fixed platform fee (set_platform_fee) was ADMIN ONLY, but the
+-- platform has no real admin account: Mr. Walid (mr_walid) is the
+-- owner. Allow mr_walid OR admin to set the fee; teachers/students
+-- stay denied (verified by the harness in 04_business.sql).
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.set_platform_fee(p_fee numeric(10, 2))
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF p_fee < 0 THEN
+        RAISE EXCEPTION 'invalid_fee';
+    END IF;
+
+    INSERT INTO public.app_settings (key, value, description)
+    VALUES ('platform_fee', to_jsonb(p_fee),
+            'Fixed platform fee added on top of every unit price (owner/admin-only)')
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value,
+        description = EXCLUDED.description,
+        updated_at = now();
+
+    UPDATE public.unit_pricing SET platform_fee = p_fee;
+
+    PERFORM public.audit_log('platform_fee.set', 'app_settings', NULL,
+        jsonb_build_object('platform_fee', p_fee));
+END $$;
+
+COMMENT ON FUNCTION public.set_platform_fee(numeric) IS
+    'One fixed platform fee added on top of every unit price (owner mr_walid or admin only; 0033).';

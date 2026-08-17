@@ -494,7 +494,7 @@ DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
 | `get_public_settings()` | ✓ | ✓ | موجودة |
 | `list_active_grades()` | ✓ | ✓ | موجودة |
 | `set_unit_price(uuid, numeric)` | ✗ | ✓ | staff داخل الدالة (سعر أساسي فقط) |
-| `set_platform_fee(numeric)` | ✗ | ✓ | admin داخل الدالة فقط (رسوم ثابتة عامة) |
+| `set_platform_fee(numeric)` | ✗ | ✓ | مالك المنصة (mr_walid) أو admin داخل الدالة (رسوم ثابتة عامة) |
 | `get_platform_fee()` | ✓ | ✓ | عام — landing يعرض السعر + الرسوم |
 | `list_unit_pricing()` | ✗ | ✓ | staff داخل الدالة |
 | `list_codes_by_unit(uuid)` | ✗ | ✓ | staff |
@@ -732,7 +732,7 @@ enabled = true
 - **Idempotency:** التفعيل مرتين → الخطأ الثاني `unit_already_purchased`؛ الكود نفسه → `code_already_used`.
 - **Void:** لا يوجد مسار void في v1 للعميل؛ يُختبر فقط أنه لا يمكن إدراج purchase مباشرة (سياسة `insert_via_rpc`).
 - دلالات `progress` على الوحدات المشتراة فقط واستبعاد trial.
-- `set_unit_price`: admin و mr_walid و teacher ينجحون في تحديد السعر الأساسي؛ `set_platform_fee`: admin فقط ينجح، teacher → `permission_denied` (تعديل 0031 لقرار J — المدرس يحدد السعر الأساسي، والرسوم الثابتة للأدمن).
+- `set_unit_price`: admin و mr_walid و teacher ينجحون في تحديد السعر الأساسي؛ `set_platform_fee`: مالك المنصة (mr_walid) أو admin ينجح، teacher → `permission_denied` (تعديل 0031 لقرار J، ثم 0033 — المدرس يحدد السعر الأساسي، والرسوم الثابتة للمالك/الأدمن).
 - `notify_new_content` يُنشئ إشعاراً لمشتري الوحدة فقط، و `dedup_key` يمنع التكرار.
 - أثر `redeem_unit_code`: إنشاء إشعار `unit_activated`.
 

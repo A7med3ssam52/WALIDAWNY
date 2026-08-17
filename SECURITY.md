@@ -138,7 +138,7 @@ Every table: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEVEL 
 
 ### `unit_pricing`
 - SELECT: `is_admin() OR is_mr_walid() OR is_teacher()` OR (student: own active grade, published unit, pricing active). anon has **no** direct SELECT — its only price surface is the RPC `get_public_unit_prices()` (never evaluates helper functions in a policy)
-- INSERT/UPDATE/DELETE: RPC-only (`set_unit_price` — staff base price, audited; `set_platform_fee` — admin global fee, audited); `FORCE ROW LEVEL SECURITY`
+- INSERT/UPDATE/DELETE: RPC-only (`set_unit_price` — staff base price, audited; `set_platform_fee` — owner/admin global fee, audited); `FORCE ROW LEVEL SECURITY`
 
 ### `unit_codes`
 - SELECT: `is_admin() OR is_mr_walid() OR is_teacher()` (students never see raw codes)

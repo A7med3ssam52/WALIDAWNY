@@ -139,7 +139,7 @@ CREATE TYPE public.notification_type AS ENUM ('new_content','unit_activated','sy
 | `is_active` | boolean | NOT NULL DEFAULT true |
 | `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
 
-- Upserted exclusively via `set_unit_price` (staff — base price only) and `set_platform_fee` (admin — global fixed fee), both audited. FORCE RLS; no direct DML policies.
+- Upserted exclusively via `set_unit_price` (staff — base price only) and `set_platform_fee` (owner mr_walid or admin — global fixed fee), both audited. FORCE RLS; no direct DML policies.
 
 **`unit_codes`** — one-time activation codes for a unit.
 | Column | Type | Constraints |
@@ -351,7 +351,7 @@ disable_student(p_student_id uuid) / enable_student(p_student_id uuid)   -- SECU
 soft_delete_student(p_student_id uuid) / restore_student(p_student_id uuid) -- SECURITY DEFINER + audit; delete also revokes auth.sessions via service role (A34)
 list_trash() RETURNS SETOF profiles   SECURITY DEFINER  -- deleted_at IS NOT NULL; mr_walid/admin
 set_unit_price(p_unit_id uuid, p_base_price numeric) -- SECURITY DEFINER + audit (unit_pricing.upsert); staff (admin/mr_walid/teacher); fee read from app_settings
-set_platform_fee(p_fee numeric)               -- SECURITY DEFINER + audit; ADMIN ONLY; global fixed fee -> app_settings + every unit_pricing row
+set_platform_fee(p_fee numeric)               -- SECURITY DEFINER + audit; OWNER (mr_walid) or ADMIN; global fixed fee -> app_settings + every unit_pricing row
 get_platform_fee() RETURNS numeric            -- public read (anon + authenticated); base + fee + total for the landing page
 list_unit_pricing() RETURNS SETOF unit_pricing        -- read-only, no audit; staff surface
 create_unit_codes_internal(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes  -- SECURITY DEFINER; Edge-Function-only — NO client grants (REVOKEd from PUBLIC)
@@ -452,7 +452,7 @@ Every table has `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEV
 
 **grades** — SELECT: `is_admin() OR is_mr_walid() OR (is_student() AND deleted_at IS NULL AND is_active)` (students read active, non-deleted grades only — architecture-gate binding B8). INSERT/UPDATE/DELETE: `is_admin() OR is_mr_walid()`; WITH CHECK prevents `role` escalation (none present). (Admin-only hard delete; app soft-deletes.)
 
-**unit_pricing** — SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND is_active AND unit's grade = student's grade)`. INSERT/UPDATE/DELETE: **FORCE RLS + no direct DML policies** — pricing is managed only via `set_unit_price` (staff base price) and `set_platform_fee` (admin global fee), both SECURITY DEFINER.
+**unit_pricing** — SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND is_active AND unit's grade = student's grade)`. INSERT/UPDATE/DELETE: **FORCE RLS + no direct DML policies** — pricing is managed only via `set_unit_price` (staff base price) and `set_platform_fee` (owner/admin global fee), both SECURITY DEFINER.
 
 **unit_codes** — SELECT: `is_admin() OR is_mr_walid()` (students never see raw codes). INSERT/UPDATE/DELETE: RPC/Edge-Function-only; `WITH (NO POLICY)`.
 

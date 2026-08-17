@@ -95,7 +95,7 @@ The time-based status enum used by the legacy access model was dropped by 0028 �
 | `is_active` | boolean | NOT NULL DEFAULT true |
 | `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
 
-- Upserted exclusively via `set_unit_price` (staff — base price only) and `set_platform_fee` (admin — global fixed fee), both audited. FORCE RLS; no direct DML policies.
+- Upserted exclusively via `set_unit_price` (staff — base price only) and `set_platform_fee` (owner mr_walid or admin — global fixed fee), both audited. FORCE RLS; no direct DML policies.
 
 ### 4.4 `unit_codes` — one-time activation codes for a unit
 
@@ -461,7 +461,7 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `update_student_profile` | `(p_student_id uuid, p_full_name text, p_phone text, p_guardian_phone text, p_address text)` | **[BINDING B3 — new]** mr_walid/admin; SECURITY DEFINER; audited; strict 4-column whitelist (cannot touch role/grade/status/deleted_at/email) |
 | `list_trash` | `RETURNS SETOF profiles` | `deleted_at IS NOT NULL`; mr_walid/admin |
 | `set_unit_price` | `(p_unit_id uuid, p_base_price numeric)` | staff (admin/mr_walid/teacher) sets the BASE price only + audit (`unit_pricing.upsert`); platform fee is read from `app_settings`; upserts the per-unit pricing row |
-| `set_platform_fee` | `(p_fee numeric)` | **admin only** (0031); sets ONE global fixed fee in `app_settings` and rewrites `platform_fee` on every `unit_pricing` row + audit |
+| `set_platform_fee` | `(p_fee numeric)` | **owner (mr_walid) or admin** (0031/0033); sets ONE global fixed fee in `app_settings` and rewrites `platform_fee` on every `unit_pricing` row + audit |
 | `get_platform_fee` | `RETURNS numeric` | public read (anon + authenticated, 0031); landing page shows base + fee + total without auth |
 | `list_unit_pricing` | `RETURNS SETOF unit_pricing` | read-only, no audit; staff surface for per-unit prices |
 | `create_unit_codes_internal` | `(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes` | SECURITY DEFINER; called by Edge Function only — **no client grants** (EF entry point: `create_unit_codes_for_staff`; internal stays locked); validates count cap (≤500) + format (A22) |

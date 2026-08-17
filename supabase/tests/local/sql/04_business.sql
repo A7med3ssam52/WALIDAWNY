@@ -876,10 +876,10 @@ SELECT tests.expect_rows(
 RESET ROLE;
 RESET "app.current_user_id";
 
--- set_unit_price / set_platform_fee (0031): staff (incl. teachers) sets
--- the BASE price; the ADMIN sets ONE fixed platform fee applied to every
--- unit; total_price is generated (base + fee). Non-staff denied, negative
--- values raise, unknown units raise.
+-- set_unit_price / set_platform_fee (0031/0033): staff (incl. teachers) sets
+-- the BASE price; the OWNER (mr_walid) or ADMIN sets ONE fixed platform fee
+-- applied to every unit; total_price is generated (base + fee). Non-staff
+-- denied, negative values raise, unknown units raise.
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
 SELECT tests.expect_rows(
@@ -923,6 +923,22 @@ SELECT tests.assert(
 SELECT tests.expect_error(
     'SELECT public.set_platform_fee(50)',
     'P0001', 'permission_denied');
+RESET ROLE;
+RESET "app.current_user_id";
+-- mr_walid (platform owner) can also set the fixed platform fee (0033).
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
+SET LOCAL ROLE mr_walid;
+SELECT tests.expect_rows(
+    'SELECT public.set_platform_fee(15)',
+    1, 'staff: mr_walid sets the fixed platform fee (15)');
+SELECT tests.assert(
+    (SELECT platform_fee = 15.00 AND total_price = 95.00
+     FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
+    'staff: mr_walid fee applied (base 80 + 15)');
+SELECT tests.assert(
+    (SELECT EXISTS (SELECT 1 FROM public.audit_logs
+        WHERE action = 'platform_fee.set' AND metadata ->> 'platform_fee' = '15')),
+    'staff: mr_walid set_platform_fee audited');
 RESET ROLE;
 RESET "app.current_user_id";
 -- student denied on pricing functions
