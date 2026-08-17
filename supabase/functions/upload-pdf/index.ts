@@ -80,7 +80,7 @@ export const MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024; // 50 MiB (config.toml file_
 export const MAX_FILE_NAME_LENGTH = 255;
 export const PDF_BUCKET = 'pdfs';
 export const UPLOAD_URL_TTL_SECONDS = 60; // platform default TTL for signed upload URLs
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Arabic/Latin letters, digits, spaces, dots, hyphens, underscores.

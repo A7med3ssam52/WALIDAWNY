@@ -74,7 +74,7 @@ import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 import { buildPlaybackUrl } from '../_shared/bunny.ts';
 
 export const DEFAULT_TTL_SECONDS = 1200; // 20 minutes
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
