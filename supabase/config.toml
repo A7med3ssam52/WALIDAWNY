@@ -5,6 +5,9 @@ project_id = "nfusbrktrqfrnaetetmr"
 [functions.upload-pdf]
 verify_jwt = true
 
+[functions.delete-pdf]
+verify_jwt = true
+
 [functions.bunny-video-webhook]
 verify_jwt = false
 

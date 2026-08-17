@@ -93,7 +93,7 @@ import {
   tusAuthorizationSignature,
 } from '../_shared/bunny.ts';
 
-export const TUS_SIGNATURE_TTL_SECONDS = 3600; // 1 hour upload window
+export const TUS_SIGNATURE_TTL_SECONDS = 86400; // 24 hour upload window
 export const MAX_FILE_NAME_LENGTH = 255;
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
 
@@ -204,6 +204,14 @@ export interface SessionBody {
   old_video_id: string | null;
   file_name: string | null;
   video_id: string | null;
+}
+
+/** Filetype declared in Upload-Metadata, derived from the file extension. */
+export function detectVideoFileType(fileName: string | null): string {
+  const name = fileName ?? '';
+  if (/\.webm$/i.test(name)) return 'video/webm';
+  if (/\.mov$/i.test(name)) return 'video/quicktime';
+  return 'video/mp4';
 }
 
 /** Basename + allowlist + length (no extension requirement — it is a TITLE). */
@@ -721,7 +729,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         VideoId: created.guid,
       },
       metadata: {
-        filetype: 'video/mp4',
+        filetype: detectVideoFileType(fileName),
         title,
       },
       expires_in: TUS_SIGNATURE_TTL_SECONDS,

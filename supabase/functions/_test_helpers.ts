@@ -20,6 +20,7 @@ export interface StubStorageConfig {
   token?: string;
   uploadError?: { message: string; code?: string } | null;
   error?: { message: string; code?: string } | null;
+  removeError?: { message: string; code?: string } | null;
 }
 export interface StubConfig {
   user?: { id: string } | null;
@@ -82,6 +83,12 @@ export interface StubClientHandle {
           expiresIn: number,
         ): Promise<{
           data: { signedUrl: string; path: string; expiresIn: number } | null;
+          error: { message: string; code?: string } | null;
+        }>;
+        remove(
+          paths: string[],
+        ): Promise<{
+          data: { path: string }[] | null;
           error: { message: string; code?: string } | null;
         }>;
       };
@@ -251,6 +258,14 @@ export function makeStubClient(cfg: StubConfig): StubClientHandle {
             },
             error: null,
           });
+        },
+        remove: (paths: string[]) => {
+          storageCalls.push({ bucket, path: paths.join(','), options: undefined });
+          const s = cfg.storage?.[bucket] ?? {};
+          if (s.removeError) {
+            return Promise.resolve({ data: null, error: s.removeError });
+          }
+          return Promise.resolve({ data: paths.map((path) => ({ path })), error: null });
         },
       }),
     },

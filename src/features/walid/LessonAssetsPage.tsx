@@ -16,9 +16,11 @@ import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { StaffNav } from '../../components/StaffNav';
 import { useToast } from '../../components/Toast';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import {
   cancelVideoUploadSession,
   createVideoUploadSession,
+  deletePdfUpload,
   finalizePdfUpload,
   getLessonById,
   getPlaybackUrl,
@@ -68,6 +70,7 @@ const PDF_ERROR_MESSAGES: Record<string, string> = {
   access_denied: 'ليست لديك صلاحية',
   permission_denied: 'ليست لديك صلاحية',
   pdf_not_found: 'ملف PDF غير موجود',
+  pdf_not_pending: 'الملف مكتمل ولا يمكن حذفه',
   pdf_upload_failed: 'فشل رفع الملف إلى التخزين. حاول مرة أخرى',
   upload_url_failed: 'فشل إنشاء رابط الرفع. حاول مرة أخرى',
   pdf_reservation_failed: 'فشل إنشاء سجل الملف. حاول مرة أخرى',
@@ -165,7 +168,7 @@ const STAGE_LABELS: Record<Exclude<UploadStage, 'idle'>, string> = {
   finalizing: 'جاري تأكيد الملف...',
 };
 
-type VideoUploadStage = 'idle' | 'requesting' | 'uploading' | 'done' | 'failed';
+type VideoUploadStage = 'idle' | 'requesting' | 'uploading' | 'failed';
 
 interface VideoUploadState {
   stage: VideoUploadStage;
@@ -283,9 +286,12 @@ export function LessonAssetsPage() {
   const [comments, setComments] = useState<LessonComment[] | null>(null);
   const [commentsError, setCommentsError] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [cancellingVideoId, setCancellingVideoId] = useState<string | null>(null);
+  const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
 
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const tusUploadRef = useRef<TusUpload | null>(null);
+  const activeVideoSessionRef = useRef<VideoUploadSession | null>(null);
 
   const loadLesson = useCallback(async () => {
     if (!lessonId) {
@@ -353,12 +359,59 @@ export function LessonAssetsPage() {
     }
   };
 
+  const handleCancelPendingVideo = async (video: LessonVideo) => {
+    if (!lessonId) {
+      return;
+    }
+    setCancellingVideoId(video.id);
+    try {
+      await cancelVideoUploadSession(lessonId, video.id);
+      showToast('تم إلغاء الرفع');
+      await loadVideos();
+    } catch (err) {
+      showToast(videoErrorMessage(err), 'error');
+    } finally {
+      setCancellingVideoId(null);
+    }
+  };
+
+  const handleDeletePdf = async (pdf: LessonPdf) => {
+    if (!lessonId) {
+      return;
+    }
+    setDeletingPdfId(pdf.id);
+    try {
+      await deletePdfUpload(lessonId, pdf.id);
+      showToast('تم حذف الملف');
+      await loadPdfs();
+    } catch (err) {
+      showToast(pdfErrorMessage(err), 'error');
+    } finally {
+      setDeletingPdfId(null);
+    }
+  };
+
   useEffect(() => {
     void loadLesson();
     void loadPdfs();
     void loadVideos();
     void loadComments();
   }, [loadLesson, loadPdfs, loadVideos, loadComments]);
+
+  useEffect(() => {
+    return () => {
+      const upload = tusUploadRef.current;
+      if (upload) {
+        void upload.abort().catch(() => undefined);
+        tusUploadRef.current = null;
+      }
+      const session = activeVideoSessionRef.current;
+      if (lessonId && session) {
+        activeVideoSessionRef.current = null;
+        void cancelVideoUploadSession(lessonId, session.video_id).catch(() => undefined);
+      }
+    };
+  }, [lessonId]);
 
   const anyVideoActive = useMemo(() => (videos ?? []).some(isVideoActive), [videos]);
 
@@ -452,7 +505,7 @@ export function LessonAssetsPage() {
   };
 
   const startTusUpload = useCallback(
-    (session: VideoUploadSession, file: File, resume: boolean) => {
+    (session: VideoUploadSession, file: File) => {
       const baseOptions = {
         headers: { ...session.tus_headers },
         metadata: { ...session.metadata },
@@ -466,7 +519,8 @@ export function LessonAssetsPage() {
         },
         onSuccess: () => {
           tusUploadRef.current = null;
-          setVideoUpload((prev) => ({ ...prev, stage: 'done', progress: 100 }));
+          activeVideoSessionRef.current = null;
+          setVideoUpload(INITIAL_VIDEO_UPLOAD);
           showToast('تم رفع الفيديو — جاري المعالجة');
           void loadVideos();
         },
@@ -479,9 +533,7 @@ export function LessonAssetsPage() {
           }));
         },
       };
-      const upload = resume
-        ? new TusUpload(file, { ...baseOptions, uploadUrl: session.upload_url })
-        : new TusUpload(file, { ...baseOptions, endpoint: session.upload_url });
+      const upload = new TusUpload(file, { ...baseOptions, endpoint: session.upload_url });
       tusUploadRef.current = upload;
       upload.start();
     },
@@ -501,8 +553,9 @@ export function LessonAssetsPage() {
     setVideoUpload((prev) => ({ ...prev, stage: 'requesting', error: null }));
     try {
       const session = await createVideoUploadSession(lessonId, mode, oldVideoId ?? undefined);
+      activeVideoSessionRef.current = session;
       setVideoUpload((prev) => ({ ...prev, stage: 'uploading', session }));
-      startTusUpload(session, file, false);
+      startTusUpload(session, file);
     } catch (err) {
       setVideoUpload((prev) => ({ ...prev, stage: 'failed', error: videoErrorMessage(err) }));
     }
@@ -522,7 +575,7 @@ export function LessonAssetsPage() {
         bytesSent: 0,
         bytesTotal: 0,
       }));
-      startTusUpload(session, file, true);
+      startTusUpload(session, file);
     } else {
       void startVideoUpload();
     }
@@ -531,6 +584,7 @@ export function LessonAssetsPage() {
   const cancelVideoUpload = async () => {
     await tusUploadRef.current?.abort().catch(() => undefined);
     tusUploadRef.current = null;
+    activeVideoSessionRef.current = null;
     const { session } = videoUpload;
     setVideoUpload(INITIAL_VIDEO_UPLOAD);
     if (lessonId && session) {
@@ -694,6 +748,17 @@ export function LessonAssetsPage() {
                           {VIDEO_STATUS_LABELS[video.status]}
                         </Badge>
                         {video.is_primary ? <Badge variant="info">الأساسي</Badge> : null}
+                        {video.status === 'pending_upload' ? (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                            onClick={() => void handleCancelPendingVideo(video)}
+                            disabled={cancellingVideoId === video.id}
+                          >
+                            {cancellingVideoId === video.id ? 'جاري الإلغاء...' : 'إلغاء'}
+                          </Button>
+                        ) : null}
                         {video.status === 'ready' ? (
                           <>
                             <Button
@@ -786,9 +851,7 @@ export function LessonAssetsPage() {
                     <p className="text-sm text-foreground-muted" role="status">
                       {videoUpload.stage === 'requesting'
                         ? 'جارٍ إنشاء جلسة الرفع...'
-                        : videoUpload.stage === 'done'
-                          ? 'تم الرفع — جاري المعالجة'
-                          : `جارٍ رفع الملف (${videoUpload.progress}%)...`}
+                        : `جارٍ رفع الملف (${videoUpload.progress}%)...`}
                     </p>
                     <div
                       role="progressbar"
@@ -957,6 +1020,17 @@ export function LessonAssetsPage() {
                     ) : (
                       <Badge variant="warning">قيد الرفع</Badge>
                     )}
+                    {!pdf.is_ready ? (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                        onClick={() => void handleDeletePdf(pdf)}
+                        disabled={deletingPdfId === pdf.id}
+                      >
+                        {deletingPdfId === pdf.id ? 'جاري الحذف...' : 'حذف'}
+                      </Button>
+                    ) : null}
                   </div>
                 </li>
               ))}
@@ -998,11 +1072,7 @@ export function LessonAssetsPage() {
             </p>
           ) : preview?.url ? (
             <div className="glass-card overflow-hidden rounded-2xl border-white/15 p-1.5">
-              <video
-                controls
-                src={preview.url}
-                className="aspect-video w-full rounded-xl bg-gradient-to-br from-indigo-950 via-[#312e81] to-violet-950"
-              />
+              <VideoPlayer src={preview.url} />
             </div>
           ) : null}
         </div>

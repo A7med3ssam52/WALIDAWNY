@@ -3,7 +3,7 @@
 // tested directly; handle() runs against the hand-rolled stub client
 // (no network) with injectable Bunny deps.
 
-import { handle, parseSessionBody, sanitizeTitle } from './index.ts';
+import { detectVideoFileType, handle, parseSessionBody, sanitizeTitle } from './index.ts';
 import type { Deps } from './index.ts';
 import { tusAuthorizationSignature } from '../_shared/bunny.ts';
 import { assert, assertEqual, deepEqual, expectStatus, makeStubClient } from '../_test_helpers.ts';
@@ -81,6 +81,16 @@ function deps(cfg: StubConfig) {
 // ---------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------
+
+Deno.test('detectVideoFileType: extension-driven filetype', () => {
+  assertEqual(detectVideoFileType('lesson.webm'), 'video/webm');
+  assertEqual(detectVideoFileType('lesson.WEBM'), 'video/webm');
+  assertEqual(detectVideoFileType('lesson.mov'), 'video/quicktime');
+  assertEqual(detectVideoFileType('lesson.MOV'), 'video/quicktime');
+  assertEqual(detectVideoFileType('lesson.mp4'), 'video/mp4');
+  assertEqual(detectVideoFileType('lesson'), 'video/mp4');
+  assertEqual(detectVideoFileType(null), 'video/mp4');
+});
 
 Deno.test('sanitizeTitle: strips path separators and trims', () => {
   const r = sanitizeTitle('../../bad/name.mp4');
@@ -400,14 +410,14 @@ Deno.test(
     assertEqual(body.video_id, '50000000-0000-0000-0000-000000000020');
     assertEqual(body.bunny_video_id, BUNNY_GUID);
     assertEqual(body.upload_url, 'https://video.bunnycdn.com/tusupload');
-    assertEqual(body.expires_in, 3600);
+    assertEqual(body.expires_in, 86400);
     assertEqual(body.metadata.title, 'الدرس-1.mp4', 'sanitized basename used as title');
     assertEqual(body.tus_headers.LibraryId, '725671');
     assertEqual(body.tus_headers.VideoId, BUNNY_GUID);
-    assertEqual(body.tus_headers.AuthorizationExpire, 1750003600);
+    assertEqual(body.tus_headers.AuthorizationExpire, 1750086400);
     assertEqual(
       body.tus_headers.AuthorizationSignature,
-      '38cecc0da963c1a58bb41cd6353134c9df609c80d2f3ba1c791564f99b75e8e3',
+      '5fce0ef2f52104293d8fb9a8b06c26786fb6e3408f291c6a99579397e466923e',
     );
 
     assertEqual(rpcCalls.length, 1);

@@ -42,6 +42,28 @@ const { tusUploads } = vi.hoisted(() => ({
   tusUploads: [] as FakeTusInstance[],
 }));
 
+const hlsMocks = vi.hoisted(() => ({
+  loadSource: vi.fn(),
+  attachMedia: vi.fn(),
+  destroy: vi.fn(),
+}));
+
+vi.mock('hls.js', () => {
+  class FakeHls {
+    static isSupported() {
+      return true;
+    }
+
+    static Events = { MANIFEST_PARSED: 'manifest-parsed' };
+
+    loadSource = hlsMocks.loadSource;
+    attachMedia = hlsMocks.attachMedia;
+    destroy = hlsMocks.destroy;
+    on() {}
+  }
+  return { default: FakeHls };
+});
+
 vi.mock('tus-js-client', () => {
   class FakeUpload {
     file: unknown;
@@ -133,6 +155,9 @@ describe('LessonAssetsPage — video section', () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
     tusUploads.length = 0;
+    hlsMocks.loadSource.mockClear();
+    hlsMocks.attachMedia.mockClear();
+    hlsMocks.destroy.mockClear();
   });
 
   afterEach(() => {
@@ -340,7 +365,7 @@ describe('LessonAssetsPage — video section', () => {
     );
     await fireSuccess(upload);
 
-    expect(screen.getAllByText('تم رفع الفيديو — جاري المعالجة').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: 'رفع فيديو جديد' })).toBeInTheDocument();
     const row = await screen.findByTestId('video-row-video-new-1');
     expect(within(row).getByText('قيد المعالجة')).toBeInTheDocument();
   });
@@ -449,8 +474,8 @@ describe('LessonAssetsPage — video section', () => {
       expect(tusUploads).toHaveLength(2);
     });
     const retryUpload = lastUpload();
-    expect(retryUpload.options.uploadUrl).toBe(TUS_ENDPOINT);
-    expect(retryUpload.options.endpoint).toBeUndefined();
+    expect(retryUpload.options.endpoint).toBe(TUS_ENDPOINT);
+    expect(retryUpload.options.uploadUrl).toBeUndefined();
     expect(retryUpload.options.headers).toEqual({
       AuthorizationSignature: 'sig-123',
       AuthorizationExpire: '2027-01-01T00:00:00Z',
@@ -547,8 +572,10 @@ describe('LessonAssetsPage — video section', () => {
       }),
     );
     await waitFor(() => {
-      const player = document.querySelector('video');
-      expect(player).toHaveAttribute('src', 'https://vz.example.test/playback/abc.mp4');
+      expect(hlsMocks.loadSource).toHaveBeenCalledWith(
+        'https://vz.example.test/playback/abc.mp4',
+      );
+      expect(hlsMocks.attachMedia).toHaveBeenCalled();
     });
   });
 

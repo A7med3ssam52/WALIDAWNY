@@ -485,6 +485,13 @@ export async function uploadPdf(input: {
   });
 }
 
+export async function deletePdfUpload(lessonId: string, pdfId: string): Promise<void> {
+  await invokeFunction<{ deleted: boolean }>('delete-pdf', {
+    method: 'POST',
+    body: { lesson_id: lessonId, pdf_id: pdfId },
+  });
+}
+
 export async function uploadPdfBytes(uploadUrl: string, file: Blob): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: 'PUT',

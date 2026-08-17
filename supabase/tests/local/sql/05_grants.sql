@@ -57,6 +57,8 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_video_uplo
     'anon: create_video_upload_record NOT executable');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_video_upload_record(uuid, uuid)', 'EXECUTE'),
     'anon: delete_video_upload_record NOT executable');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_pdf_upload_record(uuid, uuid)', 'EXECUTE'),
+    'anon: delete_pdf_upload_record NOT executable');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.submit_exam_attempt(uuid, jsonb)', 'EXECUTE'),
     'anon: submit_exam_attempt NOT executable (0029)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.grade_exam_attempt(uuid, jsonb)', 'EXECUTE'),
@@ -67,13 +69,13 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_lesson_comme
     'anon: list_lesson_comments NOT executable (0030)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (64 functions)
+-- authenticated: the full client allowlist (65 functions)
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 64 FROM pg_proc
+    (SELECT count(*) = 65 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 64 executable public functions');
+    'authenticated: exactly 65 executable public functions');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -111,6 +113,7 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.finalize_pdf
 SELECT tests.assert(has_function_privilege('authenticated', 'public.create_pdf_upload_record(uuid, text, bigint)', 'EXECUTE'), 'g: create_pdf_upload_record');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.create_video_upload_record(uuid, text, text, text, text, uuid)', 'EXECUTE'), 'g: create_video_upload_record');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_video_upload_record(uuid, uuid)', 'EXECUTE'), 'g: delete_video_upload_record');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_pdf_upload_record(uuid, uuid)', 'EXECUTE'), 'g: delete_pdf_upload_record');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_dashboard_stats()', 'EXECUTE'), 'g: get_dashboard_stats');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_audit_logs(timestamp with time zone, timestamp with time zone, text, text, uuid, integer, integer)', 'EXECUTE'), 'g: list_audit_logs');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.count_audit_logs(timestamp with time zone, timestamp with time zone, text, text, uuid)', 'EXECUTE'), 'g: count_audit_logs');
