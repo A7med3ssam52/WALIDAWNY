@@ -34,6 +34,15 @@ INSERT INTO public.unit_purchases (id, student_id, unit_id, base_price, platform
 VALUES ('80000000-0000-0000-0000-000000000004', '80000000-0000-0000-0000-000000000002',
         '80000000-0000-0000-0000-000000000005', 1000, 100, 'active');
 
+-- Staff member in the same grade: must NEVER be counted as a student.
+INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+VALUES ('80000000-0000-0000-0000-000000000006',
+        'stats-staff@walid-platform.local',
+        '{"full_name":"Stats Staff","phone":"+201001000082"}',
+        now(), now());
+UPDATE public.profiles SET role = 'mr_walid', grade_id = '80000000-0000-0000-0000-000000000001'
+WHERE id = '80000000-0000-0000-0000-000000000006';
+
 -- ---------------------------------------------------------------------
 -- Authorization: students cannot call; staff (admin, mr_walid, teacher) can
 -- ---------------------------------------------------------------------
@@ -59,6 +68,14 @@ RESET ROLE;
 SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{students,total}')::int) >= 1,
     'd: students.total >= 1');
+SELECT tests.assert(
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{students,total}')::int) =
+    (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
+    'd: students.total counts student-role profiles only (staff excluded)');
+SELECT tests.assert(
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{students,active}')::int) =
+    (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
+    'd: students.active counts active student-role profiles only (staff excluded)');
 SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,total}')::int) >= 1,
     'd: purchases.total >= 1');
@@ -112,7 +129,9 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_dashboard_sta
 DELETE FROM public.unit_purchases WHERE id = '80000000-0000-0000-0000-000000000004';
 DELETE FROM public.unit_pricing   WHERE id = '80000000-0000-0000-0000-000000000003';
 DELETE FROM public.units          WHERE id = '80000000-0000-0000-0000-000000000005';
-DELETE FROM public.profiles       WHERE id = '80000000-0000-0000-0000-000000000002';
-DELETE FROM auth.users            WHERE id = '80000000-0000-0000-0000-000000000002';
+DELETE FROM public.profiles       WHERE id IN ('80000000-0000-0000-0000-000000000002',
+                                               '80000000-0000-0000-0000-000000000006');
+DELETE FROM auth.users            WHERE id IN ('80000000-0000-0000-0000-000000000002',
+                                               '80000000-0000-0000-0000-000000000006');
 DELETE FROM public.grades         WHERE id = '80000000-0000-0000-0000-000000000001';
 

@@ -821,9 +821,9 @@ COMMENT ON VIEW public.v_student_progress_summary IS 'Per-student percent + comp
 DROP VIEW IF EXISTS public.v_dashboard_metrics;
 CREATE VIEW public.v_dashboard_metrics AS
 SELECT
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL)                         AS total_students,
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active')   AS active_students,
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled') AS disabled_students,
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student')                         AS total_students,
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student')   AS active_students,
+  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student') AS disabled_students,
   (SELECT COUNT(*) FROM public.unit_purchases WHERE status = 'active')                    AS active_purchases,
   (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published') AS published_lessons,
   (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status <> 'published') AS hidden_or_draft_lessons;
@@ -861,12 +861,12 @@ BEGIN
 
     SELECT jsonb_build_object(
         'students', jsonb_build_object(
-            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL),
-            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active'),
-            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled'),
-            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL),
+            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
+            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
+            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student'),
+            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL AND role = 'student'),
             'new_this_month', (SELECT count(*) FROM public.profiles
-                               WHERE deleted_at IS NULL AND created_at >= date_trunc('month', now()))
+                               WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
         ),
         'purchases', jsonb_build_object(
             'total',               (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
@@ -903,7 +903,7 @@ BEGIN
                        COALESCE(sum(up.total_price), 0) AS revenue
                 FROM public.grades g
                 LEFT JOIN public.profiles p
-                       ON p.grade_id = g.id AND p.deleted_at IS NULL
+                       ON p.grade_id = g.id AND p.deleted_at IS NULL AND p.role = 'student'
                 LEFT JOIN public.unit_purchases up
                        ON up.student_id = p.id AND up.status = 'active'
                 WHERE g.deleted_at IS NULL
