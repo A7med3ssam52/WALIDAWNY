@@ -26,12 +26,12 @@ export function Card({
       {...rest}
     >
       {title ? (
-        <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-foreground">{title}</h2>
             {subtitle ? <p className="mt-1 text-sm text-foreground-subtle">{subtitle}</p> : null}
           </div>
-          {actions}
+          <div className="w-full sm:w-auto">{actions}</div>
         </div>
       ) : null}
       {children}
