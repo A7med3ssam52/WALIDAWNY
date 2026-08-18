@@ -2,10 +2,12 @@ import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  expectRpcCall,
   makeGrade,
   makeLesson,
   makeProgress,
   makeUnit,
+  makeUnitCode,
   makeUnitPricing,
   makeUnitPurchase,
   mockState,
@@ -115,6 +117,21 @@ describe('StudentCurriculumPage', () => {
     );
     // Locked units do NOT show lessons — only purchased units expand to show lessons
     expect(screen.queryByText('الدرس الأول')).not.toBeInTheDocument();
+  });
+
+  it('redeems a unit code directly from a locked unit card', async () => {
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-2', unit_id: 'unit-2' }));
+    renderApp('/student/curriculum');
+
+    const unit2Text = await screen.findByText('الوحدة الثانية');
+    const unit2Card = unit2Text.closest('.glass-card') as HTMLElement;
+    fireEvent.change(within(unit2Card).getByLabelText('كود تفعيل الوحدة الثانية'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(within(unit2Card).getByRole('button', { name: 'تفعيل بالكود' }));
+
+    expect(expectRpcCall('redeem_unit_code')).toEqual({ p_code: 'WLDN-ABCD-EFGH-JKLM' });
+    expect(await screen.findByText('تم تفعيل الوحدة بنجاح')).toBeInTheDocument();
   });
 
   it('shows a locked unit card without pricing with a warning message', async () => {

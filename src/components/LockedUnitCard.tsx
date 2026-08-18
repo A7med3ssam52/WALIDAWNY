@@ -1,4 +1,4 @@
-import { Lock, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 import { buildWhatsAppLink } from '../lib/format';
 import type { PublicUnitPrice } from '../types/database';
@@ -6,6 +6,7 @@ import { Badge } from './Badge';
 import { Button } from './Button';
 import { Card } from './Card';
 import { PriceTag } from './PriceTag';
+import { RedeemCodeForm } from './RedeemCodeForm';
 import { WhatsAppIcon } from './WhatsAppIcon';
 
 interface LockedUnitCardProps {
@@ -14,7 +15,9 @@ interface LockedUnitCardProps {
   gradeName?: string;
   whatsappNumber?: string | null;
   whatsappMessage?: string | null;
-  onRedeem?: () => void;
+  onRedeem?: (code: string) => Promise<boolean>;
+  redeemBusy?: boolean;
+  redeemError?: string | null;
 }
 
 export function LockedUnitCard({
@@ -24,6 +27,8 @@ export function LockedUnitCard({
   whatsappNumber,
   whatsappMessage,
   onRedeem,
+  redeemBusy = false,
+  redeemError = null,
 }: LockedUnitCardProps) {
   const whatsappLink = whatsappNumber ? buildWhatsAppLink(whatsappNumber, whatsappMessage) : null;
   const hasPrice = unit !== null;
@@ -54,22 +59,24 @@ export function LockedUnitCard({
               </Button>
             </a>
           ) : null}
-          {hasPrice && onRedeem ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRedeem}
-              icon={<Lock aria-hidden="true" className="h-4 w-4" />}
-            >
-              تفعيل بكود
-            </Button>
-          ) : null}
           {!hasPrice ? (
             <Badge variant="warning" outline>
               السعر غير محدد
             </Badge>
           ) : null}
         </div>
+        {onRedeem ? (
+          <div className="border-t border-white/5 pt-4">
+            <RedeemCodeForm
+              onSubmit={onRedeem}
+              busy={redeemBusy}
+              error={redeemError}
+              inputLabel={unitName ? `كود تفعيل ${unitName}` : 'كود التفعيل'}
+              placeholder="WLDN-XXXXXXXXXXXX"
+              submitLabel="تفعيل بالكود"
+            />
+          </div>
+        ) : null}
       </div>
     </Card>
   );

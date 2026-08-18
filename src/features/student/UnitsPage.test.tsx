@@ -84,6 +84,37 @@ it('shows only published units with the purchased section and open link', async 
     expect(within(unit2Card).getByRole('button', { name: 'افتح الوحدة' })).toBeInTheDocument();
   });
 
+  it('redeems a code directly from a locked unit card', async () => {
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-2' }));
+    renderApp('/student/units');
+
+    const unit2Text = await screen.findByText('الوحدة الثانية');
+    const unit2Card = unit2Text.closest('.glass-card') as HTMLElement;
+    fireEvent.change(within(unit2Card).getByLabelText('كود تفعيل الوحدة الثانية'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(within(unit2Card).getByRole('button', { name: 'تفعيل بالكود' }));
+
+    expect(expectRpcCall('redeem_unit_code')).toEqual({ p_code: 'WLDN-ABCD-EFGH-JKLM' });
+    expect(await screen.findByText('تم تفعيل الوحدة بنجاح')).toBeInTheDocument();
+    const unit2After = await screen.findByText('الوحدة الثانية');
+    const unit2CardAfter = unit2After.closest('.glass-card') as HTMLElement;
+    expect(within(unit2CardAfter).getByRole('button', { name: 'افتح الوحدة' })).toBeInTheDocument();
+  });
+
+  it('shows a card-level error when redeeming an invalid code from a locked unit card', async () => {
+    renderApp('/student/units');
+
+    const unit2Text = await screen.findByText('الوحدة الثانية');
+    const unit2Card = unit2Text.closest('.glass-card') as HTMLElement;
+    fireEvent.change(within(unit2Card).getByLabelText('كود تفعيل الوحدة الثانية'), {
+      target: { value: 'WLDN-BAD-CODE-0000' },
+    });
+    fireEvent.click(within(unit2Card).getByRole('button', { name: 'تفعيل بالكود' }));
+
+    expect(await within(unit2Card).findByText('الكود غير صالح')).toBeInTheDocument();
+  });
+
   it('shows a clear error when redeeming an invalid code', async () => {
     renderApp('/student/units');
 

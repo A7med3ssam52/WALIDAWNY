@@ -11,6 +11,7 @@ import { LockedUnitCard } from '../../components/LockedUnitCard';
 import { PageHeader } from '../../components/PageHeader';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
+import { useToast } from '../../components/Toast';
 import {
   getGradeById,
   getMyUnitPurchases,
@@ -19,6 +20,7 @@ import {
   listLessonsForUnit,
   listMyProgress,
   listUnitsForGrade,
+  redeemUnitCode,
 } from '../../data/rpc';
 import { cn } from '../../lib/cn';
 import type {
@@ -31,6 +33,7 @@ import type {
   UnitPurchaseWithUnit,
 } from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
+import { redeemErrorMessage } from './redeemErrors';
 
 interface UnitWithLessons extends Unit {
   lessons: Lesson[];
@@ -71,6 +74,7 @@ function CurriculumSkeleton() {
 
 export function StudentCurriculumPage() {
   const { profile } = useAuth();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const [grade, setGrade] = useState<Grade | null | undefined>(undefined);
   const [units, setUnits] = useState<UnitWithLessons[]>([]);
@@ -80,6 +84,7 @@ export function StudentCurriculumPage() {
   const [progressByLesson, setProgressByLesson] = useState<Map<string, Progress>>(new Map());
   const [error, setError] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set());
+  const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
 
   const load = useCallback(async () => {
     if (!profile?.grade_id) {
@@ -133,6 +138,23 @@ export function StudentCurriculumPage() {
     element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setExpandedUnits((prev) => new Set(prev).add(focusUnitId));
   }, [focusUnitId, units]);
+
+  const handleRedeemUnit = async (unitId: string, code: string): Promise<boolean> => {
+    setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: true, error: null } }));
+    try {
+      await redeemUnitCode(code);
+      showToast('تم تفعيل الوحدة بنجاح');
+      await load();
+      setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: false, error: null } }));
+      return true;
+    } catch (err) {
+      setRedeemByUnit((prev) => ({
+        ...prev,
+        [unitId]: { busy: false, error: redeemErrorMessage(err) },
+      }));
+      return false;
+    }
+  };
 
   if (error) {
     return (
@@ -269,6 +291,9 @@ export function StudentCurriculumPage() {
                       gradeName={price?.grade_name}
                       whatsappNumber={settings?.whatsapp_number ?? null}
                       whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${unit.name}`}
+                      onRedeem={(code) => handleRedeemUnit(unit.id, code)}
+                      redeemBusy={redeemByUnit[unit.id]?.busy ?? false}
+                      redeemError={redeemByUnit[unit.id]?.error ?? null}
                     />
                   </GridCard>
                 );

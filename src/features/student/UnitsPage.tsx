@@ -57,6 +57,7 @@ export function UnitsPage() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemBusy, setRedeemBusy] = useState(false);
+  const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
   const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
@@ -99,6 +100,23 @@ export function UnitsPage() {
       return false;
     } finally {
       setRedeemBusy(false);
+    }
+  };
+
+  const handleRedeemUnit = async (unitId: string, code: string): Promise<boolean> => {
+    setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: true, error: null } }));
+    try {
+      await redeemUnitCode(code);
+      showToast('تم تفعيل الوحدة بنجاح');
+      await load();
+      setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: false, error: null } }));
+      return true;
+    } catch (err) {
+      setRedeemByUnit((prev) => ({
+        ...prev,
+        [unitId]: { busy: false, error: redeemErrorMessage(err) },
+      }));
+      return false;
     }
   };
 
@@ -206,6 +224,9 @@ export function UnitsPage() {
                         gradeName={price?.grade_name}
                         whatsappNumber={settings?.whatsapp_number ?? null}
                         whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${unit.name}`}
+                        onRedeem={(code) => handleRedeemUnit(unit.id, code)}
+                        redeemBusy={redeemByUnit[unit.id]?.busy ?? false}
+                        redeemError={redeemByUnit[unit.id]?.error ?? null}
                       />
                     );
                   })}

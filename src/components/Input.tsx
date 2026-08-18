@@ -21,7 +21,7 @@ export function Input({
   ...rest
 }: InputProps) {
   const generatedId = useId();
-  const inputId = id ?? rest.name ?? generatedId;
+  const inputId = id ?? generatedId;
   const describedBy =
     [error ? (errorId ?? `${inputId}-error`) : '', hint ? (hintId ?? `${inputId}-hint`) : '']
       .filter(Boolean)
