@@ -145,7 +145,7 @@ function metadataSummary(metadata: Record<string, unknown> | null): string {
 
 function ActionLabel({ row }: { row: AuditLogRow }) {
   const arabicLabel = ACTION_LABELS[row.action];
-  const displayText = arabicLabel || row.action.replace(/\./g, ' · ');
+  const displayText = arabicLabel || `إجراء: ${row.action.replace(/\./g, ' · ')}`;
   return (
     <span className="text-xs text-foreground" dir="rtl">
       {displayText}
@@ -256,7 +256,7 @@ export function AuditLogPage() {
               type="text"
               value={action}
               onChange={(event) => setAction(event.target.value)}
-              placeholder="مثال: grade.create"
+              placeholder="مثال: إنشاء صف"
             />
             <Select
               label="نوع الكيان"
@@ -277,7 +277,7 @@ export function AuditLogPage() {
               type="text"
               value={actorId}
               onChange={(event) => setActorId(event.target.value)}
-              placeholder="uuid"
+              placeholder="معرف المستخدم (UUID)"
             />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -294,7 +294,7 @@ export function AuditLogPage() {
               icon={<Download aria-hidden="true" className="h-4 w-4" />}
               onClick={() => void handleExport()}
             >
-              تصدير CSV
+              تصدير ملف CSV
             </Button>
           </div>
         </Card>
@@ -349,7 +349,7 @@ export function AuditLogPage() {
                     </TableCell>
                     <TableCell label="الكيان">
                       <span className="text-xs text-foreground">
-                        {ENTITY_TYPE_LABELS[row.entity_type] ?? row.entity_type}
+                        {ENTITY_TYPE_LABELS[row.entity_type] ?? `كيان: ${row.entity_type}`}
                       </span>
                       {row.entity_id ? (
                         <span className="ms-2 font-mono text-xs text-foreground-subtle" dir="ltr">
