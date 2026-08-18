@@ -2,6 +2,11 @@
 -- list_codes_by_unit: include the student name who redeemed each code.
 -- The function's return type changes from SETOF unit_codes to an explicit
 -- TABLE that appends used_by_name (LEFT JOIN profiles on used_by).
+-- PostgreSQL does not allow changing a function's return type, so the old
+-- function must be dropped first (DROP FUNCTION removes its grants too;
+-- the REVOKE/GRANT lines from 0028 are re-applied below).
+
+DROP FUNCTION IF EXISTS public.list_codes_by_unit(uuid);
 
 CREATE OR REPLACE FUNCTION public.list_codes_by_unit(p_unit_id uuid)
 RETURNS TABLE (
@@ -46,3 +51,6 @@ END $$;
 
 COMMENT ON FUNCTION public.list_codes_by_unit(uuid) IS
     'Staff: codes of a unit with the full name of the student who redeemed each used code (used_by_name is NULL until redeemed).';
+
+REVOKE EXECUTE ON FUNCTION public.list_codes_by_unit(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.list_codes_by_unit(uuid) TO authenticated;
