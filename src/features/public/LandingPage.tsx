@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { ErrorState } from '../../components/ErrorState';
+import { BrandIcon } from '../../components/BrandIcon';
 import { Spinner } from '../../components/Spinner';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import { getPublicSettings, getPublicUnitPrices } from '../../data/rpc';
@@ -149,16 +150,7 @@ export function LandingPage() {
             aria-label="منصة مستر وليد عونى التعليمية"
             className="group inline-flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
           >
-            <span
-              aria-hidden="true"
-              className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_0_24px_-4px_rgba(129,140,248,0.85)] transition-shadow duration-300 group-hover:shadow-[0_0_34px_-2px_rgba(129,140,248,1)]"
-            >
-              <span
-                className="absolute -inset-1 rounded-2xl border border-indigo-400/40 blur-[2px]"
-                aria-hidden="true"
-              />
-              <GraduationCap className="h-5 w-5" />
-            </span>
+            <BrandIcon className="h-9 w-9 shadow-[0_0_24px_-4px_rgba(129,140,248,0.85)] transition-shadow duration-300 group-hover:shadow-[0_0_34px_-2px_rgba(129,140,248,1)]" />
             <span className="hidden font-display text-base font-bold text-foreground sm:inline">
               منصة مستر وليد عونى التعليمية
             </span>
@@ -216,12 +208,7 @@ export function LandingPage() {
           >
             <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
               <span className="inline-flex items-center gap-2 font-display text-sm font-bold text-foreground">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white"
-                >
-                  <GraduationCap className="h-4 w-4" />
-                </span>
+                <BrandIcon className="h-8 w-8" />
                 منصة مستر وليد عونى التعليمية
               </span>
               <button

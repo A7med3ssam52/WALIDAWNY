@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
 import { useAuth } from '../features/auth/AuthContext';
+import { BrandIcon } from './BrandIcon';
 import { Button } from './Button';
 import { useToast } from './Toast';
 
@@ -29,12 +30,7 @@ function Brand() {
       to="/"
       className="group inline-flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
     >
-      <span
-        aria-hidden="true"
-        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-base font-bold text-white shadow-[0_0_22px_-4px_rgba(129,140,248,0.8)] transition-shadow duration-300 group-hover:shadow-[0_0_30px_-2px_rgba(129,140,248,0.9)]"
-      >
-        و
-      </span>
+      <BrandIcon className="h-9 w-9 transition-shadow duration-300 group-hover:shadow-[0_0_30px_-2px_rgba(129,140,248,0.9)]" />
       <span className="hidden min-w-0 truncate font-display text-base font-bold text-foreground min-[480px]:inline">
         منصة مستر وليد عونى التعليمية
       </span>

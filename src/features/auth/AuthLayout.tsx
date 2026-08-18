@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { BarChart3, GraduationCap, Sparkles, Video } from 'lucide-react';
+import { BarChart3, Sparkles, Video } from 'lucide-react';
 
+import { BrandIcon } from '../../components/BrandIcon';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 
 const valueProps = [
@@ -22,14 +23,7 @@ const valueProps = [
 ];
 
 function BrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`inline-flex items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_0_30px_-4px_rgba(129,140,248,0.9)] ${className ?? ''}`}
-    >
-      <GraduationCap className="h-5 w-5" />
-    </span>
-  );
+  return <BrandIcon className={className} />;
 }
 
 export function AuthLayout({ children }: { children: ReactNode }) {
