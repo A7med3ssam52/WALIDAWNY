@@ -1,4 +1,4 @@
-# منصة مستر وليد عونى التعليمية — Security Reference
+# منصة وليد عونى التعليمية — Security Reference
 
 **Phase 0 deliverable.** Extracted from BLUEPRINT.md §§5 (authz/RLS), 6.3 (redemption atomicity), 9 (PDF security), 14 (Edge Functions), 17 (security strategy), 18 (risks) and PLAN §§6–12. Binding architecture-gate requirements are flagged **[BINDING]**.
 

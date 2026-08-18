@@ -23,7 +23,7 @@ const installFeatures = [
 const iosSteps = [
   { icon: Share, label: 'اضغط زر المشاركة في المتصفح' },
   { icon: Plus, label: 'اختر «إضافة إلى الشاشة الرئيسية»' },
-  { icon: Home, label: 'افتح منصة مستر وليد من شاشتك الرئيسية' },
+  { icon: Home, label: 'افتح منصة وليد عونى من شاشتك الرئيسية' },
 ];
 
 const iOS_DEBOUNCE_MS = 1800;
@@ -177,12 +177,12 @@ export function InstallPrompt() {
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary-soft px-2.5 py-0.5 text-[0.65rem] font-bold text-primary">
               <Smartphone aria-hidden="true" className="h-3 w-3" />
-              تطبيق منصة مستر وليد
+              تطبيق منصة وليد عونى
             </span>
             <h2 id={titleId} className="mt-1.5 text-lg font-extrabold leading-snug text-foreground">
               {isIosMode
-                ? 'أضف منصة مستر وليد إلى شاشتك الرئيسية'
-                : 'ثبّت تطبيق منصة مستر وليد على موبايلك'}
+                ? 'أضف منصة وليد عونى إلى شاشتك الرئيسية'
+                : 'ثبّت تطبيق منصة وليد عونى على موبايلك'}
             </h2>
           </div>
         </div>

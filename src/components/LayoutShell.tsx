@@ -32,7 +32,7 @@ function Brand() {
     >
       <BrandIcon className="h-9 w-9 transition-shadow duration-300 group-hover:shadow-[0_0_30px_-2px_rgba(129,140,248,0.9)]" />
       <span className="hidden min-w-0 truncate font-display text-base font-bold text-foreground min-[480px]:inline">
-        منصة مستر وليد عونى التعليمية
+        منصة وليد عونى التعليمية
       </span>
     </Link>
   );

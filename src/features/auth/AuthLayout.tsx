@@ -29,7 +29,7 @@ function BrandMark({ className }: { className?: string }) {
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div dir="rtl" className="flex min-h-screen flex-col">
-      <h1 className="sr-only">منصة مستر وليد عونى التعليمية</h1>
+      <h1 className="sr-only">منصة وليد عونى التعليمية</h1>
       <div className="mx-auto w-full max-w-md px-4 pt-6 sm:px-6 lg:hidden">
         <div className="flex items-center justify-center gap-2.5">
           <span className="relative inline-flex">
@@ -40,7 +40,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             <BrandMark className="relative h-10 w-10" />
           </span>
           <span className="font-display text-base font-bold text-foreground">
-            منصة مستر وليد عونى التعليمية
+            منصة وليد عونى التعليمية
           </span>
         </div>
       </div>
@@ -60,7 +60,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             <BrandMark className="h-11 w-11" />
             <div>
               <span className="block font-display text-lg font-bold text-foreground">
-                منصة مستر وليد عونى التعليمية
+                منصة وليد عونى التعليمية
               </span>
               <span className="mt-0.5 block text-xs text-foreground-subtle">
                 تعلّم. تابع. تواصل.
@@ -93,7 +93,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
               تجربة تعليمية متكاملة
             </span>
             <p className="mt-4 text-xs text-foreground-subtle">
-              © {new Date().getFullYear()} منصة مستر وليد عونى التعليمية. جميع الحقوق محفوظة
+              © {new Date().getFullYear()} منصة وليد عونى التعليمية. جميع الحقوق محفوظة
             </p>
           </div>
         </aside>

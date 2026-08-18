@@ -134,7 +134,7 @@ export function LandingPage() {
     };
   }, [menuOpen]);
 
-  const platformName = settings?.platform_name ?? 'منصة مستر وليد عونى التعليمية';
+  const platformName = settings?.platform_name ?? 'منصة وليد عونى التعليمية';
   const whatsappNumber = settings?.whatsapp_number;
   const whatsappHref =
     settings !== null && whatsappNumber
@@ -147,12 +147,12 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link
             to="/"
-            aria-label="منصة مستر وليد عونى التعليمية"
+            aria-label="منصة وليد عونى التعليمية"
             className="group inline-flex items-center gap-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
           >
             <BrandIcon className="h-9 w-9 shadow-[0_0_24px_-4px_rgba(129,140,248,0.85)] transition-shadow duration-300 group-hover:shadow-[0_0_34px_-2px_rgba(129,140,248,1)]" />
             <span className="hidden font-display text-base font-bold text-foreground sm:inline">
-              منصة مستر وليد عونى التعليمية
+              منصة وليد عونى التعليمية
             </span>
           </Link>
 
@@ -209,7 +209,7 @@ export function LandingPage() {
             <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
               <span className="inline-flex items-center gap-2 font-display text-sm font-bold text-foreground">
                 <BrandIcon className="h-8 w-8" />
-                منصة مستر وليد عونى التعليمية
+                منصة وليد عونى التعليمية
               </span>
               <button
                 type="button"
@@ -541,7 +541,7 @@ export function LandingPage() {
       <footer className="border-t border-white/8 bg-white/3 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 pb-28 sm:flex-row sm:px-6 md:pb-8">
           <p className="text-xs text-foreground-subtle">
-            © {new Date().getFullYear()} منصة مستر وليد عونى التعليمية. جميع الحقوق محفوظة
+            © {new Date().getFullYear()} منصة وليد عونى التعليمية. جميع الحقوق محفوظة
           </p>
           <nav className="flex items-center gap-4 text-sm" aria-label="روابط سريعة">
             <Link

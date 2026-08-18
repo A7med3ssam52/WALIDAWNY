@@ -69,7 +69,7 @@ export function LoginPage() {
       <AuthLayout>
         <Card
           title="تسجيل الدخول"
-          subtitle="مرحبًا بك في منصة مستر وليد عونى التعليمية"
+          subtitle="مرحبًا بك في منصة وليد عونى التعليمية"
           className="conic-ring spotlight-card"
         >
           <form

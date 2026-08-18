@@ -1,4 +1,4 @@
-# منصة مستر وليد عونى التعليمية — Testing Strategy
+# منصة وليد عونى التعليمية — Testing Strategy
 
 **Phase 0 deliverable.** Extracted from BLUEPRINT.md §16 (testing strategy), §15 (per-phase acceptance) and §17 (security strategy). Binding architecture-gate requirements are flagged **[BINDING]** and each has an explicit test below.
 

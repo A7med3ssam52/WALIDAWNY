@@ -2185,7 +2185,7 @@ END$$;
 -- ---------------------------------------------------------------------
 INSERT INTO public.app_settings (key, value, description)
 VALUES
-    ('platform_name', '"منصة مستر وليد عونى التعليمية"', 'Platform display name'),
+    ('platform_name', '"منصة وليد عونى التعليمية"', 'Platform display name'),
     ('whatsapp_number', '"+201000000000"', 'Support WhatsApp number'),
     ('whatsapp_default_message', '"مرحباً، أريد الاستفسار عن الاشتراك"', 'Default WhatsApp message'),
     ('expiry_warning_days', '7', 'Days before expiry to warn subscribers')
@@ -2238,7 +2238,7 @@ BEGIN
         VALUES (
             gen_random_uuid(), 'mrwalid@walid-platform.local',
             crypt(v_password, gen_salt('bf')),
-            jsonb_build_object('full_name', 'Mr. Walid', 'phone', '+201000000002',
+            jsonb_build_object('full_name', 'Walid Awny', 'phone', '+201000000002',
                                'guardian_phone', '+201000000002', 'address', 'Cairo',
                                'seed_account', 'true'),
             now(), now()
@@ -2886,7 +2886,7 @@ GRANT EXECUTE ON FUNCTION public.delete_video_upload_record(uuid, uuid) TO authe
 -- 0018_dashboard_stats
 -- Phase 7 | Dashboards | Database
 -- get_dashboard_stats(): single-round-trip operational/analytics JSON
--- for the Mr. Walid / admin dashboards. Staff-guarded exactly like the
+-- for the Walid Awny / admin dashboards. Staff-guarded exactly like the
 -- other client RPCs (is_admin() OR is_mr_walid()); students get
 -- permission_denied. Aggregates read through the existing SECURITY
 -- INVOKER views where they already exist (v_active_subscriptions) and
@@ -3512,7 +3512,7 @@ GRANT EXECUTE ON FUNCTION public.set_role_by_email(text, public.user_role) TO au
 -- The original 0011 seed used ON CONFLICT DO NOTHING, so an existing
 -- row keeps the old English value; this migration explicitly updates it.
 UPDATE public.app_settings
-SET value = '"منصة مستر وليد عونى التعليمية"',
+SET value = '"منصة وليد عونى التعليمية"',
     updated_at = now()
 WHERE key = 'platform_name';
 
@@ -6890,7 +6890,7 @@ COMMENT ON FUNCTION public.create_unit_codes_internal(uuid, integer, text) IS
 -- 0033_platform_fee_owner_access
 -- Pricing | Owner access
 -- The fixed platform fee (set_platform_fee) was ADMIN ONLY, but the
--- platform has no real admin account: Mr. Walid (mr_walid) is the
+-- platform has no real admin account: Walid Awny (mr_walid) is the
 -- owner. Allow mr_walid OR admin to set the fee; teachers/students
 -- stay denied (verified by the harness in 04_business.sql).
 -- =====================================================================

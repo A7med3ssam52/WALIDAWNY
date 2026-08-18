@@ -214,7 +214,7 @@ Mobile:
 - Compact header
 - Bottom navigation for the most important destinations
 
-### Mr. Walid
+### Walid Awny
 Desktop:
 - Persistent sidebar
 - Topbar
@@ -605,7 +605,7 @@ Recommended UI phases:
 2. Public Experience
 3. Authentication Experience
 4. Student Experience
-5. Mr. Walid Dashboard
+5. Walid Awny Dashboard
 6. Admin Dashboard
 7. Shared States, Forms, Tables & Data UX
 8. Responsive & Mobile Optimization

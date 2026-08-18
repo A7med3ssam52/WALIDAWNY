@@ -1,4 +1,4 @@
-# منصة مستر وليد عونى التعليمية — Execution Blueprint
+# منصة وليد عونى التعليمية — Execution Blueprint
 
 **Source of truth:** `PLAN.md` (Master Technical Implementation Plan)
 **Status:** Contract document for all implementation phases (0–11).
@@ -14,14 +14,14 @@ All assumptions are collected in **Section 19 (Assumptions Register)** and refer
 ## 1. SYSTEM OVERVIEW
 
 ### 1.1 Product
-An Arabic-first, RTL educational platform for "Mr. Walid". Students buy **per-unit permanent (lifetime) access**: one activation code opens **one unit forever** (`unit_purchases` with no time limit) in a video+PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Trial lessons (`lessons.is_trial`) open without any purchase; there is no all-inclusive package. Mr. Walid manages curriculum, students, unit purchases and content; an Admin additionally manages system configuration, per-unit pricing, roles and audit logs.
+An Arabic-first, RTL educational platform for "Walid Awny". Students buy **per-unit permanent (lifetime) access**: one activation code opens **one unit forever** (`unit_purchases` with no time limit) in a video+PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Trial lessons (`lessons.is_trial`) open without any purchase; there is no all-inclusive package. Walid Awny manages curriculum, students, unit purchases and content; an Admin additionally manages system configuration, per-unit pricing, roles and audit logs.
 
 ### 1.2 Users
 | Role | Capability summary | Notes |
 |---|---|---|
 | `student` | Browse curriculum, watch videos, read PDFs, track progress, manage own profile/password, read own notifications, redeem one unit code, view own purchases | Cannot change grade/role/email, cannot modify purchase state, cannot touch other users' data |
 | `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), unit codes, pricing is read-only, WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage pricing |
-| `admin` | Everything Mr. Walid can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
+| `admin` | Everything Walid Awny can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
 | `teacher` | Curriculum/lesson management, trial flagging (`set_lesson_trial`), student grade assignment, progress analytics | Cannot manage pricing, roles, audit logs, or WhatsApp settings |
 
 ### 1.3 Layered Architecture
@@ -563,7 +563,7 @@ Two simultaneous redemptions of the same code: exactly one commits the `UPDATE .
 - Deleting a published lesson with progress rows: progress is **preserved** (FK keeps row; `lesson_id` → lessons CASCADE only on hard delete, which the app never performs). Deleting an asset (video/PDF) removes it from `is_primary`; if it was primary, an alternate `is_primary` may be promoted or the lesson shows "asset missing" until replaced (handled state in UI).
 
 ### 7.5 Video replacement policy (deterministic, A11)
-1. Mr. Walid uploads a new video via `create-video-upload-session` with `mode=replace` + `old_video_id`.
+1. Walid Awny uploads a new video via `create-video-upload-session` with `mode=replace` + `old_video_id`.
 2. New video row created (`status=pending_upload`, `is_primary=false`). **Create-path rule (MED-10):** for `mode=create`, `is_primary=true` is set explicitly **only when the lesson has no other video yet** (it is the lesson's first video); otherwise it stays `false` until a webhook `ready` promotes it.
 3. On webhook `ready`: `set_video_status()` promotes the new video (`is_primary=true, status=ready`) and demotes the old one (`status='replaced'`, `is_primary=false`) — explicit promotion logic lives in `set_video_status`, never in INSERT defaults.
 4. **Progress reset (deterministic):** `UPDATE progress SET position_seconds=0, percent_completed=0, is_completed=false, video_id=new_id WHERE lesson_id = :lesson_id AND video_id = :old_video_id;` — single atomic statement, no ambiguity, audited (`video.replace`). Only rows pointing at the replaced video are touched (rows already pointing at the new version are untouched).
@@ -599,7 +599,7 @@ pending_upload/uploading/processing ──(delete session)──▶ (row soft-de
 
 ### 8.4 Failure handling
 - Webhook missed or processing stuck → **hourly `recheck-video-states` job** using the unified execution chain (MED-4): scheduled Edge Function (preferred) → pg_cron→pg_net→internal Edge Function → external cron: selects videos stuck `>N` minutes in `pending_upload/uploading/processing`, re-queries Bunny API (server-side) per video and reconciles via `set_video_status` chains (missing → `failed`; dead statuses → `failed` with `error_message`; finished → `ready` with duration/thumbnail).
-- Upload interrupted (`uploading` older than threshold, no webhook) → marked `failed`, Mr. Walid sees retry button (new session).
+- Upload interrupted (`uploading` older than threshold, no webhook) → marked `failed`, Walid Awny sees retry button (new session).
 - Signed URL generation never in browser; TTL **20 min** to limit sharing (S3/R9).
 
 ### 8.5 Stability

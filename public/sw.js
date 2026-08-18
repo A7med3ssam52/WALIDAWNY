@@ -1,4 +1,4 @@
-/* منصة مستر وليد عونى التعليمية — Aurora Night service worker
+/* منصة وليد عونى التعليمية — Aurora Night service worker
  * - Precaches the app shell for instant + offline startup
  * - Network-first for navigations (fresh content online, cached shell offline)
  * - Cache-first for hashed build assets (safe, immutable)

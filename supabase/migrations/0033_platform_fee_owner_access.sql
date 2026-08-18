@@ -2,7 +2,7 @@
 -- 0033_platform_fee_owner_access
 -- Pricing | Owner access
 -- The fixed platform fee (set_platform_fee) was ADMIN ONLY, but the
--- platform has no real admin account: Mr. Walid (mr_walid) is the
+-- platform has no real admin account: Walid Awny (mr_walid) is the
 -- owner. Allow mr_walid OR admin to set the fee; teachers/students
 -- stay denied (verified by the harness in 04_business.sql).
 -- =====================================================================

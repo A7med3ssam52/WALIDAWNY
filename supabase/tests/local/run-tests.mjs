@@ -71,7 +71,7 @@ function readSql(file) {
 }
 
 async function main() {
-  log('=== منصة مستر وليد عونى التعليمية - Phase 1 verification harness ===');
+  log('=== منصة وليد عونى التعليمية - Phase 1 verification harness ===');
   log('target       : embedded PostgreSQL 18.4 on 127.0.0.1:' + PORT);
   log('databaseDir  : ' + DATA_DIR);
   log('migrations   : ' + MIGRATIONS_DIR);

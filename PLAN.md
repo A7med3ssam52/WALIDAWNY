@@ -1,8 +1,8 @@
-# منصة مستر وليد عونى التعليمية — Master Technical Implementation Plan
+# منصة وليد عونى التعليمية — Master Technical Implementation Plan
 
 ## 0. Mission
 
-Build a production-ready Arabic RTL educational platform for Mr. Walid.
+Build a production-ready Arabic RTL educational platform for Walid Awny.
 
 The implementation must be fully functional end-to-end. Do not ship mock functionality, fake buttons, placeholder business logic, incomplete integrations, or UI-only features.
 
@@ -49,7 +49,7 @@ Use the publishable key only where appropriate.
 - Login uses email + password.
 - Email is required and unique.
 - Email cannot be changed by the student.
-- Email cannot be changed by Mr. Walid.
+- Email cannot be changed by Walid Awny.
 - Email cannot be changed by the admin from the normal application UI.
 - Password is required.
 - No special password-complexity rule such as uppercase/lowercase/number is required.
@@ -65,13 +65,13 @@ Use the publishable key only where appropriate.
 ### Student Account Lifecycle
 
 - Account can be active or temporarily disabled.
-- Mr. Walid and the admin can disable a student account.
+- Walid Awny and the admin can disable a student account.
 - Disabled accounts cannot access the platform.
 - Disabling an account does NOT pause subscription time.
 - Subscription continues to count down normally while the account is disabled.
 - Student accounts use Soft Delete.
 - Deleted students go to a separate Trash.
-- Mr. Walid and admin can view Trash and restore students.
+- Walid Awny and admin can view Trash and restore students.
 - Deleted accounts cannot log in or access protected content.
 - Restore returns the account to an active recoverable state subject to subscription validity.
 
@@ -104,7 +104,7 @@ Content must be real database-backed content, not mock data.
 
 - Student grade is part of their profile.
 - Grade is not editable by the student.
-- Grade is manually managed by Mr. Walid and admin.
+- Grade is manually managed by Walid Awny and admin.
 - Pricing may differ by grade.
 - A grade can have multiple subscription-duration offers.
 
@@ -149,7 +149,7 @@ Minimum requirements:
 Bunny is used for video hosting/management.
 
 Required architecture:
-- upload from Mr. Walid dashboard
+- upload from Walid Awny dashboard
 - upload/processing state tracking
 - do not expose video before processing is ready
 - private/protected video delivery
@@ -235,7 +235,7 @@ Show:
 - notifications
 - relevant account information
 
-#### Mr. Walid Dashboard
+#### Walid Awny Dashboard
 
 Show/manage:
 - students
@@ -257,7 +257,7 @@ Show/manage:
 
 #### Admin Dashboard
 
-Includes Mr. Walid capabilities plus:
+Includes Walid Awny capabilities plus:
 - system/user administration
 - role/permission management
 - audit logs
@@ -419,7 +419,7 @@ Cannot:
 - access admin data
 - access another student's progress
 
-### Mr. Walid
+### Walid Awny
 Can:
 - manage student operational data allowed by the product
 - manage grades
@@ -850,7 +850,7 @@ Before reporting completion, the AI must answer:
 - Does 90% completion work?
 - Do notifications work?
 - Does the 7-day notification fire once?
-- Does Mr. Walid dashboard work?
+- Does Walid Awny dashboard work?
 - Does admin dashboard work?
 - Does audit logging work?
 - Does audit export work?

@@ -409,7 +409,7 @@ export function setAuthenticatedUser(profile: AnyRecord): MockSession {
     state.profiles.push(profile);
   }
   state.rpcResults['get_public_settings'] = {
-    platform_name: 'منصة مستر وليد عونى التعليمية',
+    platform_name: 'منصة وليد عونى التعليمية',
     whatsapp_number: '+201000000000',
     whatsapp_default_message: 'مرحبًا، أود التواصل مع الأستاذ',
   };

@@ -2,7 +2,7 @@
 -- 0018_dashboard_stats
 -- Phase 7 | Dashboards | Database
 -- get_dashboard_stats(): single-round-trip operational/analytics JSON
--- for the Mr. Walid / admin dashboards. Staff-guarded exactly like the
+-- for the Walid Awny / admin dashboards. Staff-guarded exactly like the
 -- other client RPCs (is_admin() OR is_mr_walid()); students get
 -- permission_denied. Aggregates read through the existing SECURITY
 -- INVOKER views where they already exist (v_active_subscriptions) and

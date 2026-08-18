@@ -1,4 +1,4 @@
-﻿# UI-UX-BLUEPRINT.md — Design & UX Blueprint for the UI/UX Refinement
+﻿﻿# UI-UX-BLUEPRINT.md — Design & UX Blueprint for the UI/UX Refinement
 
 > Status: ready for implementation
 > Inputs: `PLAN.md` (functional rules), `STYLE.md` (visual rules), `UI-AUDIT.md` (current-state findings), plus the live test contract (184 tests).
@@ -30,7 +30,7 @@ Soft surfaces · airy spacing · generous radius · one accent color · crisp Ar
 | D1 | **Fonts**: Google Fonts — **Cairo** (display/headings, 700/800) + **Tajawal** (body/UI, 400/500/700). Loaded via `<link>` with preconnect in `index.html`; `font-display: swap`. | Both are modern Arabic-first families with Latin coverage (the app mixes Arabic + Latin digits). Cairo gives confident headings; Tajawal is crisp for UI. Replaces Segoe UI/Tahoma (`UI-AUDIT §4.3`). | None (no font assertions in tests). |
 | D2 | **Icons**: `lucide-react` (tree-shaken, consistent 24px stroke set) + **one custom WhatsApp glyph** (brand icon absent from lucide). All arrows use the shared `DirectionalArrow` component with `rtl:rotate-180` logical flipping (`STYLE.md §17`). | One consistent icon system; removes literal `←`/`→` glyphs (`UI-AUDIT §4.5`, §7.2). Tree-shakable → no meaningful bundle cost. | None. Icon is always decorative (`aria-hidden`) with adjacent text labels. |
 | D3 | **Brand color**: emerald retained (`#059669` family) but **tokenized**; interactive/link/small-text usages move to `emerald-700` (`#047857`, ≈5.2:1 on white) to pass WCAG AA (`UI-AUDIT §8.3`). | Rebrand-safe tokens (`STYLE.md §5`); contrast fix without changing brand feel. | None. |
-| D4 | **Navigation architecture** (`STYLE.md §7`): public = topbar; **student** = compact topbar + **bottom nav on mobile**, structured horizontal nav on desktop; **Mr. Walid/Admin** = **persistent sidebar (right edge, RTL) + topbar on desktop**, **drawer on mobile**. Sidebar replaces the wrap-prone `StaffNav`/`AdminNav` bar. | Matches STYLE §7 exactly; fixes wrap/touch issues (`UI-AUDIT §6.2`, §8.9). | Nav labels kept identical (e.g. `المنهج الدراسي`, `الإشعارات`). `NavLink` stays used → `aria-current="page"` preserved. |
+| D4 | **Navigation architecture** (`STYLE.md §7`): public = topbar; **student** = compact topbar + **bottom nav on mobile**, structured horizontal nav on desktop; **Walid Awny/Admin** = **persistent sidebar (right edge, RTL) + topbar on desktop**, **drawer on mobile**. Sidebar replaces the wrap-prone `StaffNav`/`AdminNav` bar. | Matches STYLE §7 exactly; fixes wrap/touch issues (`UI-AUDIT §6.2`, §8.9). | Nav labels kept identical (e.g. `المنهج الدراسي`, `الإشعارات`). `NavLink` stays used → `aria-current="page"` preserved. |
 | D5 | **Tables**: new `Table` primitive with two densities. `density="normal"` business tables (students, trash, grades, codes, curriculum-related, pricing, purchases) become **responsive stacked cards below `md`**; `density="dense"` (audit log) keeps **horizontal scroll** (admin density + pagination). | `STYLE.md §9` requires an intentional mobile strategy, not desktop tables crammed in (`UI-AUDIT §6.1`). Audit stays scrollable like most admin tools. | `data-testid` stays on the row/card wrapper (`student-row-*`, `audit-row-*`…). Accessible row names unchanged. |
 | D6 | **Modal**: behavioral upgrade (focus trap, Esc, scroll lock, backdrop click, initial focus, `aria-describedby`, `data-state`, mobile bottom-sheet below `sm`) keeping the same public API + `role="dialog"`/`aria-modal`. | `STYLE.md §9` modals; fixes `UI-AUDIT §8.1`, §5.12. | Same visible attributes as today. |
 | D7 | **Toast roles**: success/info/warning → `role="status"`; **error → `role="alert"`** (assertive). One test (`Toast.test.tsx` family) may need a synchronized, review-approved update if it queries a single `status` role. | `STYLE.md §9`; fixes `UI-AUDIT §8.2`. Error toasts must be assertive. | **Executed (Phase 1)**: 4 tests updated — `LoginPage.test.tsx` (×2) and `RegisterPage.test.tsx` (×2) now scope `getByRole('alert')` to the form via `within(...)`, since the inline error and the error toast are both alerts now. Reviewed. |
@@ -118,7 +118,7 @@ Brand (logo mark + name) · [الرئيسية] · [المنهج الدراسي] 
 - **Desktop (≥lg)**: topbar with brand + primary links (`لوحة التحكم`, `المنهج الدراسي`, `الوحدات`, `الملف الشخصي`) + notification bell (unread badge) + name/role + sign-out. No sidebar (5 items fit a topbar).
 - **Mobile (<lg)**: compact topbar (brand, bell w/ unread badge, avatar menu) + **bottom nav** (5 items, `z-40`): لوحة التحكم · المنهج الدراسي · الوحدات · الإشعارات · الملف الشخصي — icons + labels, active state tinted + `aria-current="page"`. Content gets `pb-24` so nothing hides behind it. *(Also fixes the orphaned profile/password pages — they now render inside the shell.)*
 
-### Mr. Walid (desktop ≥lg)
+### Walid Awny (desktop ≥lg)
 Persistent right-side **sidebar** (brand at top, nav below, sign-out at bottom): لوحة التحكم · الطلاب (sub: سلة المحذوفات) · الصفوف الدراسية · المنهج الدراسي · الأسعار · أكواد التفعيل. Main area = compact topbar (page title context + name) + content.
 **Mobile**: compact topbar + hamburger → **drawer** (slide from right, `z-50`, focus-trapped, Esc/backdrop close); same items; active item tinted.
 
@@ -221,7 +221,7 @@ Format per screen: **Layout / Primary action / Mobile / Loading / Empty / Error 
 - **Profile** (now inside shell): read-only email (with hint that email cannot be changed), editable fields (الاسم الكامل، رقم الهاتف، رقم هاتف ولي الأمر، العنوان), `حفظ التغييرات`; success toast. Keep all current labels/validation strings.
 - **Change password**: current/new/confirm fields + `تغيير كلمة المرور`; success toast + re-auth flow untouched; strings preserved.
 
-### 9.4 Mr. Walid
+### 9.4 Walid Awny
 - **Dashboard**: header row (title + primary action e.g. `إضافة طالب`/view students) → KPI StatCards (students, purchases this month, revenue, content readiness) → activity section (students by grade, top units, recent purchases, engagement) as compact tables (dense on desktop, cards mobile). All existing table semantics + labels kept. Loading: KPI skeletons; Error: ErrorState.
 - **Students**: toolbar (search `البحث` + status filter tabs) → `Table` with `student-row-*` kept, actions as IconButton+text (`عرض التفاصيل`, edit, delete → confirm destructive modal). Empty: EmptyState ("no students yet" + CTA). Mobile: stacked cards.
 - **Trash**: same chrome as students; `trash-row-*` kept; restore → confirm modal (Arabic confirm text preserved).

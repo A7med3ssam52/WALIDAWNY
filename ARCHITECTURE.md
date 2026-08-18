@@ -1,4 +1,4 @@
-# منصة مستر وليد عونى التعليمية — System Architecture
+# منصة وليد عونى التعليمية — System Architecture
 
 **Phase 0 deliverable. Sources of truth:** `PLAN.md` (Master Technical Implementation Plan) and `BLUEPRINT.md` (approved Execution Blueprint, contract for phases 0–11). This document extracts and expands blueprint §§1, 2, 13, 14, 15. No architecture is invented here; where a binding architecture-gate requirement supersedes blueprint wording, it is flagged **[BINDING]**.
 
@@ -13,7 +13,7 @@
 
 ### 1.1 Product
 
-An Arabic-first, RTL educational platform for "Mr. Walid". Students buy **per-unit permanent (lifetime) access** — a single activation code opens **one unit forever** — to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Mr. Walid manages curriculum, students, unit purchases and content; an Admin additionally manages system configuration, per-unit pricing, roles and audit logs. Trial lessons (`lessons.is_trial`) open without any purchase; there is no all-inclusive "package".
+An Arabic-first, RTL educational platform for "Walid Awny". Students buy **per-unit permanent (lifetime) access** — a single activation code opens **one unit forever** — to a video + PDF curriculum organized as **Grade → Unit → Lesson → (Video, PDF)**. Walid Awny manages curriculum, students, unit purchases and content; an Admin additionally manages system configuration, per-unit pricing, roles and audit logs. Trial lessons (`lessons.is_trial`) open without any purchase; there is no all-inclusive "package".
 
 Core product rules (PLAN §2): email+password auth with immutable email; Egyptian phone required; account disable/soft-delete with Trash and restore; per-unit pricing (`unit_pricing`) with permanent purchases (`unit_purchases`); single-use activation codes (`unit_codes`) with atomic redemption (`redeem_unit_code`); live access enforcement (`can_access_lesson`) — trial lesson **or** active purchase; deterministic progress with 90% completion; Bunny-hosted private video with signed playback; private storage-backed PDFs with signed access; admin-only immutable audit log; centrally configured WhatsApp button.
 
@@ -23,7 +23,7 @@ Core product rules (PLAN §2): email+password auth with immutable email; Egyptia
 |---|---|---|
 | `student` | Browse curriculum, watch videos, read PDFs, track progress, manage own profile/password, read own notifications, redeem one unit code, view own purchases | Cannot change grade/role/email, cannot modify purchase state, cannot touch other users' data |
 | `mr_walid` | Manage students (disable/enable, soft-delete/restore via Trash), grades, curriculum (units/lessons/videos/PDFs), unit codes (generate/revoke), pricing (base price per unit), WhatsApp setting, progress analytics | Cannot read audit logs, cannot escalate role, cannot manage platform fee |
-| `admin` | Everything Mr. Walid can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
+| `admin` | Everything Walid Awny can do, **plus**: per-unit pricing/platform fee management, role/permission management, audit logs (read + export), system settings, operational statistics | Highest privilege |
 | `teacher` | Curriculum/lesson management, trial flagging, student grade assignment, progress analytics (added 0023) | Cannot manage pricing, roles, audit logs, or WhatsApp settings |
 
 ### 1.3 Scope boundaries (MVP)
