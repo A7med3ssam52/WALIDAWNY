@@ -5246,7 +5246,21 @@ END $$;
 
 -- Staff: codes of a unit (validation + count caps stay in the internal fn).
 CREATE OR REPLACE FUNCTION public.list_codes_by_unit(p_unit_id uuid)
-RETURNS SETOF public.unit_codes
+RETURNS TABLE (
+    id              uuid,
+    code            text,
+    unit_pricing_id uuid,
+    status          public.code_status,
+    created_by      uuid,
+    used_at         timestamptz,
+    used_by         uuid,
+    revoked_at      timestamptz,
+    revoked_by      uuid,
+    note            text,
+    created_at      timestamptz,
+    updated_at      timestamptz,
+    used_by_name    text
+)
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
@@ -5262,9 +5276,12 @@ BEGIN
     END IF;
 
     RETURN QUERY
-        SELECT uc.*
+        SELECT uc.id, uc.code, uc.unit_pricing_id, uc.status, uc.created_by, uc.used_at,
+               uc.used_by, uc.revoked_at, uc.revoked_by, uc.note, uc.created_at, uc.updated_at,
+               p.full_name AS used_by_name
         FROM public.unit_codes uc
         JOIN public.unit_pricing up ON up.id = uc.unit_pricing_id
+        LEFT JOIN public.profiles p ON p.id = uc.used_by
         WHERE up.unit_id = p_unit_id
         ORDER BY uc.created_at DESC;
 END $$;

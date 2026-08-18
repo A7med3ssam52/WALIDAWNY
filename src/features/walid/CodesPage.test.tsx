@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   expectRpcCall,
   makeGrade,
+  makeProfile,
   makeUnit,
   makeUnitCode,
   makeUnitPricing,
@@ -176,6 +177,32 @@ describe('CodesPage', () => {
     const row = await screen.findByTestId('code-row-code-2');
     expect(within(row).getByText('مستخدم')).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'إلغاء' })).not.toBeInTheDocument();
+  });
+
+  it('shows the student name who redeemed each used code', async () => {
+    mockState.profiles.push(makeProfile({ id: 'user-test-1', full_name: 'أحمد محمد' }));
+    mockState.unitCodes.push(
+      makeUnitCode({ id: 'code-1', code: 'WLDN-AAAA-BBBB-CCCC', unit_id: 'unit-1' }),
+      makeUnitCode({
+        id: 'code-2',
+        code: 'WLDN-DDDD-EEEE-FFFF',
+        unit_id: 'unit-1',
+        status: 'used',
+        used_by: 'user-test-1',
+        used_at: '2026-08-01T10:00:00.000Z',
+      }),
+    );
+    renderApp('/walid/codes');
+
+    const usedRow = await screen.findByTestId('code-row-code-2');
+    expect(within(usedRow).getByText('أحمد محمد')).toBeInTheDocument();
+
+    const availableRow = screen.getByTestId('code-row-code-1');
+    const availableStudentCell = within(availableRow)
+      .getAllByRole('cell')
+      .find((cell) => cell.getAttribute('data-label') === 'الطالب المستخدم');
+    expect(availableStudentCell).toBeDefined();
+    expect(within(availableStudentCell as HTMLElement).getByText('—')).toBeInTheDocument();
   });
 
   it('surfaces the unit_not_found RPC error as an Arabic message', async () => {

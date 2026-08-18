@@ -294,6 +294,11 @@ SELECT tests.assert(
      FROM public.unit_codes WHERE id = '90000000-0000-0000-0000-000000000001'),
     'redeem: code1 marked used by E');
 SELECT tests.assert(
+    (SELECT used_by_name = 'E'
+     FROM public.list_codes_by_unit('30000000-0000-0000-0000-000000000001')
+     WHERE id = '90000000-0000-0000-0000-000000000001'),
+    'redeem: list_codes_by_unit exposes the redeeming student name');
+SELECT tests.assert(
     (SELECT EXISTS (
         SELECT 1 FROM public.audit_logs
         WHERE action = 'unit_purchase.create'

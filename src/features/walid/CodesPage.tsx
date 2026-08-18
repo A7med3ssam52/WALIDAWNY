@@ -306,6 +306,7 @@ export function CodesPage() {
                   <TableHeadCell>تم إنشاؤه</TableHeadCell>
                   <TableHeadCell>ملاحظة</TableHeadCell>
                   <TableHeadCell>الحالة</TableHeadCell>
+                  <TableHeadCell>الطالب المستخدم</TableHeadCell>
                   <TableHeadCell>إجراءات</TableHeadCell>
                 </TableRow>
               </TableHead>
@@ -355,6 +356,15 @@ export function CodesPage() {
                         <Badge variant={isUsed ? 'info' : isRevoked ? 'neutral' : 'success'}>
                           {isUsed ? 'مستخدم' : isRevoked ? 'ملغي' : 'متاح'}
                         </Badge>
+                      </TableCell>
+                      <TableCell label="الطالب المستخدم">
+                        {isUsed && item.used_by_name ? (
+                          <span className="text-sm font-medium text-foreground">
+                            {item.used_by_name}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-foreground-muted">—</span>
+                        )}
                       </TableCell>
                       <TableCell label="إجراءات">
                         {isUsed || isRevoked ? (

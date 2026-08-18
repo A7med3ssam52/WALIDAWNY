@@ -175,6 +175,7 @@ export type UnitCode = {
 
 export type UnitCodeWithUnit = UnitCode & {
   unit_name: string;
+  used_by_name: string | null;
 };
 
 export type UnitPurchase = {
@@ -561,7 +562,10 @@ export interface Database {
       set_platform_fee: { Args: { p_fee: number }; Returns: void };
       get_platform_fee: { Args: never; Returns: number };
       list_unit_pricing: { Args: never; Returns: UnitPricingWithUnit[] };
-      list_codes_by_unit: { Args: { p_unit_id: string }; Returns: UnitCode[] };
+      list_codes_by_unit: {
+        Args: { p_unit_id: string };
+        Returns: (UnitCode & { used_by_name: string | null })[];
+      };
       revoke_unit_code: { Args: { p_code_id: string }; Returns: void };
       create_unit_codes_for_staff: {
         Args: { p_unit_id: string; p_count: number; p_note?: string | null };

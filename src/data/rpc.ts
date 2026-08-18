@@ -960,7 +960,7 @@ export async function listCodesByUnit(unitId: string): Promise<UnitCodeWithUnit[
   if (error) {
     throw error;
   }
-  const rows = (data ?? []) as UnitCode[];
+  const rows = (data ?? []) as (UnitCode & { used_by_name: string | null })[];
   const { data: unit, error: unitError } = await getSupabaseClient()
     .from('units')
     .select('name')

@@ -1128,7 +1128,13 @@ function createMockClient() {
       const unitId = String(args?.p_unit_id ?? '');
       const rows = state.unitCodes
         .filter((item) => item.unit_id === unitId)
-        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .map((item) => ({
+          ...item,
+          used_by_name: item.used_by
+            ? (state.profiles.find((profile) => profile.id === item.used_by)?.full_name ?? null)
+            : null,
+        }));
       return { data: rows, error: null };
     }
     if (fn === 'redeem_unit_code') {
