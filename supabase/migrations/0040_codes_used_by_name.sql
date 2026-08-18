@@ -5,6 +5,9 @@
 -- PostgreSQL does not allow changing a function's return type, so the old
 -- function must be dropped first (DROP FUNCTION removes its grants too;
 -- the REVOKE/GRANT lines from 0028 are re-applied below).
+-- NOTE: RETURNS TABLE introduces PL/pgSQL variables named like table
+-- columns, so units.id MUST stay qualified inside the body (42702
+-- "column reference id is ambiguous" otherwise).
 
 DROP FUNCTION IF EXISTS public.list_codes_by_unit(uuid);
 
@@ -34,7 +37,7 @@ BEGIN
         RAISE EXCEPTION 'permission_denied';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE units.id = p_unit_id AND deleted_at IS NULL) THEN
         RAISE EXCEPTION 'unit_not_found';
     END IF;
 

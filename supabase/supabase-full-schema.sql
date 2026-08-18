@@ -5271,7 +5271,7 @@ BEGIN
         RAISE EXCEPTION 'permission_denied';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE units.id = p_unit_id AND deleted_at IS NULL) THEN
         RAISE EXCEPTION 'unit_not_found';
     END IF;
 
