@@ -315,7 +315,7 @@ export function makeNotification(overrides: Partial<AnyRecord> = {}): AnyRecord 
 export function makeDashboardStats(overrides: Partial<AnyRecord> = {}): AnyRecord {
   return {
     students: { total: 0, active: 0, disabled: 0, deleted: 0, new_this_month: 0 },
-    purchases: { total: 0, total_revenue: 0, revenue_this_month: 0 },
+    purchases: { total: 0, staff_revenue_this_month: 0, platform_fee_total: 0 },
     content: {
       grades: 0,
       units: 0,

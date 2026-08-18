@@ -109,14 +109,14 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
               variant="success"
             />
             <StatCard
-              title="إيرادات هذا الشهر"
-              value={formatPrice(stats.purchases.revenue_this_month)}
+              title="إيرادات مستر وليد"
+              value={formatPrice(stats.purchases.staff_revenue_this_month)}
               icon={<Wallet className="h-5 w-5" />}
               variant="success"
             />
             <StatCard
-              title="إجمالي الإيرادات"
-              value={formatPrice(stats.purchases.total_revenue)}
+              title="إجمالي إيرادات المنصة"
+              value={formatPrice(stats.purchases.platform_fee_total)}
               icon={<Wallet className="h-5 w-5" />}
               variant="success"
             />

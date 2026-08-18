@@ -80,8 +80,11 @@ SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,total}')::int) >= 1,
     'd: purchases.total >= 1');
 SELECT tests.assert(
-    ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,total_revenue}')::numeric) >= 1100,
-    'd: purchases.total_revenue >= 1100');
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,staff_revenue_this_month}')::numeric) >= 1000,
+    'd: purchases.staff_revenue_this_month >= 1000 (base_price only, no platform fee)');
+SELECT tests.assert(
+    ((SELECT public.get_dashboard_stats()::jsonb #>> '{purchases,platform_fee_total}')::numeric) >= 100,
+    'd: purchases.platform_fee_total >= 100 (platform fees only)');
 SELECT tests.assert(
     ((SELECT public.get_dashboard_stats()::jsonb #>> '{content,published_lessons}')::int) >= 1,
     'd: content.published_lessons >= 1');

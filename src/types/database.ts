@@ -352,8 +352,8 @@ export interface DashboardStudentsStats {
 
 export interface DashboardPurchasesStats {
   total: number;
-  total_revenue: number;
-  revenue_this_month: number;
+  staff_revenue_this_month: number;
+  platform_fee_total: number;
 }
 
 export interface DashboardContentStats {

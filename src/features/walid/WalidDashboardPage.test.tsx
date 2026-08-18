@@ -12,7 +12,7 @@ import { renderApp } from '../../test/utils';
 
 const seededStats = makeDashboardStats({
   students: { total: 42, active: 40, disabled: 2, deleted: 1, new_this_month: 5 },
-  purchases: { total: 30, total_revenue: 10500, revenue_this_month: 3500 },
+  purchases: { total: 30, staff_revenue_this_month: 3500, platform_fee_total: 10500 },
   content: {
     grades: 3,
     units: 9,
@@ -56,7 +56,11 @@ describe('WalidDashboardPage', () => {
     expect(await screen.findByText('42')).toBeInTheDocument();
     expect(screen.getByText('لوحة المعلومات')).toBeInTheDocument();
     expect(screen.getByText('30')).toBeInTheDocument();
+    // Staff revenue excludes platform fees
+    expect(screen.getByText('إيرادات مستر وليد')).toBeInTheDocument();
     expect(screen.getByText('3500 ج.م')).toBeInTheDocument();
+    // Platform revenue shows fees only
+    expect(screen.getByText('إجمالي إيرادات المنصة')).toBeInTheDocument();
     expect(screen.getByText('10500 ج.م')).toBeInTheDocument();
     expect(getRpcCalls().some((call) => call.fn === 'get_dashboard_stats')).toBe(true);
   });

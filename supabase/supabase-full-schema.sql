@@ -5582,10 +5582,11 @@ BEGIN
                                WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
         ),
         'purchases', jsonb_build_object(
-            'total',               (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
-            'total_revenue',       (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases WHERE status = 'active'),
-            'revenue_this_month',  (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases
-                                    WHERE status = 'active' AND purchased_at >= date_trunc('month', now()))
+            'total',                    (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+            'staff_revenue_this_month', (SELECT COALESCE(sum(base_price), 0) FROM public.unit_purchases
+                                         WHERE status = 'active' AND purchased_at >= date_trunc('month', now())),
+            'platform_fee_total',       (SELECT COALESCE(sum(platform_fee), 0) FROM public.unit_purchases
+                                         WHERE status = 'active')
         ),
         'content', jsonb_build_object(
             'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
