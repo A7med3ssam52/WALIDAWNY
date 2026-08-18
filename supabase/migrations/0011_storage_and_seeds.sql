@@ -34,7 +34,7 @@ END$$;
 -- ---------------------------------------------------------------------
 INSERT INTO public.app_settings (key, value, description)
 VALUES
-    ('platform_name', '"منصة وليد عونى التعليمية"', 'Platform display name'),
+    ('platform_name', '"وليد عونى"', 'Platform display name'),
     ('whatsapp_number', '"+201000000000"', 'Support WhatsApp number'),
     ('whatsapp_default_message', '"مرحباً، أريد الاستفسار عن الاشتراك"', 'Default WhatsApp message'),
     ('expiry_warning_days', '7', 'Days before expiry to warn subscribers')

@@ -1,4 +1,4 @@
-# منصة وليد عونى التعليمية — System Architecture
+# وليد عونى — System Architecture
 
 **Phase 0 deliverable. Sources of truth:** `PLAN.md` (Master Technical Implementation Plan) and `BLUEPRINT.md` (approved Execution Blueprint, contract for phases 0–11). This document extracts and expands blueprint §§1, 2, 13, 14, 15. No architecture is invented here; where a binding architecture-gate requirement supersedes blueprint wording, it is flagged **[BINDING]**.
 

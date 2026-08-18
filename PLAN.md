@@ -1,4 +1,4 @@
-# منصة وليد عونى التعليمية — Master Technical Implementation Plan
+# وليد عونى — Master Technical Implementation Plan
 
 ## 0. Mission
 

@@ -1,4 +1,4 @@
-# منصة وليد عونى التعليمية — Execution Blueprint
+# وليد عونى — Execution Blueprint
 
 **Source of truth:** `PLAN.md` (Master Technical Implementation Plan)
 **Status:** Contract document for all implementation phases (0–11).

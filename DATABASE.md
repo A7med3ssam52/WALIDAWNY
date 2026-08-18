@@ -1,4 +1,4 @@
-# منصة وليد عونى التعليمية — Database Reference
+# وليد عونى — Database Reference
 
 **Phase 0 deliverable.** Extracted from BLUEPRINT.md §3 (database architecture), §4 (auth), §5 (RLS), §6 (redemption/purchase), §12 (audit). Binding architecture-gate requirements are flagged **[BINDING]** and are authoritative over blueprint wording where they refine it.
 

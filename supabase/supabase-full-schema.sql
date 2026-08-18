@@ -2185,7 +2185,7 @@ END$$;
 -- ---------------------------------------------------------------------
 INSERT INTO public.app_settings (key, value, description)
 VALUES
-    ('platform_name', '"منصة وليد عونى التعليمية"', 'Platform display name'),
+    ('platform_name', '"وليد عونى"', 'Platform display name'),
     ('whatsapp_number', '"+201000000000"', 'Support WhatsApp number'),
     ('whatsapp_default_message', '"مرحباً، أريد الاستفسار عن الاشتراك"', 'Default WhatsApp message'),
     ('expiry_warning_days', '7', 'Days before expiry to warn subscribers')
@@ -3512,7 +3512,7 @@ GRANT EXECUTE ON FUNCTION public.set_role_by_email(text, public.user_role) TO au
 -- The original 0011 seed used ON CONFLICT DO NOTHING, so an existing
 -- row keeps the old English value; this migration explicitly updates it.
 UPDATE public.app_settings
-SET value = '"منصة وليد عونى التعليمية"',
+SET value = '"وليد عونى"',
     updated_at = now()
 WHERE key = 'platform_name';
 

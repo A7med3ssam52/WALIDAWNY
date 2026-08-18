@@ -60,7 +60,7 @@ describe('InstallPrompt', () => {
     });
 
     expect(
-      screen.getByRole('heading', { name: 'ثبّت تطبيق منصة وليد عونى على موبايلك' }),
+      screen.getByRole('heading', { name: 'ثبّت تطبيق وليد عونى على موبايلك' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'تثبيت التطبيق الآن' })).toBeInTheDocument();
   });
@@ -118,7 +118,7 @@ describe('InstallPrompt', () => {
     });
 
     expect(
-      screen.getByRole('heading', { name: 'أضف منصة وليد عونى إلى شاشتك الرئيسية' }),
+      screen.getByRole('heading', { name: 'أضف تطبيق وليد عونى إلى شاشتك الرئيسية' }),
     ).toBeInTheDocument();
     expect(screen.getByText('اختر «إضافة إلى الشاشة الرئيسية»')).toBeInTheDocument();
 

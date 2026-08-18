@@ -17,13 +17,13 @@ describe('LandingPage', () => {
 
   it('shows the platform name, login and register links, and the WhatsApp CTA', async () => {
     mockRpc('get_public_settings', {
-      platform_name: 'منصة وليد عونى التعليمية',
+      platform_name: 'وليد عونى',
       whatsapp_number: '01000000000',
       whatsapp_default_message: 'مرحبًا، أود التواصل مع الأستاذ',
     });
     renderApp('/');
 
-    expect(await screen.findAllByText('منصة وليد عونى التعليمية')).toHaveLength(2);
+    expect(await screen.findAllByText('وليد عونى')).toHaveLength(2);
     expect(
       screen.getAllByRole('link', { name: 'تسجيل الدخول' }).every((link) =>
         link.hasAttribute('href') ? link.getAttribute('href') === '/login' : false,
@@ -40,13 +40,13 @@ describe('LandingPage', () => {
 
   it('does not show the WhatsApp CTA when no number is configured', async () => {
     mockRpc('get_public_settings', {
-      platform_name: 'منصة وليد عونى التعليمية',
+      platform_name: 'وليد عونى',
       whatsapp_number: '',
       whatsapp_default_message: null,
     });
     renderApp('/');
 
-    expect(await screen.findAllByText('منصة وليد عونى التعليمية')).toHaveLength(2);
+    expect(await screen.findAllByText('وليد عونى')).toHaveLength(2);
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'فتح محادثة واتساب' })).not.toBeInTheDocument();
     });
@@ -55,7 +55,7 @@ describe('LandingPage', () => {
 
   it('shows the unit prices section with a whatsapp CTA per unit', async () => {
     mockRpc('get_public_settings', {
-      platform_name: 'منصة وليد عونى التعليمية',
+      platform_name: 'وليد عونى',
       whatsapp_number: '01000000000',
       whatsapp_default_message: 'مرحبًا، أود التواصل مع الأستاذ',
     });

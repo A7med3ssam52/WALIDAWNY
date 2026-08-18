@@ -1,7 +1,7 @@
 # UI-AUDIT.md — Visual & UX Audit of the Existing Platform
 
 > Audit date: 2026-08-12
-> Scope: entire `src/` frontend of the منصة وليد عونى التعليمية (React 19 + Vite 7 + Tailwind CSS v4 + react-router-dom 7).
+> Scope: entire `src/` frontend of the وليد عونى (React 19 + Vite 7 + Tailwind CSS v4 + react-router-dom 7).
 > Method: full source inspection of every route, page, component, and the test suite. No UI code was modified during this audit.
 > Constraint: `PLAN.md` (functional) and `STYLE.md` (visual) are the authoritative specs. Tests (27 files, 184 cases) encode a strict UI contract (test-ids, accessible names, Arabic strings, ARIA roles) that any redesign must preserve or explicitly update with review.
 
@@ -112,7 +112,7 @@
 4. **Inconsistent radii/shadows** — `rounded-md` vs `rounded-lg` vs `rounded-full` mixed; `shadow-sm` on some cards, none on others; modal overlays use `bg-black/40` vs `bg-slate-900/50`.
 5. **Mixed directional arrows** — literal `←`/`→` glyphs in lesson nav and "← المنهج الدراسي" back link; the back link points left (backward in RTL), lesson "next" uses `الدرس التالي ←` (correct), prev uses `→ الدرس السابق` (correct) — inconsistent mental model across surfaces.
 6. **Icon absence** — status/action affordances rely on text and color only; no visual language (STYLE §17).
-7. **`index.html`** — `<title>منصة وليد عونى التعليمية</title>` (English), no favicon, no `theme-color`; description is Arabic ✓.
+7. **`index.html`** — `<title>وليد عونى</title>` (English), no favicon, no `theme-color`; description is Arabic ✓.
 8. **Student dashboard is a list of cards**, no visual priority (STYLE §12: continue learning → course → progress → curriculum → activity → notifications).
 9. **Walid dashboard** — 8 stat cards + 5 small tables; dense but plain; no hierarchy beyond labels.
 10. **No brand presence** — no logo mark, no visual identity beyond text "منصة أ. وليد التعليمية".
