@@ -22,7 +22,7 @@ npm start          # boot -> shim -> migrations -> assertion suites
 assertion suite fails. Expected output ends with:
 
 ```
-=== suites passed: 12, suites failed: 0 ===
+=== suites passed: 13, suites failed: 0 ===
 ALL GREEN
 ```
 
@@ -60,14 +60,15 @@ removal.
 9. **sql/07_audit_logs.sql** — audit capture, PII freedom, admin-only
    read surface, CSV export helpers.
 10. **sql/08_security.sql** — search_path pins, storage policy
-     inventory, B2 privilege locks, own-only RPC negatives, staff
-     boundary matrix, grant-drift anchors.
+      inventory, B2 privilege locks, own-only RPC negatives, staff
+      boundary matrix, grant-drift anchors.
 11. **sql/09_exams.sql** — exam CRUD + take/grading matrix (roles,
-     published/draft scope, MCQ + problem scoring, staff fan-out).
+      published/draft scope, MCQ + problem scoring, staff fan-out).
 12. **sql/10_comments.sql** — lesson comments: access gates, threading,
-     body/parent validation, moderation, notifications, audit capture.
-13. **concurrency** scenarios — HIGH-3 parallel progress upserts and the
-     `redeem_unit_code` race (exactly one winner).
+      body/parent validation, moderation, notifications, audit capture.
+13. **sql/11_boards.sql** — lesson boards: RLS matrix (staff vs student), RPC negatives, create/finalize/delete/reorder happy paths + errors, storage row-backed policy.
+14. **concurrency** scenarios — HIGH-3 parallel progress upserts and the
+      `redeem_unit_code` race (exactly one winner).
 
 ## How auth is simulated
 

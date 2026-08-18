@@ -28,3 +28,16 @@ verify_jwt = true
 
 [functions.recheck-video-states]
 verify_jwt = false
+
+[functions.upload-board]
+verify_jwt = true
+
+[functions.delete-board]
+verify_jwt = true
+
+[functions.get-board-signed-urls]
+verify_jwt = true
+
+[storage.buckets.boards]
+public = false
+file_size_limit = "10MiB"

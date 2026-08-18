@@ -12,6 +12,8 @@ import type {
   Grade,
   Lesson,
   LessonAccessInfo,
+  LessonBoard,
+  LessonBoardSignedUrl,
   LessonComment,
   LessonPdf,
   LessonVideo,
@@ -317,6 +319,20 @@ export async function restoreUnit(unitId: string): Promise<void> {
   }
 }
 
+export async function publishUnit(unitId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('publish_unit', { p_unit_id: unitId });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function hideUnit(unitId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('hide_unit', { p_unit_id: unitId });
+  if (error) {
+    throw error;
+  }
+}
+
 export async function listUnitsForGrade(gradeId: string): Promise<Unit[]> {
   const { data, error } = await getSupabaseClient()
     .from('units')
@@ -510,6 +526,90 @@ export async function finalizePdfUpload(pdfId: string): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+export async function listLessonBoards(lessonId: string): Promise<LessonBoard[]> {
+  const { data, error } = await getSupabaseClient()
+    .from('lesson_boards')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as LessonBoard[];
+}
+
+export interface BoardUploadSession {
+  uploadUrl: string;
+  board_id: string;
+  storage_path: string;
+  expires_in: number;
+}
+
+export async function uploadBoard(input: {
+  lessonId: string;
+  fileName: string;
+  fileSize?: number;
+}): Promise<BoardUploadSession> {
+  return invokeFunction<BoardUploadSession>('upload-board', {
+    method: 'POST',
+    body: {
+      lesson_id: input.lessonId,
+      file_name: input.fileName,
+      ...(input.fileSize !== undefined ? { file_size: input.fileSize } : {}),
+    },
+  });
+}
+
+export async function uploadBoardBytes(uploadUrl: string, file: Blob): Promise<void> {
+  const response = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!response.ok) {
+    throw new Error('board_upload_failed');
+  }
+}
+
+export async function finalizeBoardUpload(boardId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('finalize_board_upload', {
+    p_board_id: boardId,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function deleteBoardUpload(lessonId: string, boardId: string): Promise<void> {
+  await invokeFunction<{ deleted: boolean }>('delete-board', {
+    method: 'POST',
+    body: { lesson_id: lessonId, board_id: boardId },
+  });
+}
+
+export async function reorderLessonBoards(lessonId: string, boardIds: string[]): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('reorder_boards', {
+    p_lesson_id: lessonId,
+    p_board_ids: boardIds,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getLessonBoardSignedUrls(
+  lessonId: string,
+): Promise<LessonBoardSignedUrl[]> {
+  return invokeFunction<LessonBoardSignedUrl[]>('get-board-signed-urls', {
+    method: 'POST',
+    body: { lesson_id: lessonId },
+  });
 }
 
 export async function createVideoUploadSession(

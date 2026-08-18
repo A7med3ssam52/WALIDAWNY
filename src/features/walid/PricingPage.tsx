@@ -10,7 +10,7 @@ import { Input } from '../../components/Input';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import {
   Table,
   TableBody,
@@ -172,7 +172,7 @@ export function PricingPage() {
       title="أسعار الوحدات"
       subtitle="المدرس يحدد سعر كل باب، ورسوم المنصة الثابتة تضاف تلقائيًا — الوحدة تُشترى مرة واحدة مدى الحياة"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
     >
       <div className="flex flex-col gap-4">
         <Card title="أسعار الوحدات الحالية">

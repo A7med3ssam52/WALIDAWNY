@@ -26,7 +26,6 @@ import { TrashPage } from '../features/walid/TrashPage';
 import { WalidDashboardPage } from '../features/walid/WalidDashboardPage';
 import { AuditLogPage } from '../features/admin/AuditLogPage';
 import { RolesPage } from '../features/admin/RolesPage';
-import { AdminNav } from '../components/AdminNav';
 
 export function AppRoutes() {
   return (
@@ -68,7 +67,7 @@ export function AppRoutes() {
         </Route>
         <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
           <Route index element={<Navigate to="/walid/dashboard" replace />} />
-          <Route path="dashboard" element={<WalidDashboardPage nav={<AdminNav />} />} />
+          <Route path="dashboard" element={<WalidDashboardPage />} />
           <Route path="students" element={<StudentListPage />} />
           <Route path="students/trash" element={<TrashPage />} />
           <Route path="students/:studentId" element={<StudentDetailPage />} />
@@ -83,7 +82,7 @@ export function AppRoutes() {
         </Route>
         <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<WalidDashboardPage nav={<AdminNav />} />} />
+          <Route path="dashboard" element={<WalidDashboardPage />} />
           <Route path="audit" element={<AuditLogPage />} />
           <Route path="roles" element={<RolesPage />} />
         </Route>

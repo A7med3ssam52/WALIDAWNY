@@ -9,7 +9,7 @@ import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import {
   Table,
   TableBody,
@@ -68,7 +68,7 @@ export function TrashPage() {
       title="سلة المحذوفات"
       subtitle="الطلاب المحذوفون مؤقتًا"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
       actions={
         <Link
           to="/walid/students"

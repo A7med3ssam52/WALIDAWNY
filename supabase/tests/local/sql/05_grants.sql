@@ -4,11 +4,12 @@
 -- Verifies the MED-6 allowlist exactly: anon -> ONLY get_public_settings
 -- + list_active_grades (0027 registration picker) + get_public_unit_prices
 -- (0028 landing page) + get_platform_fee (0031 public read); authenticated
--- -> the 64 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
+-- -> the 70 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
 -- 5 new exam RPCs (0029) + the 3 new comment RPCs (0030) + the pricing
--- RPCs (0031) + the 5 RLS policy helpers; every internal/system function
--- stays non-executable (0028 REVOKEs create_unit_codes_internal - the
--- staff wrapper is SECURITY DEFINER).
+-- RPCs (0031) + the 4 new board RPCs (0036) + the 2 new unit publish/hide
+-- RPCs (0038) + the 5 RLS policy helpers;
+-- every internal/system function stays non-executable (0028 REVOKEs
+-- create_unit_codes_internal - the staff wrapper is SECURITY DEFINER).
 -- Also verifies binding B2 (notifications DML revoked from clients) and
 -- the view lockdown (5 internal views; v_active_subscriptions is dropped).
 -- =====================================================================
@@ -67,15 +68,27 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.add_lesson_commen
     'anon: add_lesson_comment NOT executable (0030)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_lesson_comments(uuid)', 'EXECUTE'),
     'anon: list_lesson_comments NOT executable (0030)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_board_upload_record(uuid, text, bigint)', 'EXECUTE'),
+    'anon: create_board_upload_record NOT executable (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.finalize_board_upload(uuid)', 'EXECUTE'),
+    'anon: finalize_board_upload NOT executable (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_board_upload_record(uuid, uuid)', 'EXECUTE'),
+    'anon: delete_board_upload_record NOT executable (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.reorder_boards(uuid, uuid[])', 'EXECUTE'),
+    'anon: reorder_boards NOT executable (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.publish_unit(uuid)', 'EXECUTE'),
+    'anon: publish_unit NOT executable (0038)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.hide_unit(uuid)', 'EXECUTE'),
+    'anon: hide_unit NOT executable (0038)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (65 functions)
+-- authenticated: the full client allowlist (71 functions)
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 65 FROM pg_proc
+    (SELECT count(*) = 71 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 65 executable public functions');
+    'authenticated: exactly 71 executable public functions');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -142,6 +155,12 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.grade_exam_a
 SELECT tests.assert(has_function_privilege('authenticated', 'public.add_lesson_comment(uuid, text, uuid)', 'EXECUTE'), 'g: add_lesson_comment (0030)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_lesson_comment(uuid)', 'EXECUTE'), 'g: delete_lesson_comment (0030)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_lesson_comments(uuid)', 'EXECUTE'), 'g: list_lesson_comments (0030)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.create_board_upload_record(uuid, text, bigint)', 'EXECUTE'), 'g: create_board_upload_record (0036)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.finalize_board_upload(uuid)', 'EXECUTE'), 'g: finalize_board_upload (0036)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_board_upload_record(uuid, uuid)', 'EXECUTE'), 'g: delete_board_upload_record (0036)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.reorder_boards(uuid, uuid[])', 'EXECUTE'), 'g: reorder_boards (0036)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.publish_unit(uuid)', 'EXECUTE'), 'g: publish_unit (0038)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.hide_unit(uuid)', 'EXECUTE'), 'g: hide_unit (0038)');
 
 -- ---------------------------------------------------------------------
 -- authenticated: internal/system functions stay locked down

@@ -422,6 +422,29 @@ Progress on PDF-only lessons: lessons with no primary video (PDF-only) can still
    only when a primary video exists [BINDING B4].
 ```
 
+### 7.5 Board access flow
+
+```
+Upload (staff):
+   upload-board (POST, JWT + is_mr_walid() OR is_admin() OR is_teacher(), profile active/not-deleted)
+     → validate MIME/size (image/jpeg|png|webp, ≤10 MiB) → createSignedUploadUrl (I4)
+        on private bucket `boards`, path {lesson_id}/{uuid}.{ext}
+     → browser uploads bytes to signed URL
+     → finalize_board_upload(p_board_id) RPC: is_ready=true, updated_at, audit (board.finalized)
+   Deletion: delete-board (POST, JWT + staff) → storage remove (best-effort) + delete_board_upload_record (soft-delete, allowed for ready rows) + audit (board.deleted)
+   Reorder: reorder_boards(p_lesson_id, p_board_ids[]) RPC (staff) → sequential sort_order update + audit (board.reordered)
+
+Read (student):
+   get-board-signed-urls (POST, JWT)
+     → require role student, status='active', deleted_at IS NULL (non-student roles: staff preview allowed)
+     → can_access_lesson(lesson_id) — trial-or-purchase access LIVE at every request
+     → server resolves all ready, non-deleted boards for lesson ordered by sort_order asc, created_at asc
+     → service-role createSignedUrl for each board.storage_path, TTL 900 → array of { board_id, original_name, sort_order, signed_url }
+
+Preview (staff):
+   get-board-signed-urls with mr_walid/admin/teacher role → bypasses can_access_lesson gate → returns same signed URL array for QA preview
+```
+
 ### 7.5 Notification flow
 
 | Type | Producer | Dedup key | Once-only mechanism |
@@ -469,7 +492,7 @@ Query: v_audit_log joins actor name/role.
 | Auth | Email+password; JWT sessions; password change | Sign-in gate + email-immutability triggers on `auth.users`; no OTP/forgot-password |
 | Postgres | All business data; RLS; RPCs; triggers; views | Extensions: `pgcrypto`, `pg_cron`, `pg_net`; migrations in `supabase/migrations/` + consolidated `supabase/supabase-full-schema.sql` |
 | Storage | Private buckets `pdfs` + `audit-exports` | No public/anon policies; all object ops via Edge Function signed URLs (service role) |
-| Edge Functions | 8 request functions (incl. `get-video-thumbnail-url`) + 1 scheduled job function | Deno + TypeScript; JWT verification; secrets via `supabase secrets set` |
+| Edge Functions | 11 request functions (incl. `get-video-thumbnail-url`, `upload-board`, `delete-board`, `get-board-signed-urls`) + 1 scheduled job function | Deno + TypeScript; JWT verification; secrets via `supabase secrets set` |
 | Scheduling | `supabase functions schedule` (preferred) → pg_cron → pg_net → internal Edge Function → external cron (fallbacks) | One unified execution chain for `recheck_video_states` (MED-4); availability verified in Phase 1 (A19) |
 
 ### 8.2 Bunny
@@ -490,9 +513,10 @@ Query: v_audit_log joins actor name/role.
 | Bucket | Visibility | Access model |
 |---|---|---|
 | `pdfs` | private | Upload: staff via `upload-pdf` EF signed upload URL. Read: student via `get-pdf-signed-url` EF after `can_access_lesson`. No direct object policies |
-| `audit-exports` | private | Admin-only; CSV written by EF, returned via short-lived signed URL |
+| `audit-exports` | private | Admin-only; CSV exports written by EF, returned via short-lived signed URL |
+| `boards` | private | Upload: staff via `upload-board` EF signed upload URL (MIME image/jpeg|png|webp, ≤10 MiB). Read: student via `get-board-signed-urls` EF after `can_access_lesson`; staff preview bypasses access gate. Path convention: `{lesson_id}/{uuid}.{ext}`. Row-backed INSERT policy mirrors PDF pattern (0015). |
 
-Storage RLS enabled on both buckets; **no anonymous policies**; authenticated users have **no direct object policies** — every object operation is authorized inside Edge Functions via signed URLs (service role).
+Storage RLS enabled on all buckets; **no anonymous policies**; authenticated users have **no direct object policies** — every object operation is authorized inside Edge Functions via signed URLs (service role).
 
 ### 8.4 Edge Functions inventory
 
@@ -508,6 +532,9 @@ Deployment: one `supabase/functions/<name>/index.ts` per function; `supabase fun
 | 5 | `upload-pdf` | POST, JWT + `is_mr_walid() OR is_admin()` | MIME/size validation → `createSignedUploadUrl` (I4) on `pdfs`; `finalize_pdf_upload` RPC afterwards |
 | 6 | `generate-unit-codes` | POST, JWT + `is_admin() OR is_mr_walid()` | Validate `unit_pricing` + count cap (≤500) → `create_unit_codes_for_staff()` (staff-guarded wrapper) → `create_unit_codes_internal()` (pgcrypto, unambiguous charset, uppercase — A22); internal function is REVOKEd from PUBLIC and has no client grants |
 | 7 | `export-audit-log` | POST, JWT + `is_admin()` | Filters → CSV (UTF-8 BOM) → `audit-exports` → signed URL |
+| 8 | `upload-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | MIME/size validation (image/jpeg|png|webp, ≤10 MiB) → `createSignedUploadUrl` on `boards`; returns `{uploadUrl, board_id, storage_path, expires_in:60}` |
+| 9 | `delete-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | storage remove (best-effort) + `delete_board_upload_record` (soft-delete, allowed for ready rows) + audit (board.deleted) |
+| 10 | `get-board-signed-urls` | POST, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin/teacher QA preview** | Server resolves all ready, non-deleted boards for lesson ordered by sort_order; service-role `createSignedUrl` (TTL 900); returns array of `{board_id, original_name, sort_order, signed_url}` |
 | J2 | `recheck-video-states` (scheduled) | internal endpoint (service role) | Selects stuck pre-ready videos (`pending_upload/uploading/processing`, older than threshold, not deleted) → live Bunny API status query → `set_video_status()` transition chains (missing → failed, dead statuses → failed, finished → ready with metadata); transient API errors skipped for the next run |
 
 CORS: internal job/webhook functions (`recheck-video-states`, `bunny-video-webhook`) set no CORS headers; the deploy-time `verify_jwt` flag is `false` only for these internal endpoints, and the shared webhook token / service role is verified in-function.

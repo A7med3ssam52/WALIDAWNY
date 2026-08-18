@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   expectRpcCall,
   getQueryCallCount,
+  makeBoard,
   makeLesson,
   makeLessonComment,
   makeVideo,
@@ -18,7 +19,24 @@ const VIDEO_EF_URL = 'https://test-project.supabase.co/functions/v1/create-video
 const PLAYBACK_EF_URL = 'https://test-project.supabase.co/functions/v1/get-video-playback-url';
 const THUMB_EF_URL = 'https://test-project.supabase.co/functions/v1/get-video-thumbnail-url';
 const TUS_ENDPOINT = 'https://video.bunnycdn.com/tusupload';
+const BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/upload-board';
+const DELETE_BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/delete-board';
+const BOARD_UPLOAD_URL = 'https://storage.test/boards/lesson-1/board-new-1.jpg';
+const BOARD_URL_1 =
+  'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-1.jpg?token=b1';
+const BOARD_URL_2 =
+  'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-2.jpg?token=b2';
 const MB = 1024 * 1024;
+
+function makeBoardSignedUrl(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    board_id: 'board-1',
+    original_name: 'سبورة الدرس.jpg',
+    sort_order: 1,
+    signed_url: BOARD_URL_1,
+    ...overrides,
+  };
+}
 
 interface FakeTusInstance {
   file: unknown;
@@ -701,5 +719,323 @@ describe('LessonAssetsPage — comments moderation', () => {
     expect(
       await screen.findByText('لا توجد تعليقات على هذا الدرس بعد'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('LessonAssetsPage — board section', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    resetMockState();
+    setAuthenticatedWalid();
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows an empty state when the lesson has no boards', async () => {
+    seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+
+    expect(
+      await screen.findByText('لا توجد صور سبورة لهذا الدرس بعد'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('board-upload-input')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'رفع الصورة' })).toBeDisabled();
+  });
+
+  it('shows an error state when the boards query fails', async () => {
+    seedLesson();
+    mockState.queryErrors['lesson_boards'] = 'db unavailable';
+    renderApp('/walid/lessons/lesson-1');
+
+    expect(await screen.findByText('تعذر تحميل صور السبورة')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'إعادة المحاولة' })).toBeInTheDocument();
+  });
+
+  it('renders board cards with images, badges and action buttons', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({ id: 'board-1', original_name: 'سبورة أولى.jpg', sort_order: 1 }),
+      makeBoard({
+        id: 'board-2',
+        original_name: 'سبورة ثانية.jpg',
+        sort_order: 2,
+        is_ready: false,
+      }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({ board_id: 'board-1', original_name: 'سبورة أولى.jpg' }),
+          ],
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+
+    const card1 = await screen.findByTestId('board-card-board-1');
+    expect(within(card1).getByText('سبورة أولى.jpg')).toBeInTheDocument();
+    expect(within(card1).getByText('200 ك.ب')).toBeInTheDocument();
+    expect(within(card1).getByText('جاهز')).toBeInTheDocument();
+    expect(within(card1).getByTestId('board-img-board-1')).toHaveAttribute(
+      'src',
+      BOARD_URL_1,
+    );
+    expect(within(card1).getByTestId('board-img-board-1')).toHaveAttribute(
+      'alt',
+      'سبورة أولى.jpg',
+    );
+    expect(within(card1).getByTestId('board-preview-board-1')).not.toBeDisabled();
+    expect(within(card1).getByTestId('board-delete-board-1')).toBeInTheDocument();
+    expect(within(card1).getByTestId('board-move-up-board-1')).toBeDisabled();
+    expect(within(card1).getByTestId('board-move-down-board-1')).not.toBeDisabled();
+
+    const card2 = await screen.findByTestId('board-card-board-2');
+    expect(within(card2).getByText('سبورة ثانية.jpg')).toBeInTheDocument();
+    expect(within(card2).getByText('قيد الرفع')).toBeInTheDocument();
+    expect(within(card2).getByTestId('board-img-board-2')).not.toHaveAttribute('src');
+    expect(within(card2).getByTestId('board-preview-board-2')).toBeDisabled();
+    expect(within(card2).getByTestId('board-move-up-board-2')).not.toBeDisabled();
+    expect(within(card2).getByTestId('board-move-down-board-2')).toBeDisabled();
+  });
+
+  it('blocks a non-image file client-side without calling fetch', async () => {
+    seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByText('لا توجد صور سبورة لهذا الدرس بعد');
+
+    const badFile = new File(['x'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [badFile] },
+    });
+
+    expect(
+      await screen.findByText('يجب اختيار صورة بصيغة JPG أو PNG أو WebP فقط'),
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks a board image larger than 10 MiB client-side without calling fetch', async () => {
+    seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByText('لا توجد صور سبورة لهذا الدرس بعد');
+
+    const bigFile = new File(['x'], 'huge.png', { type: 'image/png' });
+    Object.defineProperty(bigFile, 'size', { value: 10 * MB + 1 });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [bigFile] },
+    });
+
+    expect(
+      await screen.findByText('حجم الصورة يتجاوز الحد المسموح (10 ميجابايت)'),
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('uploads a board image end-to-end: session EF, PUT bytes, finalize RPC and success toast', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({
+        id: 'board-new-1',
+        lesson_id: 'lesson-1',
+        original_name: 'سبورة جديدة.jpg',
+        is_ready: false,
+      }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-board')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            uploadUrl: BOARD_UPLOAD_URL,
+            board_id: 'board-new-1',
+            storage_path: 'lesson-1/board-new-1.jpg',
+            expires_in: 3600,
+          }),
+        };
+      }
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({
+              board_id: 'board-new-1',
+              original_name: 'سبورة جديدة.jpg',
+              signed_url: BOARD_URL_1,
+            }),
+          ],
+        };
+      }
+      if (target === BOARD_UPLOAD_URL) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-card-board-new-1');
+
+    const imageFile = new File(['fake-jpeg-bytes'], 'سبورة جديدة.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [imageFile] },
+    });
+    expect(screen.getByText(/سبورة جديدة\.jpg —/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('board-upload-button'));
+
+    await waitFor(() => {
+      expect(expectRpcCall('finalize_board_upload')).toEqual({ p_board_id: 'board-new-1' });
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      BOARD_EF_URL,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+        body: JSON.stringify({
+          lesson_id: 'lesson-1',
+          file_name: 'سبورة جديدة.jpg',
+          file_size: 15,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      BOARD_UPLOAD_URL,
+      expect.objectContaining({ method: 'PUT' }),
+    );
+    expect(await screen.findByText('تم رفع الصورة بنجاح')).toBeInTheDocument();
+    const uploadedCard = await screen.findByTestId('board-card-board-new-1');
+    expect(within(uploadedCard).getByText('جاهز')).toBeInTheDocument();
+  });
+
+  it('deletes a board after confirmation and removes it from the list', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({ id: 'board-1', original_name: 'سبورة أولى.jpg', sort_order: 1 }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({ board_id: 'board-1', original_name: 'سبورة أولى.jpg' }),
+          ],
+        };
+      }
+      if (target.includes('/functions/v1/delete-board')) {
+        const row = mockState.lessonBoards.find((board) => board.id === 'board-1');
+        if (row) {
+          row.deleted_at = '2026-08-18T00:00:00.000Z';
+        }
+        return { ok: true, status: 200, json: async () => ({ deleted: true }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-card-board-1');
+
+    fireEvent.click(screen.getByTestId('board-delete-board-1'));
+    expect(screen.getByRole('dialog', { name: 'تأكيد حذف الصورة' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'حذف الصورة' }));
+
+    expect(await screen.findByText('تم حذف الصورة')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('board-card-board-1')).not.toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      DELETE_BOARD_EF_URL,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ lesson_id: 'lesson-1', board_id: 'board-1' }),
+      }),
+    );
+  });
+
+  it('reorders boards with the arrow buttons and disables edge buttons', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({ id: 'board-1', original_name: 'سبورة أولى.jpg', sort_order: 1 }),
+      makeBoard({ id: 'board-2', original_name: 'سبورة ثانية.jpg', sort_order: 2 }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({ board_id: 'board-1', original_name: 'سبورة أولى.jpg' }),
+            makeBoardSignedUrl({
+              board_id: 'board-2',
+              original_name: 'سبورة ثانية.jpg',
+              sort_order: 2,
+              signed_url: BOARD_URL_2,
+            }),
+          ],
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-card-board-1');
+    await screen.findByTestId('board-card-board-2');
+
+    expect(screen.getByTestId('board-move-up-board-1')).toBeDisabled();
+    expect(screen.getByTestId('board-move-down-board-2')).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('board-move-up-board-2'));
+
+    await waitFor(() => {
+      expect(expectRpcCall('reorder_boards')).toEqual({
+        p_lesson_id: 'lesson-1',
+        p_board_ids: ['board-2', 'board-1'],
+      });
+    });
+    await waitFor(() => {
+      const cards = screen.getAllByTestId(/^board-card-/);
+      expect(cards[0]).toHaveAttribute('data-testid', 'board-card-board-2');
+      expect(cards[1]).toHaveAttribute('data-testid', 'board-card-board-1');
+    });
+  });
+
+  it('opens a preview modal showing the full image', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({ id: 'board-1', original_name: 'سبورة أولى.jpg', sort_order: 1 }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({ board_id: 'board-1', original_name: 'سبورة أولى.jpg' }),
+          ],
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-card-board-1');
+
+    fireEvent.click(screen.getByTestId('board-preview-board-1'));
+
+    expect(await screen.findByRole('dialog', { name: 'معاينة الصورة' })).toBeInTheDocument();
+    const modalContent = screen.getByTestId('board-preview-modal');
+    expect(within(modalContent).getByRole('img')).toHaveAttribute('src', BOARD_URL_1);
+    expect(within(modalContent).getByRole('img')).toHaveAttribute('alt', 'سبورة أولى.jpg');
   });
 });

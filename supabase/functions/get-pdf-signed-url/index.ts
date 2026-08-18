@@ -1,11 +1,11 @@
 // =====================================================================
-// get-pdf-signed-url â€” Phase 6 | Edge Function | Function 4
-// ARCHITECTURE.md آ§8.4 row 4 / BLUEPRINT.md آ§14 row 4 / SECURITY.md آ§7.
+// get-pdf-signed-url — Phase 6 | Edge Function | Function 4
+// ARCHITECTURE.md §8.4 row 4 / BLUEPRINT.md §14 row 4 / SECURITY.md §7.
 // POST + JWT (config.toml: [functions.get-pdf-signed-url] verify_jwt =
-// true). STUDENT-ONLY (S7): staff previews are out of scope for PDFs â€”
+// true). STUDENT-ONLY (S7): staff previews are out of scope for PDFs —
 // this EF serves the student lesson page's PDF viewer.
 //
-// Accepts `lesson_id` ONLY (client never passes a storage path â€” MED-7);
+// Accepts `lesson_id` ONLY (client never passes a storage path — MED-7);
 // the server resolves the PRIMARY READY pdf of the lesson:
 //
 //   POST { "lesson_id": "<uuid>" }
@@ -14,12 +14,12 @@
 // `pdf_url` is a Supabase Storage short-lived signed URL (service-role
 // `createSignedUrl`, TTL 15 minutes) on the PRIVATE `pdfs` bucket
 // (0011_storage_and_seeds.sql: private, no anon/authenticated object
-// policies â€” content only ever leaves via this EF).
+// policies — content only ever leaves via this EF).
 //
 // Access control (student-facing only):
-//   * STUDENT: lesson must be reachable â€” lesson published, unit
+//   * STUDENT: lesson must be reachable — lesson published, unit
 //     published, own live grade, grade active AND not soft-deleted (B8),
-//     lesson not soft-deleted â€” and the student needs access to THIS
+//     lesson not soft-deleted — and the student needs access to THIS
 //     lesson: a lifetime unit purchase OR an active trial lesson
 //     (public.get_my_lesson_access, 0028; replaces the old A33 access
 //     gate). The gate is evaluated by calling the RPC
@@ -31,7 +31,7 @@
 //
 // The primary ready PDF lookup is RLS-scoped as well: the lesson_pdfs
 // SELECT policy (0009) lets students see only the READY PRIMARY row of an
-// accessible lesson â€” the same filter is applied explicitly here
+// accessible lesson — the same filter is applied explicitly here
 // (is_primary + is_ready + not deleted), so exactly one candidate is
 // resolved.
 //

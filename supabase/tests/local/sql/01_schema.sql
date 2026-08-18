@@ -1,25 +1,26 @@
 -- =====================================================================
 -- 01_schema.sql — schema & constraint assertions
--- Covers IMPLEMENTATION-PLAN.md section 6.1: 18 tables (17 + lesson_comments
--- from 0030), 8 enums, columns, CHECK / UNIQUE / partial-unique / FK
--- rules, RLS enabled + FORCEd, 5 views (SECURITY INVOKER), trigger
--- inventory, storage buckets, B1 ownership, B2 notification grants.
+-- Covers IMPLEMENTATION-PLAN.md section 6.1: 19 tables (18 + lesson_comments
+-- from 0030 + lesson_boards from 0036), 8 enums, columns, CHECK / UNIQUE /
+-- partial-unique / FK rules, RLS enabled + FORCEd, 5 views (SECURITY
+-- INVOKER), trigger inventory, storage buckets, B1 ownership, B2
+-- notification grants.
 -- The four subscription tables (pricing_plans / subscriptions /
 -- subscription_codes / code_redemptions) and the subscription_status
 -- enum must NOT exist after 0028.
 -- =====================================================================
 
--- --- 18 application tables exist -------------------------------------
+-- --- 19 application tables exist -------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 18 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 19 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relname IN ('profiles','grades','units','lessons',
                          'lesson_videos','lesson_pdfs','progress','notifications',
                          'audit_logs','app_settings',
                          'unit_pricing','unit_codes','unit_purchases',
                          'exams','exam_questions','exam_attempts','exam_answers',
-                         'lesson_comments')),
-    'all 18 application tables exist (17 + lesson_comments)');
+                         'lesson_comments','lesson_boards')),
+    'all 19 application tables exist (18 + lesson_comments + lesson_boards)');
 
 -- --- the four legacy subscription tables are GONE ---------------------
 SELECT tests.assert(
@@ -94,13 +95,13 @@ SELECT tests.assert(
     (SELECT to_regtype('public.subscription_status') IS NULL),
     'subscription_status enum does NOT exist (0028 step 13)');
 
--- --- RLS enabled + FORCEd on all 18 tables ----------------------------
+-- --- RLS enabled + FORCEd on all 19 tables ----------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 18
+    (SELECT count(*) = 19
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relrowsecurity AND c.relforcerowsecurity),
-    'RLS enabled AND forced on all 18 tables');
+    'RLS enabled AND forced on all 19 tables');
 
 -- --- expected columns present ----------------------------------------
 SELECT tests.assert(
@@ -380,16 +381,16 @@ SELECT tests.assert(
     'block_sign_in_for_inactive_accounts trigger on auth.users');
 
 SELECT tests.assert(
-    (SELECT count(*) = 11 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 12 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'set_updated_at'
-       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','progress','app_settings','unit_pricing','unit_codes','exams')),
-    'set_updated_at on the 11 documented tables (0028 list + exams 0029)');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','progress','app_settings','unit_pricing','unit_codes','exams','lesson_boards')),
+    'set_updated_at on the 12 documented tables (0028 list + exams 0029 + lesson_boards 0036)');
 
 SELECT tests.assert(
-    (SELECT count(*) = 12 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 13 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'audit_trigger'
-       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments')),
-    'audit_trigger on the exact 12-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030)');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments','lesson_boards')),
+    'audit_trigger on the exact 13-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030 + lesson_boards 0036)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
@@ -402,8 +403,8 @@ SELECT tests.assert(
 
 -- --- Storage buckets: private ----------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 2 FROM storage.buckets WHERE id IN ('pdfs','audit-exports') AND NOT public),
-    'pdfs and audit-exports buckets exist and are private');
+    (SELECT count(*) = 3 FROM storage.buckets WHERE id IN ('pdfs','audit-exports','boards') AND NOT public),
+    'pdfs, audit-exports and boards buckets exist and are private');
 
 -- --- B1: SECURITY DEFINER ownership -----------------------------------
 SELECT tests.assert(

@@ -9,7 +9,7 @@ import { Input } from '../../components/Input';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import { StatusBadge } from '../../components/StatusBadge';
 import {
   Table,
@@ -139,7 +139,7 @@ export function StudentListPage() {
       title="إدارة الطلاب"
       subtitle="قائمة الطلاب المسجلين في المنصة"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
       actions={
         <Link
           to="/walid/students/trash"

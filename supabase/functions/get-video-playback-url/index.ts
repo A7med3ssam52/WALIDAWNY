@@ -1,7 +1,7 @@
 // =====================================================================
-// get-video-playback-url â€” Phase 5 | Edge Function | Function 3
-// ARCHITECTURE.md آ§8.4 row 3 / آ§7.2 (Bunny video pipeline) / SECURITY.md
-// آ§7 (EF security model). GET/HEAD, JWT-verified (config.toml:
+// get-video-playback-url — Phase 5 | Edge Function | Function 3
+// ARCHITECTURE.md §8.4 row 3 / §7.2 (Bunny video pipeline) / SECURITY.md
+// §7 (EF security model). GET/HEAD, JWT-verified (config.toml:
 // [functions.get-video-playback-url] verify_jwt = true).
 //
 // Returns a short-lived signed HLS master playlist URL for a lesson's
@@ -15,7 +15,7 @@
 // The token is an Advanced (HS256) DIRECTORY token for `/<videoId>/`
 // (message = tokenPath + expires + clientIpBytes + "token_path=" + raw
 // tokenPath), IP-locked to the CALLER's address and valid for 20 minutes
-// by default â€” players request every HLS segment under that directory
+// by default — players request every HLS segment under that directory
 // during playback, so a directory token is required (a file token would
 // 403 the segments). This exact formula was verified against the real
 // pull zone by scripts/smoke-bunny.mjs (Token IP Validation is enabled
@@ -29,15 +29,15 @@
 // request fails with client_ip_unavailable (a URL signed without the IP
 // lock would be rejected by the zone anyway).
 //
-// Access control (mirrors public.can_access_lesson, 0003 â€” the single
+// Access control (mirrors public.can_access_lesson, 0003 — the single
 // content-access gate; SECURITY.md section 4):
 //   * STAFF (admin/mr_walid): may preview any lesson's video (the phase
-//     brief binds this to the staff QA preview â€” SECURITY.md row B5).
+//     brief binds this to the staff QA preview — SECURITY.md row B5).
 //     Missing lesson -> lesson_not_found (404); soft-deleted lesson ->
 //     lesson_deleted (422).
-//   * STUDENT: the lesson must be reachable â€” lesson published, unit
+//   * STUDENT: the lesson must be reachable — lesson published, unit
 //     published, own live grade, grade active AND not soft-deleted (B8),
-//     lesson not soft-deleted â€” and the student needs access to THIS
+//     lesson not soft-deleted — and the student needs access to THIS
 //     lesson: a lifetime unit purchase OR an active trial lesson
 //     (public.get_my_lesson_access, 0028; replaces the old time-limited
 //     gate). The gate is evaluated by calling the RPC
@@ -47,7 +47,7 @@
 //
 // The primary ready video lookup is RLS-scoped as well: the
 // lesson_videos SELECT policy (0009) lets staff see all rows and
-// students only the READY PRIMARY row of an accessible lesson â€” the
+// students only the READY PRIMARY row of an accessible lesson — the
 // same filter is applied explicitly here (is_primary + ready +
 // not deleted) so BOTH roles resolve exactly one candidate.
 //
@@ -183,7 +183,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   }
 
   // Request-scoped client: anon key in the key slot, caller JWT in
-  // Authorization. Never a service-role client â€” see header.
+  // Authorization. Never a service-role client — see header.
   const client = deps.makeClient(deps.url, jwt);
   const {
     data: { user },

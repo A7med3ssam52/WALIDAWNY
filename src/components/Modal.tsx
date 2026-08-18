@@ -34,6 +34,11 @@ export function Modal({
   const titleId = useRef<string>('').current || 'modal-title';
   const descriptionId = useRef<string>('').current || 'modal-description';
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const onCancelRef = useRef(onCancel);
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  });
 
   useEffect(() => {
     if (!open) {
@@ -51,7 +56,7 @@ export function Modal({
       if (event.key === 'Escape') {
         event.preventDefault();
         if (!loading) {
-          onCancel();
+          onCancelRef.current();
         }
         return;
       }
@@ -81,7 +86,7 @@ export function Modal({
       document.body.style.overflow = '';
       previouslyFocused.current?.focus();
     };
-  }, [open, loading, onCancel]);
+  }, [open, loading]);
 
   if (!open) {
     return null;

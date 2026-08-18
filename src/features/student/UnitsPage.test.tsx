@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -31,16 +31,17 @@ describe('UnitsPage', () => {
     mockState.unitPurchases.push(makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1' }));
   });
 
-  it('shows only published units with the purchased section and open link', async () => {
+it('shows only published units with the purchased section and open link', async () => {
     renderApp('/student/units');
 
-    expect(await screen.findByRole('heading', { name: 'وحداتي' })).toBeInTheDocument();
+    // PageHeader title is the main heading (h1), LayoutShell title is also h1
+    const headings = await screen.findAllByRole('heading', { name: 'وحداتي', level: 1 });
+    expect(headings.length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
-    expect(screen.getByText('مدفوعة')).toBeInTheDocument();
-    expect(screen.getByTestId('open-unit-unit-1')).toHaveAttribute(
-      'href',
-      '/student/curriculum?unit=unit-1',
-    );
+    // Badge text for purchased units is "مملوكة"
+    expect(await screen.findByText('مملوكة')).toBeInTheDocument();
+    // UnitCard uses onAction handler, not a link with testid
+    expect(screen.getByRole('button', { name: 'افتح الوحدة' })).toBeInTheDocument();
     expect(screen.queryByText('الوحدة المخفية')).not.toBeInTheDocument();
   });
 
@@ -54,6 +55,17 @@ describe('UnitsPage', () => {
     );
   });
 
+  it('shows locked units without pricing with a warning message', async () => {
+    mockState.units.push(makeUnit({ id: 'unit-no-price', grade_id: 'grade-1', name: 'الوحدة بلا سعر', status: 'published' }));
+    renderApp('/student/units');
+
+    const noPriceText = await screen.findByText('الوحدة بلا سعر');
+    const noPriceCard = noPriceText.closest('.glass-card') as HTMLElement;
+    expect(noPriceCard).toBeInTheDocument();
+    expect(within(noPriceCard).getByText('تواصل مع الإدارة لمعرفة السعر وتفعيل الوحدة')).toBeInTheDocument();
+    expect(within(noPriceCard).queryByRole('link', { name: 'تواصل لتفعيل الوحدة' })).not.toBeInTheDocument();
+  });
+
   it('activates a unit after redeeming a valid code', async () => {
     mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-2' }));
     renderApp('/student/units');
@@ -65,10 +77,11 @@ describe('UnitsPage', () => {
 
     expect(expectRpcCall('redeem_unit_code')).toEqual({ p_code: 'WLDN-ABCD-EFGH-JKLM' });
     expect(await screen.findByText('تم تفعيل الوحدة بنجاح')).toBeInTheDocument();
-    expect(await screen.findByTestId('open-unit-unit-2')).toHaveAttribute(
-      'href',
-      '/student/curriculum?unit=unit-2',
-    );
+    // After activation, unit-2 becomes purchased and shows "افتح الوحدة" button
+    // Check that unit-2 now has an open button (by finding the button near unit-2 text)
+    const unit2Text = await screen.findByText('الوحدة الثانية');
+    const unit2Card = unit2Text.closest('.glass-card') as HTMLElement;
+    expect(within(unit2Card).getByRole('button', { name: 'افتح الوحدة' })).toBeInTheDocument();
   });
 
   it('shows a clear error when redeeming an invalid code', async () => {
@@ -80,6 +93,70 @@ describe('UnitsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
 
     expect(await screen.findByText('الكود غير صالح')).toBeInTheDocument();
+  });
+
+  it('rejects redeeming a code for a draft unit', async () => {
+    mockState.unitPricing.push(
+      makeUnitPricing({ id: 'pricing-draft', unit_id: 'unit-draft' }),
+    );
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-draft', unit_id: 'unit-draft' }));
+    renderApp('/student/units');
+
+    fireEvent.change(await screen.findByLabelText('كود التفعيل'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
+
+    expect(await screen.findByText('هذه الوحدة غير متاحة حاليًا')).toBeInTheDocument();
+  });
+
+  it('rejects redeeming a code for a unit outside the student grade', async () => {
+    mockState.units.push(
+      makeUnit({ id: 'unit-3', grade_id: 'grade-2', name: 'وحدة صف آخر', status: 'published' }),
+    );
+    mockState.unitPricing.push(
+      makeUnitPricing({ id: 'pricing-3', unit_id: 'unit-3' }),
+    );
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-3', unit_id: 'unit-3' }));
+    renderApp('/student/units');
+
+    fireEvent.change(await screen.findByLabelText('كود التفعيل'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
+
+    expect(await screen.findByText('هذه الوحدة ليست ضمن صفك الدراسي')).toBeInTheDocument();
+  });
+
+  it('rejects redeeming a code for an already purchased unit', async () => {
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-1' }));
+    renderApp('/student/units');
+
+    fireEvent.change(await screen.findByLabelText('كود التفعيل'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
+
+    expect(await screen.findByText('لقد قمت بتفعيل هذه الوحدة بالفعل')).toBeInTheDocument();
+  });
+
+  it('rejects redeeming when the student account is disabled', async () => {
+    mockState.profiles.forEach((profile) => {
+      if (profile.id === 'user-test-1') {
+        profile.status = 'disabled';
+      }
+    });
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-2' }));
+    renderApp('/student/units');
+
+    fireEvent.change(await screen.findByLabelText('كود التفعيل'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
+
+    expect(
+      await screen.findByText('ليست لديك صلاحية للتفعيل — تأكد من تفعيل حسابك'),
+    ).toBeInTheDocument();
   });
 
   it('prompts to set the grade when the student has no grade', async () => {

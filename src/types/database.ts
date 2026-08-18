@@ -81,6 +81,20 @@ export type LessonPdf = {
   updated_at: string;
 };
 
+export type LessonBoard = {
+  id: string;
+  lesson_id: string;
+  storage_path: string;
+  original_name: string;
+  size_bytes: number | null;
+  mime_type: string;
+  sort_order: number;
+  is_ready: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type VideoStatus =
   'pending_upload' | 'uploading' | 'processing' | 'ready' | 'failed' | 'replaced';
 
@@ -300,6 +314,13 @@ export interface PdfAccessResponse {
   original_name: string | null;
 }
 
+export type LessonBoardSignedUrl = {
+  board_id: string;
+  original_name: string;
+  sort_order: number;
+  signed_url: string;
+};
+
 export type AuditLogRow = {
   id: string;
   actor_id: string | null;
@@ -414,6 +435,12 @@ export interface Database {
         Row: LessonPdf;
         Insert: LessonPdf;
         Update: Partial<LessonPdf>;
+        Relationships: [];
+      };
+      lesson_boards: {
+        Row: LessonBoard;
+        Insert: LessonBoard;
+        Update: Partial<LessonBoard>;
         Relationships: [];
       };
       lesson_videos: {
@@ -556,6 +583,8 @@ export interface Database {
       };
       delete_unit: { Args: { p_unit_id: string }; Returns: void };
       restore_unit: { Args: { p_unit_id: string }; Returns: void };
+      publish_unit: { Args: { p_unit_id: string }; Returns: void };
+      hide_unit: { Args: { p_unit_id: string }; Returns: void };
       create_lesson: {
         Args: {
           p_unit_id: string;
@@ -581,6 +610,23 @@ export interface Database {
       soft_delete_lesson: { Args: { p_lesson_id: string }; Returns: void };
       restore_lesson: { Args: { p_lesson_id: string }; Returns: void };
       finalize_pdf_upload: { Args: { p_pdf_id: string }; Returns: void };
+      create_board_upload_record: {
+        Args: {
+          p_lesson_id: string;
+          p_original_name: string;
+          p_size_bytes?: number | null;
+        };
+        Returns: Array<{ id: string; storage_path: string }>;
+      };
+      finalize_board_upload: { Args: { p_board_id: string }; Returns: void };
+      delete_board_upload_record: {
+        Args: { p_lesson_id: string; p_board_id: string };
+        Returns: void;
+      };
+      reorder_boards: {
+        Args: { p_lesson_id: string; p_board_ids: string[] };
+        Returns: void;
+      };
       update_grade: {
         Args: { p_grade_id: string; p_name?: string | null; p_sort_order?: number | null };
         Returns: void;

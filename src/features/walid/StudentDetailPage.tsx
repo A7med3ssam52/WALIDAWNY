@@ -11,7 +11,7 @@ import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import { PurchaseBadge, StatusBadge } from '../../components/StatusBadge';
 import { useToast } from '../../components/Toast';
 import {
@@ -243,7 +243,7 @@ export function StudentDetailPage() {
       title={student.full_name}
       subtitle={`بيانات الطالب - ${student.phone}`}
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
       actions={
         <Link
           to="/walid/students"

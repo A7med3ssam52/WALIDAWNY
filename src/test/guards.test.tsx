@@ -188,7 +188,9 @@ describe('route guards', () => {
     renderApp('/student/units');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'وحداتي' })).toBeInTheDocument();
+      // PageHeader renders its own h1 in addition to the LayoutShell h1
+      const headings = screen.getAllByRole('heading', { name: 'وحداتي' });
+      expect(headings.length).toBeGreaterThanOrEqual(1);
     });
   });
 

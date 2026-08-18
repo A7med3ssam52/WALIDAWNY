@@ -352,6 +352,86 @@ SELECT tests.expect_error(
 RESET ROLE;
 RESET "app.current_user_id";
 
+-- =====================================================================
+-- Section 4b: publish_unit / hide_unit (0038) - the unit status lever
+-- Regression: create_unit never publishes and NO RPC could change
+-- units.status (only lessons had publish/hide), so every real unit
+-- stayed 'draft' and every code redemption failed with unit_inactive
+-- even though the unit was ready. These tests prove the new staff RPCs
+-- flip the redeem gate for the hidden-but-ready TEST-U1H2 unit.
+-- =====================================================================
+-- non-staff guard: students cannot publish
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.publish_unit(''30000000-0000-0000-0000-00000000000d'')',
+    'P0001', 'access_denied');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- unknown unit ids raise unit_not_found for both functions
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
+SET LOCAL ROLE admin;
+SELECT tests.expect_error(
+    'SELECT public.publish_unit(''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'')',
+    'P0001', 'unit_not_found');
+SELECT tests.expect_error(
+    'SELECT public.hide_unit(''aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'')',
+    'P0001', 'unit_not_found');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- teacher (T) publishes the hidden unit with active pricing
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
+SET LOCAL ROLE authenticated;
+SELECT tests.expect_rows(
+    'SELECT public.publish_unit(''30000000-0000-0000-0000-00000000000d'')',
+    1, 'unit-publish: teacher publishes TEST-U1H2');
+SELECT tests.assert(
+    (SELECT status = 'published' FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000d'),
+    'unit-publish: units.status flipped to published');
+RESET ROLE;
+RESET "app.current_user_id";
+-- audit_logs SELECT is admin-only (0009 FORCE RLS): read as the session superuser
+SELECT tests.assert(
+    (SELECT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'unit.publish' AND entity_id = '30000000-0000-0000-0000-00000000000d')),
+    'unit-publish: audit_log row written');
+
+-- G (g1, no purchase) redeems the previously-blocked code: the
+-- unit_inactive error is gone once the unit is published
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000007';
+SET LOCAL ROLE student;
+SELECT tests.assert(
+    (SELECT public.redeem_unit_code('WLDN-HIDDENU1') IS NOT NULL),
+    'unit-publish: redemption succeeds after publish (unit_inactive fixed)');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- hide again (mr_walid): a fresh available code is blocked once more
+INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
+VALUES ('90000000-0000-0000-0000-00000000000b', 'WLDN-HIDDENU2', '20000000-0000-0000-0000-000000000005', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
+ON CONFLICT (code) DO UPDATE SET status = 'available', used_at = NULL, used_by = NULL, revoked_at = NULL, revoked_by = NULL;
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
+SET LOCAL ROLE mr_walid;
+SELECT tests.expect_rows(
+    'SELECT public.hide_unit(''30000000-0000-0000-0000-00000000000d'')',
+    1, 'unit-hide: mr_walid hides TEST-U1H2');
+RESET ROLE;
+RESET "app.current_user_id";
+-- audit_logs SELECT is admin-only (0009 FORCE RLS): read as the session superuser
+SELECT tests.assert(
+    (SELECT EXISTS (SELECT 1 FROM public.audit_logs WHERE action = 'unit.hide' AND entity_id = '30000000-0000-0000-0000-00000000000d')),
+    'unit-hide: audit_log row written');
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000008';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.redeem_unit_code(''WLDN-HIDDENU2'')',
+    'P0001', 'unit_inactive');
+RESET ROLE;
+RESET "app.current_user_id";
+
 -- A: own active purchase of u1 blocks redemption (fresh available code)
 INSERT INTO public.unit_codes (id, code, unit_pricing_id, status, created_by, created_at, note)
 VALUES ('90000000-0000-0000-0000-000000000008', 'WLDN-9876543210AB', '20000000-0000-0000-0000-000000000001', 'available', '70000000-0000-0000-0000-00000000000a', now(), 'TEST-FIXTURE')
@@ -446,7 +526,7 @@ ALTER TABLE public.unit_codes ADD CONSTRAINT unit_codes_unit_pricing_id_fkey
 
 -- cleanup of throwaway fixture rows (scratch codes + hidden unit)
 DELETE FROM public.unit_codes WHERE id IN
-    ('90000000-0000-0000-0000-000000000007', '90000000-0000-0000-0000-000000000008', '90000000-0000-0000-0000-000000000009');
+    ('90000000-0000-0000-0000-000000000007', '90000000-0000-0000-0000-000000000008', '90000000-0000-0000-0000-000000000009', '90000000-0000-0000-0000-00000000000b');
 DELETE FROM public.unit_purchases WHERE unit_id = '30000000-0000-0000-0000-00000000000d';
 DELETE FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-00000000000d';
 DELETE FROM public.units WHERE id = '30000000-0000-0000-0000-00000000000d';
@@ -935,9 +1015,13 @@ SELECT tests.assert(
     (SELECT platform_fee = 15.00 AND total_price = 95.00
      FROM public.unit_pricing WHERE unit_id = '30000000-0000-0000-0000-000000000001'),
     'staff: mr_walid fee applied (base 80 + 15)');
+RESET ROLE;
+RESET "app.current_user_id";
+-- audit_logs SELECT is admin-only (0009): read it outside the mr_walid role
 SELECT tests.assert(
     (SELECT EXISTS (SELECT 1 FROM public.audit_logs
-        WHERE action = 'platform_fee.set' AND metadata ->> 'platform_fee' = '15')),
+        WHERE action = 'platform_fee.set'
+          AND (metadata ->> 'platform_fee')::numeric = 15)),
     'staff: mr_walid set_platform_fee audited');
 RESET ROLE;
 RESET "app.current_user_id";

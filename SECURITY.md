@@ -166,6 +166,10 @@ Every table: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEVEL 
 - SELECT: `is_admin() OR is_mr_walid() OR (is_student() AND can_access_lesson(lesson_id) AND is_ready AND is_primary)` — students see **only the primary ready PDF** of accessible lessons (MED-7). Direct SELECT returns **metadata only**; content bytes require signed URL
 - INSERT/UPDATE/DELETE: RPC/Edge-Function-only
 
+### `lesson_boards`
+- SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND can_access_lesson(lesson_id) AND is_ready AND deleted_at IS NULL)` — staff see all non-deleted rows; students see only ready, non-deleted boards of accessible lessons (gallery style, no `is_primary`). Direct SELECT returns metadata; image bytes via signed URLs from `get-board-signed-urls`.
+- INSERT/UPDATE/DELETE: RPC/Edge-Function-only. Row-backed INSERT policy on `storage.objects` (`boards_insert_row_backed`) mirrors PDF pattern (0015): `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row.
+
 ### `progress`
 - SELECT: `student_id = auth.uid() OR is_mr_walid() OR is_admin()`
 - INSERT/UPDATE/DELETE: RPC-only (`upsert_progress`); `WITH (NO POLICY)`
@@ -196,6 +200,9 @@ Every table: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEVEL 
 | `upload-pdf` | default | `is_mr_walid() OR is_admin()` + active/not-deleted; MIME/size validation; `createSignedUploadUrl` (I4) |
 | `generate-unit-codes` | default | `is_admin() OR is_mr_walid()` + active/not-deleted; validates pricing (active) + count cap (≤500); calls `create_unit_codes_for_staff()` → `create_unit_codes_internal()` (pgcrypto, unambiguous charset, uppercase — A22) |
 | `export-audit-log` | default | `is_admin()` + active/not-deleted |
+| `upload-board` | default | `is_mr_walid() OR is_admin() OR is_teacher()` + active/not-deleted; MIME/size validation (image/jpeg|png|webp, ≤10 MiB); `createSignedUploadUrl` on `boards` |
+| `delete-board` | default | `is_mr_walid() OR is_admin() OR is_teacher()` + active/not-deleted; storage remove best-effort + `delete_board_upload_record` (soft-delete) |
+| `get-board-signed-urls` | default | **student** → `can_access_lesson()` + active/not-deleted; **mr_walid/admin/teacher** → content-visible check (lesson exists, not soft-deleted), **no purchase/trial requirement** — staff QA preview. Returns signed URLs for all ready, non-deleted boards ordered by sort_order. |
 | `recheck-video-states` | internal endpoint (service role) | `verify_jwt = false` + `x-internal-token` header compared in constant time against `INTERNAL_JOB_TOKEN` — invoked by scheduling chain only |
 
 Common rules:
@@ -226,11 +233,11 @@ All SECURITY DEFINER functions (including trigger functions) MUST be owned by `p
 
 ## 9. Storage Security (BP §3.7, §9)
 
-- Buckets `pdfs` and `audit-exports`: **private**, storage RLS enabled, **no anonymous policies**, authenticated users have **no direct object policies**.
+- Buckets `pdfs`, `audit-exports`, and `boards`: **private**, storage RLS enabled, **no anonymous policies**, authenticated users have **no direct object policies**.
 - Every object operation (upload/read/delete) authorized inside Edge Functions via signed URLs (service role).
-- Upload: staff-only signed **upload** URLs (`createSignedUploadUrl` — I4). Read: student-only signed download URLs after `can_access_lesson`. Export: admin-only signed URLs.
-- Short TTLs: video 20 min; PDF 10–15 min; audit export ~10 min.
-- Path convention for PDFs: `{lesson_id}/{uuid}.pdf`; original filenames sanitized.
+- Upload: staff-only signed **upload** URLs (`createSignedUploadUrl` — I4). Read: student-only signed download URLs after `can_access_lesson`; staff preview bypasses gate for boards. Export: admin-only signed URLs.
+- Short TTLs: video 20 min; PDF 10–15 min; boards 900 s (15 min); audit export ~10 min.
+- Path convention: PDFs `{lesson_id}/{uuid}.pdf`; Boards `{lesson_id}/{uuid}.{ext}` (jpg|jpeg|png|webp); original filenames sanitized.
 
 ---
 

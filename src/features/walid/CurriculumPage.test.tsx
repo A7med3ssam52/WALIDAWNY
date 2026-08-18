@@ -22,9 +22,14 @@ function seedGradeWithUnits() {
   );
 }
 
-async function selectUnit(user: ReturnType<typeof userEvent.setup>, unitId: string) {
+async function openGrade(user: ReturnType<typeof userEvent.setup>, gradeId: string) {
+  const row = await screen.findByTestId(`grade-row-${gradeId}`);
+  await user.click(within(row).getByRole('link', { name: /فتح الوحدات/ }));
+}
+
+async function openUnit(user: ReturnType<typeof userEvent.setup>, unitId: string) {
   const row = await screen.findByTestId(`unit-row-${unitId}`);
-  await user.click(within(row).getByRole('button', { name: 'اختر' }));
+  await user.click(within(row).getByRole('link', { name: /فتح الدروس/ }));
 }
 
 describe('CurriculumPage', () => {
@@ -33,12 +38,48 @@ describe('CurriculumPage', () => {
     setAuthenticatedWalid();
   });
 
-  it('lists grades and the units of the selected grade, with deleted_at null filters on queries', async () => {
+  it('lists active grades on the index with the correct filters', async () => {
+    mockState.grades.push(
+      makeGrade({ id: 'grade-1', name: 'الصف الأول' }),
+      makeGrade({ id: 'grade-2', name: 'الصف الثاني', sort_order: 2 }),
+      makeGrade({ id: 'grade-inactive', name: 'صف موقوف', is_active: false }),
+      makeGrade({ id: 'grade-deleted', name: 'صف محذوف', deleted_at: '2026-02-01T10:00:00.000Z' }),
+    );
+    renderApp('/walid/curriculum');
+
+    expect(await screen.findByTestId('grade-row-grade-1')).toBeInTheDocument();
+    expect(screen.getByTestId('grade-row-grade-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('grade-row-grade-inactive')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('grade-row-grade-deleted')).not.toBeInTheDocument();
+
+    expect(
+      expectQueryFilters('grades').some(
+        (filter) => filter.column === 'deleted_at' && filter.value === null && filter.op === 'is',
+      ),
+    ).toBe(true);
+    expect(expectQueryFilters('grades')).toContainEqual({
+      column: 'is_active',
+      value: true,
+      op: 'eq',
+    });
+  });
+
+  it('shows an empty hint when there are no active grades', async () => {
+    renderApp('/walid/curriculum');
+
+    expect(await screen.findByText('لا توجد صفوف نشطة')).toBeInTheDocument();
+    expect(screen.getByText(/أنشئ صفًا أولاً/)).toBeInTheDocument();
+  });
+
+  it('drills from a grade to its units, filtering soft-deleted ones', async () => {
     seedGradeWithUnits();
     mockState.units.push(
       makeUnit({ id: 'unit-deleted', grade_id: 'grade-1', deleted_at: '2026-02-01T10:00:00.000Z' }),
     );
+    const user = userEvent.setup();
     renderApp('/walid/curriculum');
+
+    await openGrade(user, 'grade-1');
 
     expect(await screen.findByTestId('unit-row-unit-1')).toBeInTheDocument();
     expect(screen.getByTestId('unit-row-unit-2')).toBeInTheDocument();
@@ -56,37 +97,32 @@ describe('CurriculumPage', () => {
     });
   });
 
-  it('shows an empty hint when there are no active grades', async () => {
-    renderApp('/walid/curriculum');
-
-    expect(await screen.findByText('لا توجد صفوف نشطة')).toBeInTheDocument();
-    expect(screen.getByText(/أنشئ صفًا أولاً/)).toBeInTheDocument();
-  });
-
   it('shows empty states for a grade without units and a unit without lessons', async () => {
     mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
     expect(await screen.findByText('لا توجد وحدات بعد')).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('اسم الوحدة'), 'الوحدة الأولى');
     await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+    await user.type(await screen.findByLabelText('اسم الوحدة'), 'الوحدة الأولى');
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
     expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
 
-    await user.click(screen.getByText('الوحدة الأولى'));
+    await openUnit(user, 'unit-created-1');
     expect(await screen.findByText('لا توجد دروس بعد')).toBeInTheDocument();
   });
 
   it('creates a unit and adds it to the list', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
+    await user.click(await screen.findByRole('button', { name: 'إضافة وحدة' }));
     await user.type(await screen.findByLabelText('اسم الوحدة'), 'الوحدة الثالثة');
     await user.clear(screen.getByLabelText('الترتيب'));
     await user.type(screen.getByLabelText('الترتيب'), '3');
-    await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     await waitFor(() => {
       expect(expectRpcCall('create_unit')).toEqual({
@@ -102,11 +138,12 @@ describe('CurriculumPage', () => {
   it('creates a unit with a price and applies it via set_unit_price', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
+    await user.click(await screen.findByRole('button', { name: 'إضافة وحدة' }));
     await user.type(await screen.findByLabelText('اسم الوحدة'), 'الوحدة المسعرة');
     await user.type(screen.getByLabelText('سعر الباب (ج.م — اختياري)'), '150');
-    await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     await waitFor(() => {
       expect(expectRpcCall('set_unit_price')).toEqual({
@@ -117,48 +154,26 @@ describe('CurriculumPage', () => {
     expect(await screen.findByText('تم إنشاء الوحدة بنجاح')).toBeInTheDocument();
   });
 
-  it('creates a trial lesson when the free-lesson checkbox is checked', async () => {
-    seedGradeWithUnits();
-    const user = userEvent.setup();
-    renderApp('/walid/curriculum');
-
-    await selectUnit(user, 'unit-1');
-    await user.type(await screen.findByLabelText('عنوان الدرس'), 'درس مجاني');
-    await user.click(
-      screen.getByLabelText('درس مجاني (تجريبي) — فيديو واحد يُفتح للطلاب بدون شراء لكل باب'),
-    );
-    await user.click(screen.getByRole('button', { name: 'إضافة درس' }));
-
-    await waitFor(() => {
-      expect(expectRpcCall('create_lesson')).toEqual({
-        p_unit_id: 'unit-1',
-        p_title: 'درس مجاني',
-        p_description: null,
-        p_sort_order: 0,
-        p_is_trial: true,
-      });
-    });
-    expect(await screen.findByText('تم إنشاء الدرس بنجاح')).toBeInTheDocument();
-  });
-
   it('rejects an empty unit name without calling the RPC', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
     await user.click(await screen.findByRole('button', { name: 'إضافة وحدة' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     expect(await screen.findByText('اسم الوحدة مطلوب')).toBeInTheDocument();
     expect(expectRpcCall('create_unit')).toBeUndefined();
   });
 
-  it('surfaces a duplicate unit name error as Arabic and keeps the form', async () => {
+  it('surfaces a duplicate unit name error as Arabic and keeps the modal open', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
+    await user.click(await screen.findByRole('button', { name: 'إضافة وحدة' }));
     await user.type(await screen.findByLabelText('اسم الوحدة'), 'الوحدة الأولى');
-    await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     expect(await screen.findByText('يوجد وحدة بنفس الاسم في هذا الصف')).toBeInTheDocument();
     expect(screen.getByLabelText('اسم الوحدة')).toHaveValue('الوحدة الأولى');
@@ -167,7 +182,7 @@ describe('CurriculumPage', () => {
   it('renames a unit through the edit modal', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
     const row = await screen.findByTestId('unit-row-unit-1');
     await user.click(within(row).getByRole('button', { name: 'تعديل' }));
@@ -190,7 +205,7 @@ describe('CurriculumPage', () => {
   it('reorders a unit by editing its sort order in the modal', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
     const row = await screen.findByTestId('unit-row-unit-2');
     await user.click(within(row).getByRole('button', { name: 'تعديل' }));
@@ -211,7 +226,7 @@ describe('CurriculumPage', () => {
   it('soft-deletes a unit with confirmation and lets the staff restore it', async () => {
     seedGradeWithUnits();
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
     const row = await screen.findByTestId('unit-row-unit-1');
     await user.click(within(row).getByRole('button', { name: 'حذف' }));
@@ -239,12 +254,12 @@ describe('CurriculumPage', () => {
     seedGradeWithUnits();
     mockState.lessons.push(makeLesson({ id: 'lesson-1', unit_id: 'unit-1', title: 'الدرس الأول' }));
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1/unit-1');
 
-    await selectUnit(user, 'unit-1');
+    await user.click(await screen.findByRole('button', { name: 'إضافة درس' }));
     await user.type(await screen.findByLabelText('عنوان الدرس'), 'درس جديد');
     await user.type(screen.getByLabelText('الوصف'), 'شرح مبسط');
-    await user.click(screen.getByRole('button', { name: 'إضافة درس' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     await waitFor(() => {
       expect(expectRpcCall('create_lesson')).toEqual({
@@ -259,13 +274,36 @@ describe('CurriculumPage', () => {
     expect(await screen.findByText('درس جديد')).toBeInTheDocument();
   });
 
+  it('creates a trial lesson when the free-lesson checkbox is checked', async () => {
+    seedGradeWithUnits();
+    const user = userEvent.setup();
+    renderApp('/walid/curriculum/grade-1/unit-1');
+
+    await user.click(await screen.findByRole('button', { name: 'إضافة درس' }));
+    await user.type(await screen.findByLabelText('عنوان الدرس'), 'درس مجاني');
+    await user.click(
+      screen.getByLabelText('درس مجاني (تجريبي) — فيديو واحد يُفتح للطلاب بدون شراء لكل باب'),
+    );
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('create_lesson')).toEqual({
+        p_unit_id: 'unit-1',
+        p_title: 'درس مجاني',
+        p_description: null,
+        p_sort_order: 0,
+        p_is_trial: true,
+      });
+    });
+    expect(await screen.findByText('تم إنشاء الدرس بنجاح')).toBeInTheDocument();
+  });
+
   it('edits a lesson through the modal', async () => {
     seedGradeWithUnits();
     mockState.lessons.push(makeLesson({ id: 'lesson-1', unit_id: 'unit-1', title: 'الدرس الأول' }));
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1/unit-1');
 
-    await selectUnit(user, 'unit-1');
     const row = await screen.findByTestId('lesson-row-lesson-1');
     await user.click(within(row).getByRole('button', { name: 'تعديل' }));
     const dialog = screen.getByRole('dialog');
@@ -289,9 +327,8 @@ describe('CurriculumPage', () => {
     seedGradeWithUnits();
     mockState.lessons.push(makeLesson({ id: 'lesson-1', unit_id: 'unit-1', title: 'الدرس الأول' }));
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1/unit-1');
 
-    await selectUnit(user, 'unit-1');
     let row = await screen.findByTestId('lesson-row-lesson-1');
     expect(within(row).getByText('مسودة')).toBeInTheDocument();
 
@@ -314,13 +351,51 @@ describe('CurriculumPage', () => {
     expect(within(row).getByText('مخفي')).toBeInTheDocument();
   });
 
+  it('publishes a draft unit and shows the published badge, then hides it', async () => {
+    seedGradeWithUnits();
+    const user = userEvent.setup();
+    renderApp('/walid/curriculum/grade-1');
+
+    let row = await screen.findByTestId('unit-row-unit-1');
+    expect(within(row).getByText('مسودة')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'نشر' }));
+    await waitFor(() => {
+      expect(expectRpcCall('publish_unit')).toEqual({ p_unit_id: 'unit-1' });
+    });
+    expect(await screen.findByText('تم نشر الوحدة')).toBeInTheDocument();
+
+    row = await screen.findByTestId('unit-row-unit-1');
+    expect(within(row).getByText('منشور')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'إخفاء' }));
+    await waitFor(() => {
+      expect(expectRpcCall('hide_unit')).toEqual({ p_unit_id: 'unit-1' });
+    });
+    expect(await screen.findByText('تم إخفاء الوحدة')).toBeInTheDocument();
+
+    row = await screen.findByTestId('unit-row-unit-1');
+    expect(within(row).getByText('مخفي')).toBeInTheDocument();
+  });
+
+  it('links each lesson to its assets page', async () => {
+    seedGradeWithUnits();
+    mockState.lessons.push(makeLesson({ id: 'lesson-1', unit_id: 'unit-1', title: 'الدرس الأول' }));
+    renderApp('/walid/curriculum/grade-1/unit-1');
+
+    const row = await screen.findByTestId('lesson-row-lesson-1');
+    expect(within(row).getByRole('link', { name: /الملفات/ })).toHaveAttribute(
+      'href',
+      '/walid/lessons/lesson-1',
+    );
+  });
+
   it('soft-deletes a lesson with confirmation and restores it from the deleted section', async () => {
     seedGradeWithUnits();
     mockState.lessons.push(makeLesson({ id: 'lesson-1', unit_id: 'unit-1', title: 'الدرس الأول' }));
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1/unit-1');
 
-    await selectUnit(user, 'unit-1');
     const row = await screen.findByTestId('lesson-row-lesson-1');
     await user.click(within(row).getByRole('button', { name: 'حذف' }));
     const dialog = screen.getByRole('dialog');
@@ -332,7 +407,7 @@ describe('CurriculumPage', () => {
     });
     expect(screen.queryByTestId('lesson-row-lesson-1')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'عرض المحذوفة (1)' }));
+    await user.click(screen.getByRole('button', { name: /عرض المحذوفة/ }));
     const deletedRow = await screen.findByTestId('deleted-lesson-row-lesson-1');
     await user.click(within(deletedRow).getByRole('button', { name: 'استعادة' }));
 
@@ -353,10 +428,7 @@ describe('CurriculumPage', () => {
         deleted_at: '2026-02-01T10:00:00.000Z',
       }),
     );
-    const user = userEvent.setup();
-    renderApp('/walid/curriculum');
-
-    await selectUnit(user, 'unit-1');
+    renderApp('/walid/curriculum/grade-1/unit-1');
 
     expect(await screen.findByTestId('lesson-row-lesson-1')).toBeInTheDocument();
     expect(screen.queryByTestId('lesson-row-lesson-deleted')).not.toBeInTheDocument();
@@ -371,10 +443,11 @@ describe('CurriculumPage', () => {
     seedGradeWithUnits();
     mockState.rpcErrors['create_unit'] = 'access_denied';
     const user = userEvent.setup();
-    renderApp('/walid/curriculum');
+    renderApp('/walid/curriculum/grade-1');
 
+    await user.click(await screen.findByRole('button', { name: 'إضافة وحدة' }));
     await user.type(await screen.findByLabelText('اسم الوحدة'), 'وحدة ممنوعة');
-    await user.click(screen.getByRole('button', { name: 'إضافة وحدة' }));
+    await user.click(screen.getByRole('button', { name: 'إضافة' }));
 
     expect(await screen.findByText('ليست لديك صلاحية')).toBeInTheDocument();
   });

@@ -10,7 +10,7 @@ import { Input } from '../../components/Input';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import {
   Table,
   TableBody,
@@ -170,7 +170,7 @@ export function GradesPage() {
       title="إدارة الصفوف"
       subtitle="أنشئ الصفوف وأعد ترتيبها وأدر حالتها"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
     >
       <div className="flex flex-col gap-4">
         <Card title="إضافة صف جديد">

@@ -14,8 +14,8 @@ import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
+import { RoleNav } from '../../components/RoleNav';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
 import { StatCard } from '../../components/StatCard';
 import {
   Table,
@@ -33,9 +33,7 @@ function SectionCard({ title, children }: { title: string; children: ReactNode }
   return <Card title={title}>{children}</Card>;
 }
 
-const emptyTable = (
-  <EmptyState title="لا توجد بيانات بعد" className="glass-soft border-0" />
-);
+const emptyTable = <EmptyState title="لا توجد بيانات بعد" className="glass-soft border-0" />;
 
 function StatCardSkeleton() {
   return (
@@ -79,7 +77,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
       title="لوحة المعلومات"
       subtitle="نظرة عامة على الطلاب والمشتريات والمحتوى"
       variant="sidebar"
-      nav={nav ?? <StaffNav />}
+      nav={nav ?? <RoleNav />}
     >
       {error ? <ErrorState message="تعذر تحميل بيانات اللوحة" onRetry={() => void load()} /> : null}
       {!stats && !error ? (
@@ -99,54 +97,50 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="الطلاب"
+              title="الطلاب"
               value={String(stats.students.total)}
-              hint={`جدد هذا الشهر: ${stats.students.new_this_month}`}
               icon={<Users className="h-5 w-5" />}
+              variant="info"
             />
             <StatCard
-              label="وحدات مباعة"
+              title="وحدات مباعة"
               value={String(stats.purchases.total)}
-              tone="success"
               icon={<BadgeCheck className="h-5 w-5" />}
+              variant="success"
             />
             <StatCard
-              label="إيرادات هذا الشهر"
+              title="إيرادات هذا الشهر"
               value={formatPrice(stats.purchases.revenue_this_month)}
-              tone="success"
               icon={<Wallet className="h-5 w-5" />}
+              variant="success"
             />
             <StatCard
-              label="إجمالي الإيرادات"
+              title="إجمالي الإيرادات"
               value={formatPrice(stats.purchases.total_revenue)}
-              tone="success"
               icon={<Wallet className="h-5 w-5" />}
+              variant="success"
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="دروس منشورة"
+              title="دروس منشورة"
               value={String(stats.content.published_lessons)}
-              hint={`من أصل ${stats.content.lessons} درس`}
               icon={<BookOpen className="h-5 w-5" />}
             />
             <StatCard
-              label="فيديوهات جاهزة"
+              title="فيديوهات جاهزة"
               value={String(stats.content.videos_ready)}
-              hint={`من أصل ${stats.content.videos} فيديو`}
               icon={<Video className="h-5 w-5" />}
             />
             <StatCard
-              label="ملفات PDF جاهزة"
+              title="ملفات PDF جاهزة"
               value={String(stats.content.pdfs_ready)}
-              hint={`من أصل ${stats.content.pdfs} ملف`}
               icon={<FileText className="h-5 w-5" />}
             />
             <StatCard
-              label="دروس مكتملة"
+              title="دروس مكتملة"
               value={String(stats.engagement.completed_lessons)}
-              hint={`مشاركة: ${stats.engagement.students_with_progress} طالب`}
               icon={<Trophy className="h-5 w-5" />}
             />
           </div>

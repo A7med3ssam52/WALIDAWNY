@@ -16,6 +16,7 @@ interface MockState {
   units: AnyRecord[];
   lessons: AnyRecord[];
   lessonPdfs: AnyRecord[];
+  lessonBoards: AnyRecord[];
   lessonVideos: AnyRecord[];
   unitPricing: AnyRecord[];
   platformFee: number;
@@ -67,6 +68,7 @@ const state: MockState = {
   units: [],
   lessons: [],
   lessonPdfs: [],
+  lessonBoards: [],
   lessonVideos: [],
   unitPricing: [],
   platformFee: 0,
@@ -191,6 +193,23 @@ export function makePdf(overrides: Partial<AnyRecord> = {}): AnyRecord {
     size_bytes: 204_800,
     mime_type: 'application/pdf',
     is_primary: true,
+    is_ready: true,
+    deleted_at: null,
+    created_at: '2026-01-01T10:00:00.000Z',
+    updated_at: '2026-01-01T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+export function makeBoard(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  return {
+    id: 'board-1',
+    lesson_id: 'lesson-1',
+    storage_path: 'lesson-1/board-1.jpg',
+    original_name: 'سبورة الدرس.jpg',
+    size_bytes: 204_800,
+    mime_type: 'image/jpeg',
+    sort_order: 1,
     is_ready: true,
     deleted_at: null,
     created_at: '2026-01-01T10:00:00.000Z',
@@ -481,6 +500,9 @@ function tableRows(table: string): AnyRecord[] {
   }
   if (table === 'lesson_pdfs') {
     return state.lessonPdfs;
+  }
+  if (table === 'lesson_boards') {
+    return state.lessonBoards;
   }
   if (table === 'lesson_videos') {
     return state.lessonVideos;
@@ -882,6 +904,22 @@ function createMockClient() {
       unit.updated_at = nowIso();
       return { data: null, error: null };
     }
+    if (fn === 'publish_unit') {
+      if (!unit) {
+        return error('unit_not_found');
+      }
+      unit.status = 'published';
+      unit.updated_at = nowIso();
+      return { data: null, error: null };
+    }
+    if (fn === 'hide_unit') {
+      if (!unit) {
+        return error('unit_not_found');
+      }
+      unit.status = 'hidden';
+      unit.updated_at = nowIso();
+      return { data: null, error: null };
+    }
     if (fn === 'create_lesson') {
       const title = String(args?.p_title ?? '').trim();
       if (!title) {
@@ -1075,6 +1113,10 @@ function createMockClient() {
     if (fn === 'get_public_unit_prices') {
       const rows = state.unitPricing
         .filter((item) => item.is_active !== false)
+        .filter((item) => {
+          const unit = state.units.find((candidate) => candidate.id === item.unit_id);
+          return unit && unit.status === 'published' && unit.deleted_at === null;
+        })
         .map(enrichUnitPricing);
       return { data: rows, error: null };
     }
@@ -1090,38 +1132,58 @@ function createMockClient() {
       return { data: rows, error: null };
     }
     if (fn === 'redeem_unit_code') {
+      const uid = currentUserId();
+      const student = state.profiles.find((item) => item.id === uid);
+      const isActiveStudent =
+        student?.role === 'student' &&
+        student?.status === 'active' &&
+        student?.deleted_at === null;
+      if (!isActiveStudent) {
+        return error('access_denied');
+      }
       const code = String(args?.p_code ?? '')
         .trim()
         .toUpperCase();
+      if (!code) {
+        return error('code_not_found');
+      }
       const codeRow = state.unitCodes.find((item) => item.code === code);
       if (!codeRow) {
         return error('code_not_found');
       }
-      if (codeRow.status === 'used') {
-        return error('code_already_used');
+      const pricing = state.unitPricing.find((item) => item.unit_id === codeRow.unit_id);
+      if (!pricing) {
+        return error('unit_not_found');
+      }
+      if (pricing.is_active === false) {
+        return error('unit_inactive');
+      }
+      const unit = state.units.find((item) => item.id === codeRow.unit_id);
+      if (!unit || unit.deleted_at !== null || unit.status !== 'published') {
+        return error('unit_inactive');
       }
       if (codeRow.status === 'revoked') {
         return error('code_revoked');
       }
-      const unit = state.units.find((item) => item.id === codeRow.unit_id);
-      if (!unit) {
-        return error('unit_not_found');
+      if (codeRow.status === 'used') {
+        return error('code_already_used');
       }
-      const pricing = state.unitPricing.find((item) => item.unit_id === codeRow.unit_id);
-      if (!pricing || pricing.is_active === false) {
-        return error('unit_inactive');
-      }
-      const student = state.profiles.find((item) => item.id === uid);
       const gradeId = student?.grade_id as string | undefined;
       if (!gradeId) {
         return error('no_grade_assigned');
       }
+      if (unit.grade_id !== gradeId) {
+        return error('unit_not_in_student_grade');
+      }
       if (
         state.unitPurchases.some(
-          (item) => item.student_id === uid && item.unit_id === codeRow.unit_id,
+          (item) =>
+            item.student_id === uid &&
+            item.unit_id === codeRow.unit_id &&
+            item.status === 'active',
         )
       ) {
-        return error('unit_purchased');
+        return error('unit_already_purchased');
       }
       const purchase = makeUnitPurchase({
         id: `purchase-created-${++state.idSeq}`,
@@ -1163,8 +1225,15 @@ function createMockClient() {
         return error('invalid_count');
       }
       const unit = state.units.find((item) => item.id === unitId);
-      if (!unit) {
+      if (!unit || unit.deleted_at !== null) {
         return error('unit_not_found');
+      }
+      const pricing = state.unitPricing.find((item) => item.unit_id === unitId);
+      if (!pricing) {
+        return error('unit_not_found');
+      }
+      if (pricing.is_active === false) {
+        return error('unit_inactive');
       }
       const note = (args?.p_note as string | null) ?? null;
       const rows = Array.from({ length: count }, () =>
@@ -1531,6 +1600,86 @@ function createMockClient() {
     return null;
   };
 
+  const applyBoardsRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
+    if (fn === 'create_board_upload_record') {
+      const lessonId = String(args?.p_lesson_id ?? '');
+      const originalName = String(args?.p_original_name ?? '').trim();
+      if (!lessonId || !originalName) {
+        return error('validation_error');
+      }
+      if (!state.lessons.some((item) => item.id === lessonId)) {
+        return error('lesson_not_found');
+      }
+      const existing = state.lessonBoards
+        .filter((item) => item.lesson_id === lessonId && !item.deleted_at)
+        .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+      const maxSort = existing.length > 0 ? Number(existing[existing.length - 1].sort_order ?? 0) : 0;
+      const row = makeBoard({
+        id: `board-created-${++state.idSeq}`,
+        lesson_id: lessonId,
+        storage_path: `${lessonId}/board-created-${state.idSeq}.jpg`,
+        original_name: originalName,
+        size_bytes: args?.p_size_bytes ?? null,
+        sort_order: maxSort + 1,
+        is_ready: false,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      });
+      state.lessonBoards.push(row);
+      return { data: [{ id: row.id, storage_path: row.storage_path }], error: null };
+    }
+    if (fn === 'finalize_board_upload') {
+      const board = state.lessonBoards.find((item) => item.id === args?.p_board_id);
+      if (!board || board.deleted_at) {
+        return error('board_not_found');
+      }
+      board.is_ready = true;
+      board.updated_at = nowIso();
+      return { data: null, error: null };
+    }
+    if (fn === 'delete_board_upload_record') {
+      const board = state.lessonBoards.find(
+        (item) => item.id === args?.p_board_id && !item.deleted_at,
+      );
+      if (!board) {
+        return error('board_not_found');
+      }
+      if (board.lesson_id !== args?.p_lesson_id) {
+        return error('wrong_lesson');
+      }
+      board.deleted_at = nowIso();
+      board.updated_at = nowIso();
+      return { data: null, error: null };
+    }
+    if (fn === 'reorder_boards') {
+      const lessonId = String(args?.p_lesson_id ?? '');
+      const boardIds = (args?.p_board_ids as string[] | undefined) ?? [];
+      if (!Array.isArray(boardIds)) {
+        return error('validation_error');
+      }
+      for (const boardId of boardIds) {
+        const board = state.lessonBoards.find(
+          (item) => item.id === boardId && !item.deleted_at,
+        );
+        if (!board) {
+          return error('board_not_found');
+        }
+        if (board.lesson_id !== lessonId) {
+          return error('wrong_lesson');
+        }
+      }
+      boardIds.forEach((boardId, index) => {
+        const board = state.lessonBoards.find((item) => item.id === boardId);
+        if (board) {
+          board.sort_order = index + 1;
+          board.updated_at = nowIso();
+        }
+      });
+      return { data: null, error: null };
+    }
+    return null;
+  };
+
   const auth = {
     getSession: vi.fn(async () => {
       const gate = state.authGates.getSession;
@@ -1694,6 +1843,10 @@ function createMockClient() {
     if (phase6) {
       return phase6;
     }
+    const boards = applyBoardsRpc(fn, args);
+    if (boards) {
+      return boards;
+    }
     return { data: null, error: null };
   });
 
@@ -1709,6 +1862,7 @@ export function resetMockState() {
   state.units = [];
   state.lessons = [];
   state.lessonPdfs = [];
+  state.lessonBoards = [];
   state.lessonVideos = [];
   state.unitPricing = [];
   state.unitCodes = [];

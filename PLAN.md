@@ -950,3 +950,103 @@ The architecture gate has been approved with the following BINDING implementatio
 - **B10** — RoleGuard caching residual documented (client role cache is never authoritative; refreshed on next sign-in).
 - **B10** — create_manual_subscription doesn't require student grade (documented).
 - **B10** — handle_new_user fail-closed runbook note (raises on missing required meta fields; admin-created users must include full_name, phone, guardian_phone, address).
+
+
+## 23. إعداد قاعدة البيانات — نشر الوحدات (0038_unit_publish)
+
+> ملاحظات جاهزة للنسخ والتنفيذ على قاعدة البيانات. الهدف: التأكد من تطبيق `0038_unit_publish.sql`، ونشر الوحدات المتسعّرة (لأن redeem_unit_code يرفض أي وحدة `status <> 'published'` برمز `unit_inactive`)، والتحقق من صف كل طالب.
+
+### 23.1 التحقق من تطبيق 0038_unit_publish
+
+التوقيع المتوقع (من 0038): `publish_unit(p_unit_id uuid)` و `hide_unit(p_unit_id uuid)` — كلاهما SECURITY DEFINER، محروس بدور (is_admin OR is_mr_walid OR is_teacher)، وممنوحان لـ authenticated فقط.
+
+```sql
+-- يجب أن تُرجع صفّين (publish_unit, hide_unit) إذا كان الـ migration مطبّقًا.
+-- إن كانت النتيجة فارغة فالـ migration غير مطبّق: شغّل `supabase db push` أو نَفّذ الملف يدويًا ثم أعد التحقق.
+SELECT proname FROM pg_proc WHERE proname IN ('publish_unit','hide_unit');
+```
+
+ملاحظة: بما أن `publish_unit` يتحقق من الدور عبر `auth.uid()` (دوال 0003)، فلا يمكن استدعاؤه من كنسول postgres مباشرة (auth.uid() = NULL → access_denied). الاستدعاء الصحيح له يكون من جلسة موظف (أزرار النشر في واجهة المنهج) أو من supabase-js بحساب mr_walid/admin.
+
+### 23.2 Backfill — نشر الوحدات المتسعّرة فقط (DO block آمن)
+
+القاعدة: وحدة مؤهلة للنشر = `status = 'draft'` و `deleted_at IS NULL` ولها صف `unit_pricing` نشط (`is_active = true`). التحديث المباشر آمن لأن:
+- audit_trigger (0005) ملتصق بجدول units ويسجّل التغيير تلقائيًا (units.update مع changed_fields).
+- no-op للوحدات غير المؤهلة (بلا رسائل خطأ)، مع NOTICE لكل وحدة.
+
+```sql
+DO $$
+DECLARE
+    v_unit record;
+    v_count int := 0;
+BEGIN
+    FOR v_unit IN
+        SELECT u.id, u.name
+        FROM public.units u
+        WHERE u.status = 'draft'
+          AND u.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM public.unit_pricing p
+              WHERE p.unit_id = u.id AND p.is_active = true
+          )
+        ORDER BY u.id
+    LOOP
+        UPDATE public.units
+        SET status = 'published'
+        WHERE id = v_unit.id;
+        v_count := v_count + 1;
+        RAISE NOTICE 'نشرت الوحدة: % (id: %)', v_unit.name, v_unit.id;
+    END LOOP;
+
+    RAISE NOTICE 'تم نشر % وحدة متسعّرة كان حالتها draft.', v_count;
+END $$;
+```
+
+تحقق بعد التنفيذ — يجب أن تُرجع صفر وحدات draft متسعّرة:
+
+```sql
+SELECT u.id, u.name, u.status
+FROM public.units u
+WHERE u.status = 'draft'
+  AND u.deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM public.unit_pricing p WHERE p.unit_id = u.id AND p.is_active = true);
+```
+
+البديل عبر RPC الرسمي (إن رغبت بالسجل عبر publish_unit نفسه، من جلسة موظف — مثال supabase-js):
+
+```js
+// نفّذ من حساب mr_walid أو admin:
+// const { error } = await supabase.rpc('publish_unit', { p_unit_id: unitId });
+```
+
+### 23.3 التحقق من صف الطالب (profiles ↔ auth.users)
+
+```sql
+-- الطلاب بلا صف (grade_id NULL) — يحتاجون إسناد صف يدويًا وإلا يفشل التفعيل برمز no_grade_assigned
+SELECT u.id AS user_id, u.email, p.full_name, p.grade_id
+FROM auth.users u
+LEFT JOIN public.profiles p ON p.id = u.id
+WHERE p.role = 'student'
+  AND p.deleted_at IS NULL
+  AND p.grade_id IS NULL
+ORDER BY u.email;
+
+-- الطلاب الذين grade_id يشير لصف محذوف/غير نشط (soft-delete في grades)
+SELECT u.id AS user_id, u.email, p.full_name, p.grade_id, g.name AS grade_name, g.is_active, g.deleted_at
+FROM public.profiles p
+JOIN auth.users u ON u.id = p.id
+LEFT JOIN public.grades g ON g.id = p.grade_id
+WHERE p.role = 'student'
+  AND p.deleted_at IS NULL
+  AND (g.id IS NULL OR g.is_active = false OR g.deleted_at IS NOT NULL)
+ORDER BY u.email;
+
+-- إجمالي الطلاب وأصحاب الصفوف السليمة (ملخص)
+SELECT
+  COUNT(*) FILTER (WHERE p.grade_id IS NOT NULL AND g.id IS NOT NULL AND g.is_active AND g.deleted_at IS NULL) AS students_ok,
+  COUNT(*) FILTER (WHERE p.grade_id IS NULL) AS students_no_grade,
+  COUNT(*) AS students_total
+FROM public.profiles p
+LEFT JOIN public.grades g ON g.id = p.grade_id
+WHERE p.role = 'student' AND p.deleted_at IS NULL;
+```

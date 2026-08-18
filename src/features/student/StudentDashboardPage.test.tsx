@@ -1,8 +1,11 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  makeGrade,
   makeNotification,
+  makeUnit,
+  makeUnitPricing,
   makeUnitPurchase,
   mockState,
   resetMockState,
@@ -21,8 +24,6 @@ describe('StudentDashboardPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'لوحة الطالب' })).toBeInTheDocument();
     expect(screen.getByText(/مرحبًا، أحمد محمد/)).toBeInTheDocument();
-    expect(screen.getByText('student@example.com')).toBeInTheDocument();
-    expect(screen.getByText('01001234567')).toBeInTheDocument();
   });
 
   it('builds the WhatsApp contact link from the public settings', async () => {
@@ -40,9 +41,11 @@ describe('StudentDashboardPage', () => {
     );
     renderApp('/student/dashboard');
 
-    expect(await screen.findByText('عدد الوحدات المشتراة: 2')).toBeInTheDocument();
-    expect(screen.getByText('إجمالي المدفوع: 550 ج.م')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'عرض الوحدات' })).toHaveAttribute(
+    expect(await screen.findByText('الوحدات المشتراة')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('إجمالي المدفوع')).toBeInTheDocument();
+    expect(screen.getByText('550 ج.م')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'عرض الكل' })).toHaveAttribute(
       'href',
       '/student/units',
     );
@@ -52,7 +55,46 @@ describe('StudentDashboardPage', () => {
     renderApp('/student/dashboard');
 
     expect(await screen.findByText('لم تشترِ أي وحدة بعد')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'عرض الوحدات' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'تصفح الوحدات المتاحة' })).toHaveAttribute(
+      'href',
+      '/student/units',
+    );
+  });
+
+  it('shows the grade units section with prices and actions', async () => {
+    const profile = mockState.profiles.find((item) => item.id === 'user-test-1');
+    if (profile) {
+      profile.grade_id = 'grade-1';
+    }
+    mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
+    mockState.units.push(
+      makeUnit({ id: 'unit-1', grade_id: 'grade-1', name: 'الوحدة الأولى', status: 'published' }),
+      makeUnit({ id: 'unit-2', grade_id: 'grade-1', name: 'الوحدة الثانية', status: 'published' }),
+    );
+    mockState.unitPricing.push(
+      makeUnitPricing({ id: 'pricing-1', unit_id: 'unit-1' }),
+      makeUnitPricing({
+        id: 'pricing-2',
+        unit_id: 'unit-2',
+        base_price: 200,
+        platform_fee: 50,
+        total_price: 250,
+      }),
+    );
+    mockState.unitPurchases.push(makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1' }));
+    renderApp('/student/dashboard');
+
+    const section = await screen.findByTestId('grade-units-section');
+    await within(section).findByText('وحدات صفك');
+    expect(within(section).getByText('الوحدة الأولى')).toBeInTheDocument();
+    expect(within(section).getByText('الوحدة الثانية')).toBeInTheDocument();
+    expect(within(section).getByText('350 ج.م')).toBeInTheDocument();
+    expect(within(section).getByText('250 ج.م')).toBeInTheDocument();
+    expect(within(section).getByTestId('open-grade-unit-unit-1')).toHaveAttribute(
+      'href',
+      '/student/curriculum?unit=unit-1',
+    );
+    expect(within(section).getByRole('link', { name: 'تفعيل' })).toHaveAttribute(
       'href',
       '/student/units',
     );

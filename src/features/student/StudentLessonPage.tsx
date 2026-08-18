@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Download, FileText, Lock } from 'lucide-react';
+import { Download, Eye, EyeOff, Lock } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
 import { Card } from '../../components/Card';
@@ -19,13 +19,13 @@ import { useAuth } from '../auth/AuthContext';
 import { StudentLessonCommentsTab } from './StudentLessonCommentsTab';
 import { StudentLessonExamsTab } from './StudentLessonExamsTab';
 import {
+  getLessonBoardSignedUrls,
   getLessonById,
   getMyLessonAccess,
   getMyProgress,
   getPdfSignedUrl,
   getPlaybackUrl,
   getPublicSettings,
-  getRpcErrorCode,
   getUnitById,
   listLessonPdfs,
   listLessonsForUnit,
@@ -37,6 +37,7 @@ import { buildWhatsAppLink, formatPrice } from '../../lib/format';
 import type {
   Lesson,
   LessonAccessInfo,
+  LessonBoardSignedUrl,
   LessonPdf,
   LessonVideo,
   PdfAccessResponse,
@@ -45,29 +46,12 @@ import type {
   PublicSettings,
   Unit,
 } from '../../types/database';
+import { redeemErrorMessage } from './redeemErrors';
 
 const PROGRESS_SAVE_INTERVAL_MS = 5000;
 const COMPLETION_PERCENT = 90;
 
-type LessonTab = 'lesson' | 'exams' | 'comments';
-
-const REDEEM_ERROR_MESSAGES: Record<string, string> = {
-  code_not_found: 'الكود غير صالح',
-  code_already_used: 'تم استخدام هذا الكود بالفعل',
-  code_revoked: 'تم إلغاء هذا الكود',
-  unit_not_found: 'الوحدة المطلوبة غير موجودة',
-  unit_inactive: 'هذه الوحدة غير متاحة حاليًا',
-  unit_purchased: 'لقد قمت بشراء هذه الوحدة بالفعل',
-  no_grade_assigned: 'لم يتم تحديد صفك الدراسي بعد — تواصل مع الأستاذ',
-};
-
-function redeemErrorMessage(error: unknown): string {
-  const code = getRpcErrorCode(error);
-  if (code && REDEEM_ERROR_MESSAGES[code]) {
-    return REDEEM_ERROR_MESSAGES[code];
-  }
-  return 'تعذر تفعيل الوحدة. حاول مرة أخرى';
-}
+type LessonTab = 'exams' | 'comments';
 
 function errorCode(error: unknown): string | null {
   if (error && typeof error === 'object') {
@@ -86,17 +70,13 @@ function LessonPageSkeleton() {
       <div className="glass-card aspect-video w-full overflow-hidden rounded-2xl p-0">
         <Skeleton className="h-full w-full rounded-none" />
       </div>
-      <div className="glass-card space-y-3 p-4 sm:p-6">
-        <Skeleton className="h-5 w-1/3" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-2/3" />
-      </div>
+      <Skeleton className="h-24 w-full rounded-2xl" />
+      <Skeleton className="h-24 w-full rounded-2xl" />
     </div>
   );
 }
 
 const tabs: Array<{ id: LessonTab; label: string }> = [
-  { id: 'lesson', label: 'الدرس' },
   { id: 'exams', label: 'الامتحان' },
   { id: 'comments', label: 'الأسئلة' },
 ];
@@ -118,10 +98,13 @@ export function StudentLessonPage() {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [pdfAccess, setPdfAccess] = useState<PdfAccessResponse | null>(null);
   const [pdfFailed, setPdfFailed] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [boards, setBoards] = useState<LessonBoardSignedUrl[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemBusy, setRedeemBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<LessonTab>('lesson');
+  const [activeTab, setActiveTab] = useState<LessonTab | null>(null);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const lastSaveRef = useRef(0);
   const savingRef = useRef(false);
   const lastPositionRef = useRef(0);
@@ -141,8 +124,10 @@ export function StudentLessonPage() {
     setPlaybackError(null);
     setPdfAccess(null);
     setPdfFailed(false);
+    setBoards(null);
     setLoadError(false);
-    setActiveTab('lesson');
+    setActiveTab(null);
+    setPdfPreviewOpen(false);
     try {
       const [lessonRow, settingsRow] = await Promise.all([
         getLessonById(lessonId),
@@ -165,6 +150,19 @@ export function StudentLessonPage() {
       if (!accessResult.has_access) {
         return;
       }
+      // Boards are best-effort: a failed fetch never breaks the lesson page.
+      // Fired in parallel with the main content Promise.all below.
+      void getLessonBoardSignedUrls(lessonRow.id)
+        .then((rows) => {
+          if (requestIdRef.current === requestId) {
+            setBoards(Array.isArray(rows) ? rows : []);
+          }
+        })
+        .catch(() => {
+          if (requestIdRef.current === requestId) {
+            setBoards([]);
+          }
+        });
       const [unitRow, lessonRows, videos, pdfs, progressRow] = await Promise.all([
         getUnitById(lessonRow.unit_id),
         listLessonsForUnit(lessonRow.unit_id),
@@ -239,6 +237,34 @@ export function StudentLessonPage() {
       active = false;
     };
   }, [lesson, primaryPdf]);
+
+  const handlePdfDownload = useCallback(async () => {
+    if (!pdfAccess || pdfDownloading) {
+      return;
+    }
+    setPdfDownloading(true);
+    try {
+      const response = await fetch(pdfAccess.pdf_url);
+      if (!response.ok) {
+        throw new Error('pdf_download_failed');
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = pdfAccess.original_name ?? 'lesson.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      // Last-resort fallback: open the signed URL directly; the browser
+      // may render it inline instead of saving it.
+      window.open(pdfAccess.pdf_url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setPdfDownloading(false);
+    }
+  }, [pdfAccess, pdfDownloading]);
 
   const saveProgress = useCallback(
     async (position: number, percent: number) => {
@@ -396,7 +422,7 @@ export function StudentLessonPage() {
   return (
     <LayoutShell title={lesson.title} subtitle={unit?.name ?? undefined} variant="sidebar" nav={<StudentNav />}>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             to="/student/curriculum"
             className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-primary-strong transition-colors hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
@@ -404,38 +430,170 @@ export function StudentLessonPage() {
             <DirectionalArrow direction="back" size={16} />
             المنهج الدراسي
           </Link>
-          {access?.is_trial ? (
-            <Badge variant="info" data-testid="trial-lesson-badge">
-              درس تجريبي
-            </Badge>
-          ) : null}
-          {progress?.is_completed ? (
-            <Badge variant="success" data-testid="lesson-completed-badge">
-              مكتمل
-            </Badge>
-          ) : progress && progress.percent_completed > 0 ? (
-            <Badge variant="warning" data-testid="lesson-percent-badge">
-              {Math.round(progress.percent_completed)}٪
-            </Badge>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {access?.is_trial ? (
+              <Badge variant="info" data-testid="trial-lesson-badge">
+                درس تجريبي
+              </Badge>
+            ) : null}
+            {progress?.is_completed ? (
+              <Badge variant="success" data-testid="lesson-completed-badge">
+                مكتمل
+              </Badge>
+            ) : progress && progress.percent_completed > 0 ? (
+              <Badge variant="warning" data-testid="lesson-percent-badge">
+                {Math.round(progress.percent_completed)}٪
+              </Badge>
+            ) : null}
+          </div>
         </div>
 
         {lesson.description ? (
           <p className="text-sm text-foreground-muted">{lesson.description}</p>
         ) : null}
 
+        {primaryVideo ? (
+          playback && progressLoaded ? (
+            <VideoPlayer
+              src={playback.playback_url}
+              initialPosition={progress?.position_seconds ?? 0}
+              onProgress={handleProgress}
+              onComplete={handleComplete}
+            />
+          ) : playbackError === 'access_denied' ? (
+            <div className="glass-card glass-tile-warning rounded-lg border p-4">
+              <p className="text-sm font-medium text-amber-300">هذا الدرس غير متاح حاليًا</p>
+              <p className="mt-1 text-sm text-amber-200">
+                قد لا تكون الوحدة مفعّلة بعد. فعّل الوحدة من صفحة وحداتي للمتابعة.
+              </p>
+              <Link
+                to="/student/units"
+                className="mt-3 inline-block rounded-lg border border-warning/40 bg-white/5 px-4 py-2.5 text-sm font-semibold text-warning transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                data-testid="units-link"
+              >
+                الانتقال إلى وحداتي
+              </Link>
+            </div>
+          ) : playbackError === 'video_not_ready' ? (
+            <div className="glass-card rounded-2xl p-4">
+              <p className="text-sm text-foreground-muted">
+                الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.
+              </p>
+            </div>
+          ) : playbackError ? (
+            <div className="glass-card rounded-2xl p-4">
+              <p className="text-sm text-foreground-muted">
+                تعذر تحميل الفيديو. حاول مرة أخرى لاحقًا.
+              </p>
+            </div>
+          ) : (
+            <div className="glass-card flex justify-center rounded-2xl p-8">
+              <Spinner />
+            </div>
+          )
+        ) : null}
+
+        {!primaryVideo && !primaryPdf ? (
+          <div className="glass-card rounded-2xl p-4">
+            <p className="text-sm text-foreground-muted">لم يتم إضافة محتوى لهذا الدرس بعد.</p>
+          </div>
+        ) : null}
+
+        {primaryPdf ? (
+          <Card
+            title="ملف الدرس"
+            actions={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPdfPreviewOpen((open) => !open)}
+                  aria-expanded={pdfPreviewOpen}
+                  className="glass-soft inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                  data-testid="lesson-pdf-toggle"
+                >
+                  {pdfPreviewOpen ? (
+                    <EyeOff aria-hidden="true" className="h-4 w-4" />
+                  ) : (
+                    <Eye aria-hidden="true" className="h-4 w-4" />
+                  )}
+                  {pdfPreviewOpen ? 'إخفاء المعاينة' : 'معاينة'}
+                </button>
+                {pdfAccess ? (
+                  <a
+                    href={pdfAccess.pdf_url}
+                    download={pdfAccess.original_name ?? 'lesson.pdf'}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void handlePdfDownload();
+                    }}
+                    className="btn-primary inline-flex w-fit items-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                    data-testid="lesson-pdf-download"
+                  >
+                    <Download aria-hidden="true" className="h-4 w-4" />
+                    {pdfDownloading ? 'جاري التحضير...' : 'تحميل الملف'}
+                  </a>
+                ) : null}
+              </div>
+            }
+          >
+            {pdfAccess ? (
+              <div className="flex flex-col gap-3">
+                {pdfPreviewOpen ? (
+                  <iframe
+                    src={pdfAccess.pdf_url}
+                    title="ملف الدرس"
+                    className="h-72 w-full rounded-lg border border-white/15 bg-white/5 sm:h-96"
+                    data-testid="lesson-pdf-frame"
+                  />
+                ) : null}
+                <p className="text-sm text-foreground-muted">
+                  {pdfAccess.original_name ?? 'ملف الدرس'}
+                </p>
+              </div>
+            ) : pdfFailed ? (
+              <p className="text-sm text-foreground-muted">
+                تعذر تحميل ملف الدرس. حاول مرة أخرى لاحقًا.
+              </p>
+            ) : (
+              <Spinner />
+            )}
+          </Card>
+        ) : null}
+
+        {boards && boards.length > 0 ? (
+          <Card title="سبورة الدرس">
+            <div
+              className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+              data-testid="board-grid"
+            >
+              {boards.map((board) => (
+                <img
+                  key={board.board_id}
+                  src={board.signed_url}
+                  alt={board.original_name}
+                  loading="lazy"
+                  className="aspect-video w-full rounded-lg border border-white/15 bg-white/5 object-cover transition-transform duration-300 hover:scale-[1.03]"
+                  data-testid={`board-image-${board.board_id}`}
+                />
+              ))}
+            </div>
+          </Card>
+        ) : null}
+
         <div
           role="tablist"
-          aria-label="محتوى الدرس"
-          className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/4 p-1"
+          aria-label="أنشطة الدرس"
+          className="flex w-full flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/4 p-1 sm:w-fit"
         >
           {tabs.map((tab) => (
             <button
               key={tab.id}
               role="tab"
               aria-selected={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+              onClick={() => setActiveTab(activeTab === tab.id ? null : tab.id)}
+              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
                 activeTab === tab.id
                   ? 'nav-pill-active font-bold text-white'
                   : 'text-foreground-muted hover:text-foreground'
@@ -451,112 +609,30 @@ export function StudentLessonPage() {
           <StudentLessonExamsTab lessonId={lesson.id} />
         ) : activeTab === 'comments' ? (
           <StudentLessonCommentsTab lessonId={lesson.id} userId={user?.id ?? ''} />
-        ) : (
-          <>
-            {primaryVideo ? (
-              <Card title="الفيديو">
-                {playback && progressLoaded ? (
-                  <VideoPlayer
-                    src={playback.playback_url}
-                    initialPosition={progress?.position_seconds ?? 0}
-                    onProgress={handleProgress}
-                    onComplete={handleComplete}
-                  />
-                ) : playbackError === 'access_denied' ? (
-                  <div className="glass-tile-warning rounded-lg border p-4">
-                    <p className="text-sm font-medium text-amber-300">هذا الدرس غير متاح حاليًا</p>
-                    <p className="mt-1 text-sm text-amber-200">
-                      قد لا تكون الوحدة مفعّلة بعد. فعّل الوحدة من صفحة وحداتي للمتابعة.
-                    </p>
-                    <Link
-                      to="/student/units"
-                      className="mt-3 inline-block rounded-lg border border-warning/40 bg-white/5 px-4 py-2.5 text-sm font-semibold text-warning transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-                      data-testid="units-link"
-                    >
-                      الانتقال إلى وحداتي
-                    </Link>
-                  </div>
-                ) : playbackError === 'video_not_ready' ? (
-                  <p className="text-sm text-foreground-muted">
-                    الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.
-                  </p>
-                ) : playbackError ? (
-                  <p className="text-sm text-foreground-muted">
-                    تعذر تحميل الفيديو. حاول مرة أخرى لاحقًا.
-                  </p>
-                ) : (
-                  <Spinner />
-                )}
-              </Card>
-            ) : null}
+        ) : null}
 
-            {primaryPdf ? (
-              <Card
-                title="ملف الدرس"
-                actions={<FileText aria-hidden="true" className="h-5 w-5 text-foreground-subtle" />}
-              >
-                {pdfAccess ? (
-                  <div className="flex flex-col gap-3">
-                    <iframe
-                      src={pdfAccess.pdf_url}
-                      title="ملف الدرس"
-                      className="h-[500px] w-full rounded-lg border border-white/15 bg-white/5"
-                      data-testid="lesson-pdf-frame"
-                    />
-                    <a
-                      href={pdfAccess.pdf_url}
-                      download={pdfAccess.original_name ?? 'lesson.pdf'}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-primary inline-flex w-fit items-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-primary-foreground"
-                      data-testid="lesson-pdf-download"
-                    >
-                      <Download aria-hidden="true" className="h-4 w-4" />
-                      تحميل الملف
-                    </a>
-                  </div>
-                ) : pdfFailed ? (
-                  <p className="text-sm text-foreground-muted">
-                    تعذر تحميل ملف الدرس. حاول مرة أخرى لاحقًا.
-                  </p>
-                ) : (
-                  <Spinner />
-                )}
-              </Card>
-            ) : null}
-
-            {!primaryVideo && !primaryPdf ? (
-              <Card title="محتوى الدرس">
-                <p className="text-sm text-foreground-muted">لم يتم إضافة محتوى لهذا الدرس بعد.</p>
-              </Card>
-            ) : null}
-
-            <div className="flex items-center justify-between gap-3" data-testid="lesson-nav">
-              {prevLesson ? (
-                <Link
-                  to={`/student/lessons/${prevLesson.id}`}
-                  className="glass-soft inline-flex items-center gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-                  data-testid="prev-lesson"
-                >
-                  <DirectionalArrow direction="back" size={16} />
-                  الدرس السابق: {prevLesson.title}
-                </Link>
-              ) : (
-                <span />
-              )}
-              {nextLesson ? (
-                <Link
-                  to={`/student/lessons/${nextLesson.id}`}
-                  className="glass-soft inline-flex items-center gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-                  data-testid="next-lesson"
-                >
-                  الدرس التالي: {nextLesson.title}
-                  <DirectionalArrow direction="forward" size={16} />
-                </Link>
-              ) : null}
-            </div>
-          </>
-        )}
+        <div className="grid gap-3 sm:grid-cols-2" data-testid="lesson-nav">
+          {prevLesson ? (
+            <Link
+              to={`/student/lessons/${prevLesson.id}`}
+              className="glass-soft inline-flex items-center justify-start gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+              data-testid="prev-lesson"
+            >
+              <DirectionalArrow direction="back" size={16} />
+              الدرس السابق: {prevLesson.title}
+            </Link>
+          ) : null}
+          {nextLesson ? (
+            <Link
+              to={`/student/lessons/${nextLesson.id}`}
+              className="glass-soft inline-flex items-center justify-end gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong sm:justify-start"
+              data-testid="next-lesson"
+            >
+              الدرس التالي: {nextLesson.title}
+              <DirectionalArrow direction="forward" size={16} />
+            </Link>
+          ) : null}
+        </div>
       </div>
     </LayoutShell>
   );

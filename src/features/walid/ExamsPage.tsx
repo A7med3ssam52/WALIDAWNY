@@ -10,7 +10,7 @@ import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
 import {
   createExam,
@@ -516,7 +516,7 @@ export function ExamsPage() {
       title="الإختبارات"
       subtitle="إنشاء الإختبارات ومتابعة درجات الطلاب"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
     >
       <div className="flex flex-col gap-4">
         <section className="glass-card spotlight-card rise relative overflow-hidden p-4 sm:p-6">

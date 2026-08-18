@@ -28,6 +28,16 @@ async function generateCodes(user: ReturnType<typeof userEvent.setup>, count = '
   await user.click(screen.getByRole('button', { name: 'توليد الأكواد' }));
 }
 
+function stubExecCommand(result: boolean) {
+  const execCommand = vi.fn(() => result);
+  Object.defineProperty(document, 'execCommand', {
+    value: execCommand,
+    configurable: true,
+    writable: true,
+  });
+  return execCommand;
+}
+
 describe('CodesPage', () => {
   beforeEach(() => {
     resetMockState();
@@ -37,6 +47,8 @@ describe('CodesPage', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete (document as { execCommand?: unknown }).execCommand;
   });
 
   it('validates the count range client-side and does not call the RPC', async () => {
@@ -83,6 +95,40 @@ describe('CodesPage', () => {
     await user.click(screen.getByRole('button', { name: 'نسخ' }));
 
     expect(writeText).toHaveBeenCalledWith('WLDN-000001\nWLDN-000002');
+    expect(await screen.findByText('تم نسخ الأكواد')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'تم النسخ ✓' })).toBeInTheDocument();
+  });
+
+  it('copies an individual code from the codes table with the row copy button', async () => {
+    mockState.unitCodes.push(
+      makeUnitCode({ id: 'code-1', code: 'WLDN-AAAA-BBBB-CCCC', unit_id: 'unit-1' }),
+    );
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderApp('/walid/codes');
+
+    const row = await screen.findByTestId('code-row-code-1');
+    expect(within(row).getByText('WLDN-AAAA-BBBB-CCCC')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'نسخ WLDN-AAAA-BBBB-CCCC' }));
+
+    expect(writeText).toHaveBeenCalledWith('WLDN-AAAA-BBBB-CCCC');
+    expect(await screen.findByText('تم نسخ الكود')).toBeInTheDocument();
+    expect(within(row).getByText('تم النسخ ✓')).toBeInTheDocument();
+  });
+
+  it('falls back to execCommand when the clipboard API is unavailable', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    const execCommand = stubExecCommand(true);
+    renderApp('/walid/codes');
+
+    await generateCodes(user);
+
+    await user.click(screen.getByRole('button', { name: 'نسخ' }));
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
     expect(await screen.findByText('تم نسخ الأكواد')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'تم النسخ ✓' })).toBeInTheDocument();
   });

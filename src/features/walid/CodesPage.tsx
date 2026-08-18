@@ -11,7 +11,7 @@ import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import {
   Table,
   TableBody,
@@ -28,6 +28,7 @@ import {
   listUnitPricing,
   revokeUnitCode,
 } from '../../data/rpc';
+import { copyText } from '../../lib/clipboard';
 import { formatDateTime, formatPrice } from '../../lib/format';
 import type { UnitCodeWithUnit, UnitPricingWithUnit } from '../../types/database';
 
@@ -40,6 +41,9 @@ const CODE_ERROR_MESSAGES: Record<string, string> = {
   code_already_used: 'الكود المستخدم لا يمكن إلغاؤه',
   permission_denied: 'ليست لديك صلاحية',
   access_denied: 'ليست لديك صلاحية',
+  system_actor_required: 'حدث خطأ داخلي في توليد الأكواد',
+  unit_pricing_not_found: 'لا يوجد تسعير لهذه الوحدة',
+  generation_failed: 'فشل توليد الأكواد — حاول مرة أخرى',
 };
 
 function codeErrorMessage(error: unknown): string {
@@ -64,6 +68,7 @@ export function CodesPage() {
   const [generating, setGenerating] = useState(false);
   const [countError, setCountError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<UnitCodeWithUnit | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
@@ -136,12 +141,26 @@ export function CodesPage() {
     if (generatedCodes.length === 0) {
       return;
     }
-    try {
-      await navigator.clipboard.writeText(generatedCodes.join('\n'));
+    const ok = await copyText(generatedCodes.join('\n'));
+    if (ok) {
       setCopied(true);
       showToast('تم نسخ الأكواد');
-    } catch {
+      window.setTimeout(() => setCopied(false), 2000);
+    } else {
       showToast('تعذر نسخ الأكواد', 'error');
+    }
+  };
+
+  const handleCopyCode = async (item: UnitCodeWithUnit) => {
+    const ok = await copyText(item.code);
+    if (ok) {
+      setCopiedCodeId(item.id);
+      showToast('تم نسخ الكود');
+      window.setTimeout(() => {
+        setCopiedCodeId((current) => (current === item.id ? null : current));
+      }, 2000);
+    } else {
+      showToast('تعذر نسخ الكود', 'error');
     }
   };
 
@@ -169,7 +188,7 @@ export function CodesPage() {
       title="أكواد الوحدات"
       subtitle="توليد أكواد تفعيل للوحدات ومتابعة حالة كل كود"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
     >
       <div className="flex flex-col gap-4">
         <Card title="توليد أكواد" subtitle="كل كود يُستخدم مرة واحدة فقط لتفعيل وحدة مدى الحياة">
@@ -297,9 +316,29 @@ export function CodesPage() {
                   return (
                     <TableRow key={item.id} data-testid={`code-row-${item.id}`}>
                       <TableCell label="الكود">
-                        <code className="font-mono text-sm font-medium text-foreground" dir="ltr">
-                          {item.code}
-                        </code>
+                        <div className="flex items-center gap-2">
+                          <code
+                            className="font-mono text-sm font-medium text-foreground"
+                            dir="ltr"
+                          >
+                            {item.code}
+                          </code>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={
+                              copiedCodeId === item.id ? (
+                                <Check aria-hidden="true" className="h-4 w-4" />
+                              ) : (
+                                <Copy aria-hidden="true" className="h-4 w-4" />
+                              )
+                            }
+                            onClick={() => void handleCopyCode(item)}
+                            aria-label={`نسخ ${item.code}`}
+                          >
+                            {copiedCodeId === item.id ? COPIED_LABEL : 'نسخ'}
+                          </Button>
+                        </div>
                       </TableCell>
                       <TableCell label="الوحدة" className="text-foreground-muted">
                         {item.unit_name || '—'}

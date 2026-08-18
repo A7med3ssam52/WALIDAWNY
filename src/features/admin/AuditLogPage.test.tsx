@@ -39,8 +39,8 @@ describe('AuditLogPage', () => {
     renderApp('/admin/audit');
 
     expect(await screen.findByRole('heading', { name: 'سجل النشاطات' })).toBeInTheDocument();
-    expect(await screen.findByText('grade · create')).toBeInTheDocument();
-    expect(screen.getByText('user · role_change')).toBeInTheDocument();
+    expect(await screen.findByText('إنشاء صف')).toBeInTheDocument();
+    expect(screen.getByText('إجراء: user · role_change')).toBeInTheDocument();
     expect(screen.getByText('سارة')).toBeInTheDocument();
     expect(screen.getByText('نظام')).toBeInTheDocument();
     expect(screen.getByText('2 عملية')).toBeInTheDocument();
@@ -73,16 +73,16 @@ describe('AuditLogPage', () => {
     ];
     renderApp('/admin/audit');
 
-    expect(await screen.findByText('pricing · delete')).toBeInTheDocument();
+    expect(await screen.findByText('إجراء: pricing · delete')).toBeInTheDocument();
 
-    await user.type(screen.getByPlaceholderText('مثال: grade.create'), 'grade');
+    await user.type(screen.getByPlaceholderText('مثال: إنشاء صف'), 'grade');
     await user.click(screen.getByRole('button', { name: 'بحث' }));
 
     await waitFor(() => {
-      expect(screen.getByText('grade · create')).toBeInTheDocument();
-      expect(screen.getByText('grade · update')).toBeInTheDocument();
+      expect(screen.getByText('إنشاء صف')).toBeInTheDocument();
+      expect(screen.getByText('تعديل صف')).toBeInTheDocument();
     });
-    expect(screen.queryByText('pricing · delete')).not.toBeInTheDocument();
+    expect(screen.queryByText('إجراء: pricing · delete')).not.toBeInTheDocument();
     expect(screen.getByText('2 عملية')).toBeInTheDocument();
   });
 
@@ -94,15 +94,15 @@ describe('AuditLogPage', () => {
     ];
     renderApp('/admin/audit');
 
-    expect(await screen.findByText('grade · create')).toBeInTheDocument();
+    expect(await screen.findByText('إنشاء صف')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox'), 'grades');
     await user.click(screen.getByRole('button', { name: 'بحث' }));
 
     await waitFor(() => {
-      expect(screen.getByText('grade · create')).toBeInTheDocument();
+      expect(screen.getByText('إنشاء صف')).toBeInTheDocument();
     });
-    expect(screen.queryByText('student · disable')).not.toBeInTheDocument();
+    expect(screen.queryByText('إجراء: student · disable')).not.toBeInTheDocument();
     expect(screen.getByText('1 عملية')).toBeInTheDocument();
   });
 
@@ -119,9 +119,9 @@ describe('AuditLogPage', () => {
     mockState.auditLogs = [makeAuditLog({ id: 'audit-1', action: 'grade.create' })];
 
     renderApp('/admin/audit');
-    await screen.findByText('grade · create');
+    await screen.findByText('إنشاء صف');
 
-    await user.click(screen.getByRole('button', { name: 'تصدير CSV' }));
+    await user.click(screen.getByRole('button', { name: 'تصدير ملف CSV' }));
 
     await waitFor(() => {
       expect(openSpy).toHaveBeenCalledWith(
@@ -181,8 +181,8 @@ describe('AuditLogPage', () => {
     mockState.auditLogs = [makeAuditLog({ id: 'audit-1', action: 'grade.create' })];
     await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
 
-    expect(await screen.findByText('grade · create')).toBeInTheDocument();
+    expect(await screen.findByText('إنشاء صف')).toBeInTheDocument();
     const table = screen.getByRole('table');
-    expect(within(table).getByText('grade · create')).toBeInTheDocument();
+    expect(within(table).getByText('إنشاء صف')).toBeInTheDocument();
   });
 });

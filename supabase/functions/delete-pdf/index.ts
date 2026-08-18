@@ -19,7 +19,7 @@
 //      object without a row is orphaned storage; a removal failure
 //      must not fail the operation,
 //   6. hard-deletes the row through the staff-guarded SECURITY DEFINER
-//      RPC public.delete_pdf_upload_record (migrations/0031) —
+//      RPC public.delete_pdf_upload_record (migrations/0037) —
 //      authoritative backstop, audited,
 //   7. returns { deleted: true, pdf_id }.
 //
@@ -209,7 +209,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   const { lesson_id: lessonId, pdf_id: pdfId } = parsed.body;
 
   // --- 4) The row must exist, belong to the lesson and not be soft-deleted.
-  // Pre-check over the caller token; the 0031 wrapper re-validates
+  // Pre-check over the caller token; the 0037 wrapper re-validates
   // atomically (authoritative). ---
   const { data: pdf, error: pdfError } = await client
     .from('lesson_pdfs')

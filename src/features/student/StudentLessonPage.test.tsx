@@ -68,12 +68,47 @@ import { renderApp } from '../../test/utils';
 const PLAYBACK_URL = 'https://vz.test/12345/playlist.m3u8?token=x';
 const PDF_URL =
   'https://example.supabase.co/storage/v1/object/sign/pdfs/lesson-1/pdf-1.pdf?token=s';
+const BOARD_URL_1 =
+  'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-1.jpg?token=b1';
+const BOARD_URL_2 =
+  'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-2.jpg?token=b2';
 
-function mockFunctions() {
+function makeBoardSignedUrl(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    board_id: 'board-1',
+    original_name: 'سبورة الدرس.jpg',
+    sort_order: 1,
+    signed_url: BOARD_URL_1,
+    ...overrides,
+  };
+}
+
+const DEFAULT_BOARDS = [
+  makeBoardSignedUrl({
+    board_id: 'board-2',
+    original_name: 'سبورة ثانية.jpg',
+    sort_order: 1,
+    signed_url: BOARD_URL_2,
+  }),
+  makeBoardSignedUrl({
+    board_id: 'board-1',
+    original_name: 'سبورة أولى.jpg',
+    sort_order: 2,
+    signed_url: BOARD_URL_1,
+  }),
+];
+
+function mockFunctions(options: { boards?: unknown[]; boardsFail?: boolean } = {}) {
   const fetchMock = vi.fn();
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
     const target = String(url);
+    if (target.includes('/functions/v1/get-board-signed-urls')) {
+      if (options.boardsFail) {
+        return { ok: false, status: 500, json: async () => ({ error: { code: 'boards_failed' } }) };
+      }
+      return { ok: true, status: 200, json: async () => options.boards ?? DEFAULT_BOARDS };
+    }
     if (target.includes('/functions/v1/get-video-playback-url')) {
       return {
         ok: true,
@@ -149,8 +184,81 @@ describe('StudentLessonPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'الدرس الأول' })).toBeInTheDocument();
     expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    expect(await screen.findByTestId('lesson-pdf-download')).toHaveTextContent('تحميل الملف');
+    fireEvent.click(screen.getByTestId('lesson-pdf-toggle'));
     expect(screen.getByTestId('lesson-pdf-frame')).toHaveAttribute('src', PDF_URL);
-    expect(screen.getByTestId('lesson-pdf-download')).toHaveAttribute('download', 'ملخص الدرس.pdf');
+  });
+
+  it('downloads the pdf as a blob when the download button is clicked', async () => {
+    const createObjectUrl = vi.fn(() => 'blob:mock-download');
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const fetchMock = mockFunctions();
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target === PDF_URL) {
+        return {
+          ok: true,
+          status: 200,
+          blob: async () => new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }),
+        };
+      }
+      if (target.includes('/functions/v1/get-video-playback-url')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            playback_url: PLAYBACK_URL,
+            video_id: 'video-1',
+            lesson_id: 'lesson-1',
+          }),
+        };
+      }
+      if (target.includes('/functions/v1/get-pdf-signed-url')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            pdf_url: PDF_URL,
+            pdf_id: 'pdf-1',
+            lesson_id: 'lesson-1',
+            original_name: 'ملخص الدرس.pdf',
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    const download = await screen.findByTestId('lesson-pdf-download');
+    fireEvent.click(download);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(PDF_URL);
+    });
+    await waitFor(() => {
+      expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+    });
+    expect(clickSpy).toHaveBeenCalled();
+    await waitFor(
+      () => {
+        expect(revokeObjectUrl).toHaveBeenCalledWith('blob:mock-download');
+      },
+      { timeout: 3000 },
+    );
+
+    clickSpy.mockRestore();
   });
 
   it('shows the unit name and previous/next lesson navigation', async () => {
@@ -172,8 +280,10 @@ describe('StudentLessonPage', () => {
     renderApp('/student/lessons/lesson-1');
 
     const video = (await screen.findByTestId('lesson-video')) as HTMLVideoElement;
-    hlsMock.trigger('MANIFEST_PARSED');
-    expect(video.currentTime).toBe(45);
+    await waitFor(() => {
+      hlsMock.trigger('MANIFEST_PARSED');
+      expect(video.currentTime).toBe(45);
+    });
   });
 
   it('saves progress on timeupdate and shows the percent badge', async () => {
@@ -329,7 +439,9 @@ describe('StudentLessonPage', () => {
     mockState.lessonVideos = [];
     renderApp('/student/lessons/lesson-1');
 
-    expect(await screen.findByTestId('lesson-pdf-frame')).toBeInTheDocument();
+    expect(await screen.findByTestId('lesson-pdf-download')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lesson-pdf-toggle'));
+    expect(screen.getByTestId('lesson-pdf-frame')).toBeInTheDocument();
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
   });
 
@@ -341,5 +453,54 @@ describe('StudentLessonPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'الدرس الأول' })).toBeInTheDocument();
     expect(screen.queryByText('درس جديد متاح')).not.toBeInTheDocument();
+  });
+
+  it('renders the board card with signed URL images when boards exist', async () => {
+    mockFunctions();
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('board-grid')).toBeInTheDocument();
+    expect(screen.getByText('سبورة الدرس')).toBeInTheDocument();
+    expect(screen.getByTestId('board-image-board-1')).toHaveAttribute('src', BOARD_URL_1);
+    expect(screen.getByTestId('board-image-board-1')).toHaveAttribute('alt', 'سبورة أولى.jpg');
+    expect(screen.getByTestId('board-image-board-2')).toHaveAttribute('src', BOARD_URL_2);
+    expect(screen.getByTestId('board-image-board-2')).toHaveAttribute('alt', 'سبورة ثانية.jpg');
+  });
+
+  it('renders board images in the order returned by the edge function (sort_order asc)', async () => {
+    mockFunctions();
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    const images = await screen.findAllByTestId(/^board-image-/);
+    expect(images.map((img) => img.getAttribute('data-testid'))).toEqual([
+      'board-image-board-2',
+      'board-image-board-1',
+    ]);
+  });
+
+  it('does not render anything board-related when the lesson has no boards', async () => {
+    mockFunctions({ boards: [] });
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByRole('heading', { name: 'الدرس الأول' })).toBeInTheDocument();
+    expect(screen.queryByTestId('board-grid')).not.toBeInTheDocument();
+    expect(screen.queryByText('سبورة الدرس')).not.toBeInTheDocument();
+  });
+
+  it('keeps the whole page working when the boards fetch fails (silent)', async () => {
+    mockFunctions({ boardsFail: true });
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    expect(await screen.findByTestId('lesson-pdf-download')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lesson-pdf-toggle'));
+    expect(screen.getByTestId('lesson-pdf-frame')).toBeInTheDocument();
+    expect(screen.queryByTestId('board-grid')).not.toBeInTheDocument();
+    expect(screen.queryByText('سبورة الدرس')).not.toBeInTheDocument();
+    expect(screen.queryByText('تعذر تحميل الدرس')).not.toBeInTheDocument();
   });
 });

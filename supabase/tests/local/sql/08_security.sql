@@ -5,12 +5,13 @@
 --   1. search_path hardening lock    (every public SECURITY DEFINER pins
 --                                     search_path = public -- B1, no
 --                                     regression lock existed before)
---   2. storage.objects policy lock   (exactly two policies: the INSERT
+--   2. storage.objects policy lock   (exactly three policies: the INSERT
 --                                     pdfs_insert_row_backed + the 0021
 --                                     SELECT pdfs_select_row_backed RETURNING
---                                     mirror, both authenticated-only and
---                                     pending-only; no UPDATE/DELETE/anon;
---                                     RLS ENABLE-without-FORCE per 0021)
+--                                     mirror + the 0036 boards_insert_row_backed
+--                                     INSERT, all authenticated-only; no
+--                                     UPDATE/DELETE/anon; RLS ENABLE-without-
+--                                     FORCE per 0021)
 --   3. B2 belt-and-braces scope      (column-scoped notifications UPDATE:
 --                                     even with table-level UPDATE, only
 --                                     is_read/read_at are writable)
@@ -49,22 +50,25 @@ SELECT tests.assert(
     'sec: create_unit_codes_internal pins search_path=public, extensions (0032)');
 
 -- =====================================================================
--- Section 2: storage.objects policy inventory lock (REVISED, 0021)
+-- Section 2: storage.objects policy inventory lock (REVISED, 0036)
 -- The Storage API uploads with INSERT ... RETURNING *, so a SELECT
 -- policy covering the inserted row is REQUIRED (42501 without it).
--- Exactly TWO policies may exist:
+-- Exactly THREE policies may exist:
 --   * pdfs_insert_row_backed FOR INSERT TO authenticated (0015/0020,
 --     pending-only: is_ready=false AND is_primary=false)
 --   * pdfs_select_row_backed FOR SELECT TO authenticated (0021, the
 --     row-backed RETURNING mirror, same pending-only scope)
+--   * boards_insert_row_backed FOR INSERT TO authenticated (0036, the
+--     boards-bucket twin of the 0015 INSERT pattern: row-backed on
+--     lesson_boards with the '{uuid}/{uuid}.{jpg|jpeg|png|webp}' shape)
 -- No UPDATE/DELETE and no anon surface may ever be reintroduced, and
 -- storage.objects must stay ENABLE-without-FORCE (0021 H2: the storage
 -- service role must not be subject to RLS on its own bookkeeping).
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 2 FROM pg_policies
+    (SELECT count(*) = 3 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'),
-    'sec: exactly two storage.objects policies (INSERT + SELECT)');
+    'sec: exactly three storage.objects policies (2x INSERT + SELECT)');
 
 SELECT tests.assert(
     (SELECT count(*) = 1 FROM pg_policies
@@ -99,6 +103,31 @@ SELECT tests.assert(
       WHERE schemaname = 'storage' AND tablename = 'objects'
         AND policyname = 'pdfs_select_row_backed'),
     'sec: pdfs_select_row_backed is the pending-only row-backed mirror (0021 H1)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_insert_row_backed'
+        AND cmd = 'INSERT' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: boards_insert_row_backed FOR INSERT TO authenticated (0036)');
+
+SELECT tests.assert(
+    (SELECT COALESCE(with_check, qual) LIKE '%bucket_id = ''boards''%'
+        AND COALESCE(with_check, qual) LIKE '%lesson_boards%'
+        AND COALESCE(with_check, qual) LIKE '%deleted_at IS NULL%'
+        AND COALESCE(with_check, qual) LIKE '%jpg|jpeg|png|webp%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_insert_row_backed'),
+    'sec: boards_insert_row_backed is the row-backed boards INSERT (0036, 0015 pattern)');
+
+SELECT tests.assert(
+    (SELECT COALESCE(with_check, qual) NOT LIKE '%is_ready%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_insert_row_backed'),
+    'sec: boards_insert_row_backed has NO is_ready filter (0015 pattern; ready paths already hold their object -> 409 on hosted)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_policies
@@ -323,6 +352,14 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.set_video_status(
     'sec: anon cannot exec set_video_status');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.audit_log(text, text, uuid, jsonb)', 'EXECUTE'),
     'sec: anon cannot exec audit_log');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_board_upload_record(uuid, text, bigint)', 'EXECUTE'),
+    'sec: anon cannot exec create_board_upload_record (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.finalize_board_upload(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec finalize_board_upload (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_board_upload_record(uuid, uuid)', 'EXECUTE'),
+    'sec: anon cannot exec delete_board_upload_record (0036)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.reorder_boards(uuid, uuid[])', 'EXECUTE'),
+    'sec: anon cannot exec reorder_boards (0036)');
 
 -- 0028 internal helpers (purchase model): locked from anon even though
 -- several are granted to authenticated (staff checks are in-function).
@@ -346,6 +383,12 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_all_unit_pur
     'sec: anon cannot exec list_all_unit_purchases');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.unit_purchase_stats()', 'EXECUTE'),
     'sec: anon cannot exec unit_purchase_stats');
+
+-- 0038 unit publish/hide: staff-only, locked from anon
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.publish_unit(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec publish_unit (0038)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.hide_unit(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec hide_unit (0038)');
 
 -- =====================================================================
 -- Cleanup

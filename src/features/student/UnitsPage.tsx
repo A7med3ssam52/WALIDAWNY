@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PackageOpen, PlayCircle } from 'lucide-react';
+import { PackageOpen, PlayCircle, KeyRound, RefreshCw } from 'lucide-react';
 
-import { Badge } from '../../components/Badge';
-import { Card } from '../../components/Card';
+import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
+import { GridCard } from '../../components/GridCard';
 import { LayoutShell } from '../../components/LayoutShell';
 import { LockedUnitCard } from '../../components/LockedUnitCard';
+import { PageHeader } from '../../components/PageHeader';
 import { RedeemCodeForm } from '../../components/RedeemCodeForm';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
+import { UnitCard } from '../../components/UnitCard';
 import { useToast } from '../../components/Toast';
 import {
   getMyUnitPurchases,
   getPublicSettings,
   getPublicUnitPrices,
-  getRpcErrorCode,
   listUnitsForGrade,
   redeemUnitCode,
 } from '../../data/rpc';
-import { formatPrice } from '../../lib/format';
 import type {
   PublicSettings,
   PublicUnitPrice,
@@ -28,34 +28,22 @@ import type {
   UnitPurchaseWithUnit,
 } from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
-
-const REDEEM_ERROR_MESSAGES: Record<string, string> = {
-  code_not_found: 'الكود غير صالح',
-  code_already_used: 'تم استخدام هذا الكود بالفعل',
-  code_revoked: 'تم إلغاء هذا الكود',
-  unit_not_found: 'الوحدة المطلوبة غير موجودة',
-  unit_inactive: 'هذه الوحدة غير متاحة حاليًا',
-  unit_purchased: 'لقد قمت بشراء هذه الوحدة بالفعل',
-  no_grade_assigned: 'لم يتم تحديد صفك الدراسي بعد — تواصل مع الأستاذ',
-};
-
-function redeemErrorMessage(error: unknown): string {
-  const code = getRpcErrorCode(error);
-  if (code && REDEEM_ERROR_MESSAGES[code]) {
-    return REDEEM_ERROR_MESSAGES[code];
-  }
-  return 'تعذر تفعيل الوحدة. حاول مرة أخرى';
-}
+import { redeemErrorMessage } from './redeemErrors';
 
 function UnitsSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-hidden="true">
-      {[0, 1, 2].map((index) => (
-        <div key={index} className="glass-card space-y-3 p-4 sm:p-6">
-          <Skeleton className="h-5 w-1/2" />
-          <Skeleton className="h-4 w-2/3" />
+      <GridCard padding="md">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-8 w-20" />
         </div>
-      ))}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className="h-40 w-full rounded-lg" />
+          ))}
+        </div>
+      </GridCard>
     </div>
   );
 }
@@ -96,6 +84,7 @@ export function UnitsPage() {
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
   const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
   const lockedUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id));
+  const purchasedUnits = (units ?? []).filter((unit) => purchasedUnitIds.has(unit.id));
 
   const handleRedeem = async (code: string): Promise<boolean> => {
     setRedeemError(null);
@@ -120,89 +109,128 @@ export function UnitsPage() {
       variant="sidebar"
       nav={<StudentNav />}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="وحداتي"
+          subtitle="إدارة الوحدات المشتراة وتفعيل الوحدات الجديدة"
+          icon={<PackageOpen className="h-5 w-5" />}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<RefreshCw className="h-4 w-4" />}
+              onClick={() => void load()}
+              className="gap-1.5"
+            >
+              تحديث
+            </Button>
+          }
+        />
+
         {error ? (
           <ErrorState message="تعذر تحميل الوحدات" onRetry={() => void load()} />
         ) : units === null ? (
           <UnitsSkeleton />
         ) : !profile?.grade_id ? (
-          <EmptyState
-            icon={<PackageOpen className="h-6 w-6" />}
-            title="لم يتم تحديد صفك الدراسي"
-            description="تواصل مع الأستاذ لتحديد الصف الدراسي الخاص بك ثم حاول مرة أخرى."
-          />
+          <GridCard className="text-center py-12">
+            <EmptyState
+              icon={<PackageOpen className="h-10 w-10 mx-auto text-foreground-subtle" />}
+              title="لم يتم تحديد صفك الدراسي"
+              description="تواصل مع الأستاذ لتحديد الصف الدراسي الخاص بك ثم حاول مرة أخرى."
+            />
+          </GridCard>
         ) : (
           <>
-            <Card title="وحداتي المشتراة" subtitle="الوحدات التي أصبحت متاحة لك مدى الحياة">
-              {purchases.length === 0 ? (
-                <EmptyState
-                  title="لم تشترِ أي وحدة بعد"
-                  description="استخدم كود التفعيل بالأسفل لتفعيل وحدة من وحدات صفك."
-                />
-              ) : (
-                <ul className="divide-y divide-border-muted">
-                  {purchases.map((purchase) => {
-                    const unit = units.find((candidate) => candidate.id === purchase.unit_id);
-                    return (
-                      <li key={purchase.id} className="flex items-center justify-between gap-3 py-3">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground">{purchase.unit_name}</p>
-                          <p className="mt-0.5 text-xs text-foreground-subtle" dir="ltr">
-                            {formatPrice(purchase.total_price)}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <Badge variant="success">مدفوعة</Badge>
-                          {unit ? (
-                            <Link
-                              to={`/student/curriculum?unit=${unit.id}`}
-                              className="btn-primary inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white"
-                              data-testid={`open-unit-${unit.id}`}
-                            >
-                              <PlayCircle aria-hidden="true" className="h-4 w-4" />
-                              افتح الوحدة
-                            </Link>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Card>
+            {/* Purchased Units */}
+            <GridCard>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="font-display text-lg font-bold text-foreground">
+                  وحداتي المشتراة
+                  <span className="ml-2 text-sm font-normal text-foreground-muted">({purchasedUnits.length})</span>
+                </h2>
+                <Link
+                  to="/student/curriculum"
+                  className="text-sm font-medium text-primary-strong hover:underline"
+                >
+                  عرض المنهج الكامل
+                </Link>
+              </div>
 
-            {lockedUnits.length > 0 ? (
-              <Card title="وحدات متاحة" subtitle="فعّل الوحدة بكود أو تواصل مع الأستاذ لتفعيلها">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {lockedUnits.map((unit) => {
+              {purchasedUnits.length === 0 ? (
+                <div className="text-center py-8">
+                  <PackageOpen className="h-10 w-10 mx-auto text-foreground-subtle" aria-hidden="true" />
+                  <p className="mt-3 text-foreground-muted">لم تشترِ أي وحدة بعد</p>
+                  <p className="mt-1 text-sm text-foreground-subtle">استخدم كود التفعيل بالأسفل لتفعيل وحدة من وحدات صفك</p>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {purchasedUnits.map((unit) => {
                     const price = priceById.get(unit.id);
-                    if (!price) {
-                      return null;
-                    }
                     return (
-                      <LockedUnitCard
+                      <UnitCard
                         key={unit.id}
-                        unit={price}
-                        whatsappNumber={settings?.whatsapp_number ?? null}
-                        whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${price.unit_name}`}
+                        name={unit.name}
+                        gradeName={price?.grade_name}
+                        price={price?.total_price}
+                        isPurchased={true}
+                        onAction={() => {
+                          const link = `/student/curriculum?unit=${unit.id}`;
+                          window.location.href = link;
+                        }}
+                        actionLabel="افتح الوحدة"
+                        actionIcon={<PlayCircle className="h-4 w-4" />}
                       />
                     );
                   })}
                 </div>
-              </Card>
+              )}
+            </GridCard>
+
+            {/* Available Units */}
+            {lockedUnits.length > 0 ? (
+              <GridCard>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h2 className="font-display text-lg font-bold text-foreground">
+                    وحدات متاحة للتفعيل
+                    <span className="ml-2 text-sm font-normal text-foreground-muted">({lockedUnits.length})</span>
+                  </h2>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {lockedUnits.map((unit) => {
+                    const price = priceById.get(unit.id);
+                    return (
+                      <LockedUnitCard
+                        key={unit.id}
+                        unit={price ?? null}
+                        unitName={unit.name}
+                        gradeName={price?.grade_name}
+                        whatsappNumber={settings?.whatsapp_number ?? null}
+                        whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${unit.name}`}
+                      />
+                    );
+                  })}
+                </div>
+              </GridCard>
             ) : null}
 
-            <Card
-              title="تفعيل وحدة بكود"
-              subtitle="أدخل كود التفعيل الذي حصلت عليه من الأستاذ"
-            >
+            {/* Redeem Code Section */}
+            <GridCard className="glass-accent-border">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-foreground">تفعيل وحدة بكود</h3>
+                  <p className="text-sm text-foreground-muted">أدخل كود التفعيل الذي حصلت عليه من الأستاذ</p>
+                </div>
+              </div>
               <RedeemCodeForm
                 onSubmit={(code) => handleRedeem(code)}
                 busy={redeemBusy}
                 error={redeemError}
                 onSuccess={() => setRedeemError(null)}
               />
-            </Card>
+            </GridCard>
           </>
         )}
       </div>

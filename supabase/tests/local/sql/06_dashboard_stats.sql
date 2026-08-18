@@ -38,7 +38,7 @@ VALUES ('80000000-0000-0000-0000-000000000004', '80000000-0000-0000-0000-0000000
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 VALUES ('80000000-0000-0000-0000-000000000006',
         'stats-staff@walid-platform.local',
-        '{"full_name":"Stats Staff","phone":"+201001000082"}',
+        '{"full_name":"Stats Staff","phone":"+201001000082","guardian_phone":"+201001000082","address":"Cairo","grade_id":"80000000-0000-0000-0000-000000000001"}',
         now(), now());
 UPDATE public.profiles SET role = 'mr_walid', grade_id = '80000000-0000-0000-0000-000000000001'
 WHERE id = '80000000-0000-0000-0000-000000000006';

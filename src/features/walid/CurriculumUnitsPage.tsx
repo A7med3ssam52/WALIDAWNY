@@ -10,7 +10,7 @@ import { ErrorState } from '../../components/ErrorState';
 import { Input } from '../../components/Input';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
 import { UnitStatusBadge } from '../../components/UnitStatusBadge';
 import {
@@ -233,7 +233,7 @@ export function CurriculumUnitsPage() {
       title={grade ? `وحدات ${grade.name}` : 'وحدات الصف'}
       subtitle="أنشئ الوحدات وأدر نشرها وإخفاءها، ثم افتح دروسها"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
       actions={
         <Link
           to="/walid/curriculum"

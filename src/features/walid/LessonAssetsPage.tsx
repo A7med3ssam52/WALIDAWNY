@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Upload as TusUpload } from 'tus-js-client';
-import { Eye, FileUp, MessageSquareText, RefreshCw, Replace, Trash2, Video as VideoIcon } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  FileUp,
+  Image as ImageIcon,
+  ImageUp,
+  MessageSquareText,
+  RefreshCw,
+  Replace,
+  Trash2,
+  Video as VideoIcon,
+} from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -14,28 +26,37 @@ import { LessonStatusBadge } from '../../components/LessonStatusBadge';
 import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
-import { StaffNav } from '../../components/StaffNav';
+import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
 import { VideoPlayer } from '../../components/VideoPlayer';
 import {
   cancelVideoUploadSession,
   createVideoUploadSession,
+  deleteBoardUpload,
   deletePdfUpload,
+  finalizeBoardUpload,
   finalizePdfUpload,
   getLessonById,
+  getLessonBoardSignedUrls,
   getPlaybackUrl,
   getRpcErrorCode,
   getVideoThumbnailUrl,
   deleteLessonComment,
+  listLessonBoards,
   listLessonComments,
   listLessonPdfs,
   listLessonVideos,
+  reorderLessonBoards,
+  uploadBoard,
+  uploadBoardBytes,
   uploadPdf,
   uploadPdfBytes,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
 import type {
   Lesson,
+  LessonBoard,
+  LessonBoardSignedUrl,
   LessonComment,
   LessonPdf,
   LessonVideo,
@@ -123,6 +144,37 @@ function pdfErrorMessage(error: unknown): string {
   return 'تعذر رفع الملف. حاول مرة أخرى';
 }
 
+const BOARD_ERROR_MESSAGES: Record<string, string> = {
+  lesson_not_found: 'الدرس غير موجود',
+  lesson_deleted: 'الدرس محذوف',
+  invalid_file_name: 'اسم الملف غير صالح',
+  unsupported_image_type: 'صيغة الصورة غير مدعومة',
+  file_too_large: 'حجم الصورة يتجاوز الحد المسموح (10 ميجابايت)',
+  validation_error: 'بيانات غير صالحة',
+  invalid_json: 'بيانات غير صالحة',
+  board_not_found: 'الصورة غير موجودة',
+  permission_denied: 'ليست لديك صلاحية',
+  access_denied: 'ليست لديك صلاحية',
+  forbidden: 'ليست لديك صلاحية',
+  unauthorized: 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
+  account_inactive_or_deleted: 'الحساب غير نشط أو تم حذفه',
+  function_error: 'تعذر تنفيذ العملية. حاول مرة أخرى',
+  board_reservation_failed: 'فشل إنشاء سجل الصورة. حاول مرة أخرى',
+  upload_url_failed: 'فشل إنشاء رابط الرفع. حاول مرة أخرى',
+  board_upload_failed: 'فشل رفع الصورة إلى التخزين. حاول مرة أخرى',
+  deletion_failed: 'فشل حذف الصورة. حاول مرة أخرى',
+  storage_cleanup_failed: 'تعذر تنظيف الملفات القديمة. حاول مرة أخرى',
+  wrong_lesson: 'الصورة لا تنتمي لهذا الدرس',
+};
+
+function boardErrorMessage(error: unknown): string {
+  const code = getRpcErrorCode(error);
+  if (code && BOARD_ERROR_MESSAGES[code]) {
+    return BOARD_ERROR_MESSAGES[code];
+  }
+  return 'تعذر تنفيذ العملية. حاول مرة أخرى';
+}
+
 function videoErrorMessage(error: unknown): string {
   const code = getRpcErrorCode(error);
   if (code && VIDEO_ERROR_MESSAGES[code]) {
@@ -202,6 +254,7 @@ interface PreviewState {
 
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024;
+const MAX_BOARD_SIZE = 10 * 1024 * 1024;
 const VIDEO_CHUNK_SIZE = 8 * 1024 * 1024;
 const VIDEO_POLL_INTERVAL_MS = 4000;
 
@@ -272,6 +325,19 @@ export function LessonAssetsPage() {
 
   const [pdfs, setPdfs] = useState<LessonPdf[] | null>(null);
   const [pdfsError, setPdfsError] = useState(false);
+
+  const [boards, setBoards] = useState<LessonBoard[] | null>(null);
+  const [boardsError, setBoardsError] = useState(false);
+  const [boardUrls, setBoardUrls] = useState<LessonBoardSignedUrl[] | null>(null);
+  const [boardFile, setBoardFile] = useState<File | null>(null);
+  const [boardUploadError, setBoardUploadError] = useState<string | null>(null);
+  const [boardStage, setBoardStage] = useState<UploadStage>('idle');
+  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [previewBoard, setPreviewBoard] = useState<{ board: LessonBoard; url: string } | null>(
+    null,
+  );
+  const [deleteBoard, setDeleteBoard] = useState<LessonBoard | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -346,6 +412,43 @@ export function LessonAssetsPage() {
     }
   }, [lessonId]);
 
+  const loadBoardUrls = useCallback(async () => {
+    if (!lessonId) {
+      return;
+    }
+    try {
+      const rows = await getLessonBoardSignedUrls(lessonId);
+      setBoardUrls(Array.isArray(rows) ? rows : []);
+    } catch {
+      // Signed URLs are best-effort: a failed fetch never breaks the list.
+      setBoardUrls([]);
+    }
+  }, [lessonId]);
+
+  const loadBoards = useCallback(async () => {
+    if (!lessonId) {
+      return;
+    }
+    setBoardsError(false);
+    try {
+      const rows = await listLessonBoards(lessonId);
+      setBoards(rows);
+      if (rows.some((board) => board.is_ready)) {
+        void loadBoardUrls();
+      } else {
+        setBoardUrls([]);
+      }
+    } catch {
+      setBoardsError(true);
+      setBoardUrls([]);
+    }
+  }, [lessonId, loadBoardUrls]);
+
+  const refreshBoards = useCallback(() => {
+    void loadBoards();
+    void loadBoardUrls();
+  }, [loadBoards, loadBoardUrls]);
+
   const handleDeleteComment = async (comment: LessonComment) => {
     setDeletingCommentId(comment.id);
     try {
@@ -391,12 +494,102 @@ export function LessonAssetsPage() {
     }
   };
 
+  const handleBoardFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0] ?? null;
+    setBoardUploadError(null);
+    if (!selected) {
+      setBoardFile(null);
+      return;
+    }
+    const hasImageExtension = /\.(jpe?g|png|webp)$/i.test(selected.name);
+    const hasImageType = ['image/jpeg', 'image/png', 'image/webp'].includes(selected.type);
+    if (!hasImageExtension || !hasImageType) {
+      setBoardFile(null);
+      setBoardUploadError('يجب اختيار صورة بصيغة JPG أو PNG أو WebP فقط');
+      return;
+    }
+    if (selected.size > MAX_BOARD_SIZE) {
+      setBoardFile(null);
+      setBoardUploadError('حجم الصورة يتجاوز الحد المسموح (10 ميجابايت)');
+      return;
+    }
+    setBoardFile(selected);
+  };
+
+  const handleBoardUpload = async () => {
+    if (!lessonId || !boardFile) {
+      return;
+    }
+    setBoardStage('requesting');
+    setBoardUploadError(null);
+    try {
+      const session = await uploadBoard({
+        lessonId,
+        fileName: boardFile.name,
+        fileSize: boardFile.size,
+      });
+      setBoardStage('uploading');
+      await uploadBoardBytes(session.uploadUrl, boardFile);
+      setBoardStage('finalizing');
+      await finalizeBoardUpload(session.board_id);
+      showToast('تم رفع الصورة بنجاح');
+      await Promise.all([loadBoards(), loadBoardUrls()]);
+    } catch (err) {
+      showToast(boardErrorMessage(err), 'error');
+    } finally {
+      setBoardStage('idle');
+      setBoardFile(null);
+    }
+  };
+
+  const handleDeleteBoard = async (board: LessonBoard) => {
+    if (!lessonId) {
+      return;
+    }
+    setDeleteBoard(null);
+    setDeletingBoardId(board.id);
+    try {
+      await deleteBoardUpload(lessonId, board.id);
+      showToast('تم حذف الصورة');
+      await Promise.all([loadBoards(), loadBoardUrls()]);
+    } catch (err) {
+      showToast(boardErrorMessage(err), 'error');
+    } finally {
+      setDeletingBoardId(null);
+    }
+  };
+
+  const handleMoveBoard = async (index: number, direction: -1 | 1) => {
+    if (!lessonId || !sortedBoards || reordering) {
+      return;
+    }
+    const target = index + direction;
+    if (target < 0 || target >= sortedBoards.length) {
+      return;
+    }
+    const next = [...sortedBoards];
+    [next[index], next[target]] = [next[target], next[index]];
+    setReordering(true);
+    try {
+      await reorderLessonBoards(
+        lessonId,
+        next.map((board) => board.id),
+      );
+      await Promise.all([loadBoards(), loadBoardUrls()]);
+    } catch (err) {
+      showToast(boardErrorMessage(err), 'error');
+    } finally {
+      setReordering(false);
+    }
+  };
+
   useEffect(() => {
     void loadLesson();
     void loadPdfs();
     void loadVideos();
     void loadComments();
-  }, [loadLesson, loadPdfs, loadVideos, loadComments]);
+    void loadBoards();
+  }, [loadLesson, loadPdfs, loadVideos, loadComments, loadBoards]);
 
   useEffect(() => {
     return () => {
@@ -436,6 +629,36 @@ export function LessonAssetsPage() {
       return String(a.created_at).localeCompare(String(b.created_at));
     });
   }, [videos]);
+
+  const sortedBoards = useMemo(() => {
+    if (!boards) {
+      return null;
+    }
+    return [...boards].sort(
+      (a, b) =>
+        a.sort_order - b.sort_order || String(a.created_at).localeCompare(String(b.created_at)),
+    );
+  }, [boards]);
+
+  const boardUrlById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of boardUrls ?? []) {
+      map.set(item.board_id, item.signed_url);
+    }
+    return map;
+  }, [boardUrls]);
+
+  const openBoardPreview = (board: LessonBoard) => {
+    const url = boardUrlById.get(board.id);
+    if (!url) {
+      return;
+    }
+    setPreviewBoard({ board, url });
+  };
+
+  const closeBoardPreview = () => {
+    setPreviewBoard(null);
+  };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -636,13 +859,14 @@ export function LessonAssetsPage() {
   };
 
   const uploadBusy = stage !== 'idle';
+  const boardBusy = boardStage !== 'idle';
 
   return (
     <LayoutShell
       title="ملفات الدرس"
       subtitle="إدارة ملفات PDF وفيديوهات الدرس"
       variant="sidebar"
-      nav={<StaffNav />}
+      nav={<RoleNav />}
       actions={
         <Link
           to="/walid/curriculum"
@@ -987,6 +1211,191 @@ export function LessonAssetsPage() {
           )}
         </Card>
 
+        <Card
+          title="سبورة الدرس"
+          subtitle="رفع صور السبورة للطلاب (JPG / PNG / WebP، بحد أقصى 10 ميجابايت)"
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw aria-hidden="true" className="h-4 w-4" />}
+              onClick={() => void refreshBoards()}
+            >
+              تحديث الصور
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {boardsError ? (
+              <ErrorState
+                message="تعذر تحميل صور السبورة"
+                onRetry={() => void refreshBoards()}
+              />
+            ) : boards === null ? (
+              <ListSkeleton rows={3} />
+            ) : sortedBoards === null || sortedBoards.length === 0 ? (
+              <EmptyState
+                title="لا توجد صور سبورة لهذا الدرس بعد"
+                description="ارفع أول صورة من النموذج بالأسفل وستظهر هنا."
+                icon={<ImageIcon className="h-6 w-6" />}
+              />
+            ) : (
+              <div
+                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+                data-testid="board-grid"
+              >
+                {sortedBoards.map((board, index) => {
+                  const boardUrl = boardUrlById.get(board.id);
+                  const isDeleting = deletingBoardId === board.id;
+                  return (
+                    <div
+                      key={board.id}
+                      data-testid={`board-card-${board.id}`}
+                      className="glass-soft flex flex-col overflow-hidden rounded-lg"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openBoardPreview(board)}
+                        disabled={!boardUrl}
+                        aria-label={`معاينة ${board.original_name}`}
+                        className="block w-full cursor-pointer text-start"
+                      >
+                        {boardUrl ? (
+                          <img
+                            src={boardUrl}
+                            alt={board.original_name}
+                            loading="lazy"
+                            data-testid={`board-img-${board.id}`}
+                            className="h-28 w-full rounded-t-lg object-cover"
+                          />
+                        ) : (
+                          <span
+                            data-testid={`board-img-${board.id}`}
+                            className="flex h-28 w-full items-center justify-center rounded-t-lg bg-white/5"
+                            aria-hidden="true"
+                          >
+                            <ImageIcon className="h-8 w-8 text-foreground-subtle" />
+                          </span>
+                        )}
+                      </button>
+                      <div className="flex flex-1 flex-col gap-2 p-3">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {board.original_name}
+                        </p>
+                        <p className="text-xs text-foreground-subtle">
+                          {formatFileSize(board.size_bytes)}
+                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          {board.is_ready ? (
+                            <Badge variant="success">جاهز</Badge>
+                          ) : (
+                            <Badge variant="warning">قيد الرفع</Badge>
+                          )}
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<ChevronUp aria-hidden="true" className="h-4 w-4" />}
+                              aria-label={`نقل ${board.original_name} لأعلى`}
+                              data-testid={`board-move-up-${board.id}`}
+                              disabled={index === 0 || reordering}
+                              onClick={() => void handleMoveBoard(index, -1)}
+                            >
+                              {''}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<ChevronDown aria-hidden="true" className="h-4 w-4" />}
+                              aria-label={`نقل ${board.original_name} لأسفل`}
+                              data-testid={`board-move-down-${board.id}`}
+                              disabled={index === sortedBoards.length - 1 || reordering}
+                              onClick={() => void handleMoveBoard(index, 1)}
+                            >
+                              {''}
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            icon={<Eye aria-hidden="true" className="h-4 w-4" />}
+                            data-testid={`board-preview-${board.id}`}
+                            disabled={!boardUrl}
+                            onClick={() => openBoardPreview(board)}
+                          >
+                            معاينة
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                            data-testid={`board-delete-${board.id}`}
+                            disabled={isDeleting}
+                            onClick={() => setDeleteBoard(board)}
+                          >
+                            {isDeleting ? 'جاري الحذف...' : 'حذف'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="glass-tile rounded-lg border border-dashed border-primary/25 p-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="board-file"
+                    className="text-sm font-medium text-secondary-foreground"
+                  >
+                    اختيار صورة السبورة
+                  </label>
+                  <input
+                    id="board-file"
+                    name="board-file"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                    aria-label="اختيار صورة السبورة"
+                    data-testid="board-upload-input"
+                    onChange={handleBoardFileChange}
+                    className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] file:transition-[filter] hover:file:brightness-110"
+                  />
+                </div>
+                {boardUploadError ? (
+                  <p role="alert" className="text-xs font-medium text-error">
+                    {boardUploadError}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    loading={boardBusy}
+                    disabled={!boardFile}
+                    icon={<ImageUp aria-hidden="true" className="h-4 w-4" />}
+                    data-testid="board-upload-button"
+                    onClick={() => void handleBoardUpload()}
+                  >
+                    رفع الصورة
+                  </Button>
+                  {boardBusy ? (
+                    <span className="text-sm text-foreground-muted" role="status">
+                      {STAGE_LABELS[boardStage as Exclude<UploadStage, 'idle'>]}
+                    </span>
+                  ) : null}
+                  {boardFile ? (
+                    <span className="text-sm text-foreground-muted">
+                      {boardFile.name} — {formatFileSize(boardFile.size)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
         <Card title="ملفات PDF الحالية">
           {pdfsError ? (
             <ErrorState message="تعذر تحميل قائمة الملفات" onRetry={() => void loadPdfs()} />
@@ -1076,6 +1485,45 @@ export function LessonAssetsPage() {
             </div>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        open={previewBoard !== null}
+        title="معاينة الصورة"
+        confirmLabel="إغلاق"
+        cancelLabel="إغلاق"
+        onConfirm={closeBoardPreview}
+        onCancel={closeBoardPreview}
+      >
+        <div className="mt-4" data-testid="board-preview-modal">
+          {previewBoard ? (
+            <img
+              src={previewBoard.url}
+              alt={previewBoard.board.original_name}
+              className="max-h-[70vh] w-full rounded-lg object-contain"
+            />
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteBoard !== null}
+        title="تأكيد حذف الصورة"
+        description="سيتم حذف صورة السبورة نهائيًا من الدرس. هل تريد المتابعة؟"
+        confirmLabel="حذف الصورة"
+        cancelLabel="إلغاء"
+        danger
+        loading={deletingBoardId !== null}
+        onConfirm={() => {
+          if (deleteBoard) {
+            void handleDeleteBoard(deleteBoard);
+          }
+        }}
+        onCancel={() => setDeleteBoard(null)}
+      >
+        {deleteBoard ? (
+          <p className="mt-3 text-xs text-foreground-subtle">{deleteBoard.original_name}</p>
+        ) : null}
       </Modal>
     </LayoutShell>
   );

@@ -205,6 +205,26 @@ The time-based status enum used by the legacy access model was dropped by 0028 �
 
 - Partial UNIQUE `(lesson_id) WHERE is_primary AND deleted_at IS NULL`.
 
+### 4.10 `lesson_boards` — Teacher-uploaded board images (0036)
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | uuid | PK |
+| `lesson_id` | uuid | NOT NULL, FK → `lessons(id)` ON DELETE CASCADE |
+| `storage_path` | text | NOT NULL UNIQUE (path inside `boards` bucket) |
+| `original_name` | text | NOT NULL |
+| `size_bytes` | bigint | NULL |
+| `mime_type` | text | NOT NULL DEFAULT 'image/jpeg' |
+| `sort_order` | int | NOT NULL DEFAULT 0 |
+| `is_ready` | boolean | NOT NULL DEFAULT false |
+| `deleted_at` | timestamptz | NULL |
+| `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
+
+- Index `(lesson_id, sort_order)` for ordered retrieval.
+- **RLS**: single policy `lesson_boards_select_gated` FOR SELECT — staff (admin/mr_walid/teacher) see all non-deleted rows; students see only `is_ready=true AND deleted_at IS NULL` rows they have access to (`can_access_lesson`). No INSERT/UPDATE/DELETE policies — all mutations via SECURITY DEFINER RPCs.
+- **Storage**: private bucket `boards` (see §8). Row-backed INSERT policy `boards_insert_row_backed` mirrors PDF pattern (0015): `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row.
+- **No `is_primary`** — all ready images are exposed (gallery style). Manual ordering via `sort_order` (staff `reorder_boards` RPC). Soft-delete via `deleted_at` allowed even for ready rows (unlike PDFs).
+
 ### 4.10 `progress` — one row per student+lesson
 
 | Column | Type | Constraints |
@@ -476,7 +496,11 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `create_grade` / `update_grade` / `delete_grade` (soft) / `restore_grade` | `(p_grade_id uuid)` | SECURITY DEFINER + audit; set/clear `grades.deleted_at`; units/lessons remain intact, unreachable to students (deactivated or soft-deleted grades block access — [BINDING B8]) |
 | `set_app_setting` | `(p_key text, p_value jsonb)` | mr_walid: `whatsapp%` keys only; admin: all |
 | `finalize_pdf_upload` | `(p_pdf_id uuid)` | marks `is_ready`, promotes primary, audits; client-callable (staff only via RLS guards) |
-| `get_dashboard_stats` | `() RETURNS jsonb` | **read-only, no audit**; `is_admin() OR is_mr_walid() OR is_teacher()` → `permission_denied`; single-round-trip JSON: students (total/active/disabled/deleted/new-this-month), purchases (total/total_revenue/revenue_this_month), content (grades/units/lessons/published/videos(+ready)/pdfs(+ready)), engagement (students-with-progress/completed/avg%), by_grade array (students/purchases/revenue), top_units (LIMIT 5 by revenue), recent_purchases (5); aggregates read through `v_dashboard_metrics` where applicable (0018/0028) |
+| `create_board_upload_record` | `(p_lesson_id uuid, p_original_name text, p_size_bytes bigint DEFAULT NULL) RETURNS TABLE (id uuid, storage_path text)` | staff (admin/mr_walid/teacher); validates lesson exists/active, MIME from extension (jpg|jpeg|png|webp), size ≤ 10 MiB, generates `storage_path = {lesson_id}/{uuid}.{ext}`, `sort_order = max+1`, inserts pending (`is_ready=false`), audits `board.upload_started`; errors: `permission_denied`, `lesson_not_found`, `lesson_deleted`, `invalid_board_size`, `invalid_file_extension` |
+| `finalize_board_upload` | `(p_board_id uuid)` | staff; sets `is_ready=true`, `updated_at=now()`, audits `board.finalized`; errors: `permission_denied`, `board_not_found`, `board_already_ready` |
+| `delete_board_upload_record` | `(p_lesson_id uuid, p_board_id uuid)` | staff; soft-delete (`deleted_at=now()`) — allowed even for ready rows; validates ownership; audits `board.deleted`; errors: `permission_denied`, `board_not_found`, `wrong_lesson` |
+| `reorder_boards` | `(p_lesson_id uuid, p_board_ids uuid[])` | staff; enforces exact match to non-deleted boards of the lesson, updates sequential `sort_order`, audits `board.reordered`; errors: `permission_denied`, `lesson_not_found`, `board_not_found`, `wrong_lesson`, `validation_error` |
+| `get_dashboard_stats` | `() RETURNS jsonb` | **read-only, no audit**; `is_admin() OR is_mr_walid() OR is_teacher()` → `permission_denied`; single-round-trip JSON: students (total/active/disabled/deleted/new-this-month), purchases (total/total_revenue/revenue_this_month), content (grades/units/lessons/published/videos(+ready)/pdfs(+ready)/**boards**), engagement (students-with-progress/completed/avg%), by_grade array (students/purchases/revenue), top_units (LIMIT 5 by revenue), recent_purchases (5); aggregates read through `v_dashboard_metrics` where applicable (0018/0028) |
 | `list_audit_logs` | `(p_from timestamptz, p_to timestamptz, p_action text, p_entity_type text, p_actor_id uuid, p_limit integer, p_offset integer) RETURNS SETOF v_audit_log` | **read-only, no audit**; admin-only (`is_admin()` → `permission_denied`); newest-first; action/entity filtered via ILIKE substring (case-insensitive); date range + optional actor filter; limit clamped 1–200, default 50 (0019) |
 | `count_audit_logs` | `(p_from timestamptz, p_to timestamptz, p_action text, p_entity_type text, p_actor_id uuid) RETURNS bigint` | **read-only, no audit**; admin-only; same filters as `list_audit_logs` for pagination totals (0019) |
 
@@ -516,6 +540,7 @@ Phase 6/7 add: `grade_exam_attempt` (staff, essay grading → `final_score` + `e
 |---|---|---|
 | `pdfs` | **private** | No public SELECT. Uploads: mr_walid/admin only via Edge Function-signed upload URL. Reads: signed URL from `get-pdf-signed-url` after `can_access_lesson` |
 | `audit-exports` | **private** | Admin-only; CSV exports written by Edge Function, returned via short-lived signed URL |
+| `boards` | **private** | No public SELECT. Uploads: staff (mr_walid/admin/teacher) via `upload-board` EF signed upload URL (image/jpeg|png|webp, ≤10 MiB). Reads: student via `get-board-signed-urls` after `can_access_lesson`; staff preview bypasses gate. Path convention: `{lesson_id}/{uuid}.{ext}`. Row-backed INSERT policy mirrors PDF pattern. |
 
 Storage RLS: no anonymous policies; all object access goes through signed URLs issued by Edge Functions (SECURITY.md §9).
 
