@@ -13,7 +13,9 @@ import { StudentNotificationsPage } from '../features/student/StudentNotificatio
 import { StudentProfilePage } from '../features/student/StudentProfilePage';
 import { UnitsPage } from '../features/student/UnitsPage';
 import { CodesPage } from '../features/walid/CodesPage';
+import { CurriculumLessonsPage } from '../features/walid/CurriculumLessonsPage';
 import { CurriculumPage } from '../features/walid/CurriculumPage';
+import { CurriculumUnitsPage } from '../features/walid/CurriculumUnitsPage';
 import { ExamsPage } from '../features/walid/ExamsPage';
 import { GradesPage } from '../features/walid/GradesPage';
 import { LessonAssetsPage } from '../features/walid/LessonAssetsPage';
@@ -66,12 +68,14 @@ export function AppRoutes() {
         </Route>
         <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
           <Route index element={<Navigate to="/walid/dashboard" replace />} />
-          <Route path="dashboard" element={<WalidDashboardPage />} />
+          <Route path="dashboard" element={<WalidDashboardPage nav={<AdminNav />} />} />
           <Route path="students" element={<StudentListPage />} />
           <Route path="students/trash" element={<TrashPage />} />
           <Route path="students/:studentId" element={<StudentDetailPage />} />
           <Route path="grades" element={<GradesPage />} />
           <Route path="curriculum" element={<CurriculumPage />} />
+          <Route path="curriculum/:gradeId" element={<CurriculumUnitsPage />} />
+          <Route path="curriculum/:gradeId/:unitId" element={<CurriculumLessonsPage />} />
           <Route path="exams" element={<ExamsPage />} />
           <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
           <Route path="pricing" element={<PricingPage />} />

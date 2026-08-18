@@ -20,7 +20,7 @@ const iconTones: Record<StatTone, string> = {
 
 export function StatCard({ label, value, icon, hint, tone = 'default' }: StatCardProps) {
   return (
-    <div className="glass-card glass-card-hover group flex items-start gap-3 p-4">
+    <div className="glass-card glass-card-hover group flex items-start gap-3 p-4 sm:p-5">
       <span
         aria-hidden="true"
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] transition-transform duration-300 group-hover:scale-110 ${iconTones[tone]}`}
@@ -28,11 +28,11 @@ export function StatCard({ label, value, icon, hint, tone = 'default' }: StatCar
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-xs font-medium text-foreground-subtle">{label}</p>
-        <p className="mt-0.5 text-xl font-bold text-foreground" dir="ltr">
+        <p className="text-xs sm:text-sm font-medium text-foreground-subtle">{label}</p>
+        <p className="mt-0.5 text-xl sm:text-2xl font-bold text-foreground" dir="ltr">
           {value}
         </p>
-        {hint ? <p className="mt-0.5 text-xs text-foreground-subtle">{hint}</p> : null}
+        {hint ? <p className="mt-0.5 text-xs sm:text-sm text-foreground-subtle">{hint}</p> : null}
       </div>
     </div>
   );
