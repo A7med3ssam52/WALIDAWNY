@@ -365,8 +365,6 @@ export function LandingPage() {
           aria-hidden="true"
           className="relative overflow-hidden py-4"
         >
-          <div className="pointer-events-none absolute inset-y-0 start-0 z-10 w-16 bg-gradient-to-r from-background to-transparent sm:w-28" />
-          <div className="pointer-events-none absolute inset-y-0 end-0 z-10 w-16 bg-gradient-to-l from-background to-transparent sm:w-28" />
           <div className="overflow-hidden" dir="ltr">
             <div className="flex w-max animate-marquee gap-4 pe-4">
               {[...marqueeItems, ...marqueeItems].map((item, index) => {
