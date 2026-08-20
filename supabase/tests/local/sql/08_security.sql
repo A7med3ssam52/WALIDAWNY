@@ -5,13 +5,14 @@
 --   1. search_path hardening lock    (every public SECURITY DEFINER pins
 --                                     search_path = public -- B1, no
 --                                     regression lock existed before)
---   2. storage.objects policy lock   (exactly three policies: the INSERT
+--   2. storage.objects policy lock   (exactly six policies: the INSERT
 --                                     pdfs_insert_row_backed + the 0021
 --                                     SELECT pdfs_select_row_backed RETURNING
 --                                     mirror + the 0036 boards_insert_row_backed
---                                     INSERT, all authenticated-only; no
---                                     UPDATE/DELETE/anon; RLS ENABLE-without-
---                                     FORCE per 0021)
+--                                     INSERT + the 0041 C1 boards SELECT mirror
+--                                     + the 0041 H1 boards/pdf DELETE pair, all
+--                                     authenticated-only; no UPDATE/anon; RLS
+--                                     ENABLE-without-FORCE per 0021)
 --   3. B2 belt-and-braces scope      (column-scoped notifications UPDATE:
 --                                     even with table-level UPDATE, only
 --                                     is_read/read_at are writable)
@@ -50,10 +51,10 @@ SELECT tests.assert(
     'sec: create_unit_codes_internal pins search_path=public, extensions (0032)');
 
 -- =====================================================================
--- Section 2: storage.objects policy inventory lock (REVISED, 0036)
+-- Section 2: storage.objects policy inventory lock (REVISED, 0041)
 -- The Storage API uploads with INSERT ... RETURNING *, so a SELECT
 -- policy covering the inserted row is REQUIRED (42501 without it).
--- Exactly THREE policies may exist:
+-- Exactly SIX policies may exist:
 --   * pdfs_insert_row_backed FOR INSERT TO authenticated (0015/0020,
 --     pending-only: is_ready=false AND is_primary=false)
 --   * pdfs_select_row_backed FOR SELECT TO authenticated (0021, the
@@ -61,14 +62,21 @@ SELECT tests.assert(
 --   * boards_insert_row_backed FOR INSERT TO authenticated (0036, the
 --     boards-bucket twin of the 0015 INSERT pattern: row-backed on
 --     lesson_boards with the '{uuid}/{uuid}.{jpg|jpeg|png|webp}' shape)
--- No UPDATE/DELETE and no anon surface may ever be reintroduced, and
+--   * boards_select_row_backed FOR SELECT TO authenticated (0041 C1,
+--     the boards RETURNING mirror - same scope as its INSERT policy:
+--     NO is_ready filter)
+--   * boards_delete_row_backed FOR DELETE TO authenticated (0041 H1,
+--     staff-only: is_admin/is_mr_walid/is_teacher, row-backed)
+--   * pdfs_delete_row_backed FOR DELETE TO authenticated (0041 H1,
+--     staff-only, row-backed on lesson_pdfs)
+-- No UPDATE and no anon surface may ever be reintroduced, and
 -- storage.objects must stay ENABLE-without-FORCE (0021 H2: the storage
 -- service role must not be subject to RLS on its own bookkeeping).
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM pg_policies
+    (SELECT count(*) = 6 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'),
-    'sec: exactly three storage.objects policies (2x INSERT + SELECT)');
+    'sec: exactly six storage.objects policies (2x INSERT + 2x SELECT + 2x DELETE)');
 
 SELECT tests.assert(
     (SELECT count(*) = 1 FROM pg_policies
@@ -132,8 +140,72 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND (cmd = 'UPDATE' OR cmd = 'DELETE')),
-    'sec: no UPDATE/DELETE policy on storage.objects');
+        AND cmd = 'UPDATE'),
+    'sec: no UPDATE policy on storage.objects');
+
+-- 0041 C1: the boards SELECT mirror - authenticated, row-backed,
+-- NO is_ready filter (exact scope of boards_insert_row_backed)
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_select_row_backed'
+        AND cmd = 'SELECT' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: boards_select_row_backed FOR SELECT TO authenticated (0041 C1)');
+
+SELECT tests.assert(
+    (SELECT qual LIKE '%bucket_id = ''boards''%'
+        AND qual LIKE '%lesson_boards%'
+        AND qual LIKE '%deleted_at IS NULL%'
+        AND qual LIKE '%jpg|jpeg|png|webp%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_select_row_backed'),
+    'sec: boards_select_row_backed is the row-backed boards SELECT mirror (0041 C1)');
+
+SELECT tests.assert(
+    (SELECT qual NOT LIKE '%is_ready%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_select_row_backed'),
+    'sec: boards_select_row_backed has NO is_ready filter (0041 C1, INSERT-policy scope)');
+
+-- 0041 H1: staff-only row-backed DELETE pair (boards + pdfs)
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_delete_row_backed'
+        AND cmd = 'DELETE' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: boards_delete_row_backed FOR DELETE TO authenticated (0041 H1)');
+
+SELECT tests.assert(
+    (SELECT qual LIKE '%bucket_id = ''boards''%'
+        AND qual LIKE '%lesson_boards%'
+        AND qual LIKE '%is_admin()%' AND qual LIKE '%is_mr_walid()%' AND qual LIKE '%is_teacher()%'
+        AND qual LIKE '%deleted_at IS NULL%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'boards_delete_row_backed'),
+    'sec: boards_delete_row_backed = staff-only row-backed DELETE (0041 H1)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'pdfs_delete_row_backed'
+        AND cmd = 'DELETE' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: pdfs_delete_row_backed FOR DELETE TO authenticated (0041 H1)');
+
+SELECT tests.assert(
+    (SELECT qual LIKE '%bucket_id = ''pdfs''%'
+        AND qual LIKE '%lesson_pdfs%'
+        AND qual LIKE '%is_admin()%' AND qual LIKE '%is_mr_walid()%' AND qual LIKE '%is_teacher()%'
+        AND qual LIKE '%deleted_at IS NULL%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'pdfs_delete_row_backed'),
+    'sec: pdfs_delete_row_backed = staff-only row-backed DELETE (0041 H1)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_policies
@@ -167,6 +239,58 @@ DELETE FROM public.lesson_pdfs WHERE original_name = 'SEC-08-RET.pdf';
 SELECT tests.assert(
     (SELECT NOT EXISTS (SELECT 1 FROM public.lesson_pdfs WHERE original_name = 'SEC-08-RET.pdf')),
     'sec: RETURNING-proof fixture cleaned up');
+
+-- live 0041 C1 + H1 proof (boards): INSERT ... RETURNING id at a
+-- pending row-backed board path succeeds for staff (the new
+-- boards_select_row_backed mirror covers the returned row); finalize
+-- then succeeds because the object exists (0041 M2); a student DELETE
+-- at the ready row-backed path is a no-op, mr_walid removes exactly
+-- the object (0041 H1). Fixtures are cleaned up afterwards.
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
+SET LOCAL ROLE mr_walid;
+SELECT tests.expect_rows(
+    'SELECT public.create_board_upload_record(''40000000-0000-0000-0000-000000000001'', ''SEC-08-B1.jpg'', 9)',
+    1, 'sec: pending board row reserved for the board RETURNING proof');
+SELECT tests.expect_rows(
+    'INSERT INTO storage.objects (bucket_id, name)
+     SELECT ''boards'', storage_path FROM public.lesson_boards WHERE original_name = ''SEC-08-B1.jpg''
+     RETURNING id',
+    1, 'sec: INSERT ... RETURNING id succeeds at a pending board path (0041 C1)');
+SELECT tests.expect_rows(
+    'SELECT public.finalize_board_upload((SELECT id FROM public.lesson_boards WHERE original_name = ''SEC-08-B1.jpg''))',
+    1, 'sec: board finalized once its storage object exists (0041 M2)');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- the board is now READY and visible to student A (l1 is accessible):
+-- a student DELETE at the row-backed path is a silent no-op (0 rows)
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT tests.expect_rows(
+    'DELETE FROM storage.objects
+     WHERE bucket_id = ''boards''
+       AND name = (SELECT storage_path FROM public.lesson_boards WHERE original_name = ''SEC-08-B1.jpg'')',
+    0, 'sec: student DELETE at a row-backed board path is a no-op (0041 H1)');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- mr_walid removes exactly the row-backed object (staff-only DELETE)
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
+SET LOCAL ROLE mr_walid;
+SELECT tests.expect_rows(
+    'DELETE FROM storage.objects
+     WHERE bucket_id = ''boards''
+       AND name = (SELECT storage_path FROM public.lesson_boards WHERE original_name = ''SEC-08-B1.jpg'')',
+    1, 'sec: staff DELETE removes exactly the row-backed board object (0041 H1)');
+RESET ROLE;
+RESET "app.current_user_id";
+
+DELETE FROM public.lesson_boards WHERE original_name = 'SEC-08-B1.jpg';
+DELETE FROM public.audit_logs WHERE entity_type IN ('lesson_board', 'lesson_boards');
+SELECT tests.assert(
+    (SELECT NOT EXISTS (SELECT 1 FROM public.lesson_boards WHERE original_name = 'SEC-08-B1.jpg'))
+    AND (SELECT count(*) = 0 FROM storage.objects WHERE bucket_id = 'boards'),
+    'sec: board RETURNING/DELETE-proof fixtures cleaned up');
 
 -- =====================================================================
 -- Section 3: B2 belt-and-braces regression (REVISED)

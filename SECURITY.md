@@ -164,11 +164,11 @@ Every table: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` plus `FORCE ROW LEVEL 
 
 ### `lesson_pdfs`
 - SELECT: `is_admin() OR is_mr_walid() OR (is_student() AND can_access_lesson(lesson_id) AND is_ready AND is_primary)` — students see **only the primary ready PDF** of accessible lessons (MED-7). Direct SELECT returns **metadata only**; content bytes require signed URL
-- INSERT/UPDATE/DELETE: RPC/Edge-Function-only
+- INSERT/UPDATE/DELETE: RPC/Edge-Function-only. `storage.objects` row-backed policies (0015/0021/0041): INSERT `pdfs_insert_row_backed` (pending-only) + SELECT mirror `pdfs_select_row_backed` (0021 H1, required by the Storage API's `INSERT ... RETURNING *`) + DELETE `pdfs_delete_row_backed` (0041 H1, staff-only `is_admin() OR is_mr_walid() OR is_teacher()` + row-backed — makes the delete-pdf EF's caller-token object removal actual, never arbitrary bucket content)
 
 ### `lesson_boards`
 - SELECT: `is_admin() OR is_mr_walid() OR is_teacher() OR (is_student() AND can_access_lesson(lesson_id) AND is_ready AND deleted_at IS NULL)` — staff see all non-deleted rows; students see only ready, non-deleted boards of accessible lessons (gallery style, no `is_primary`). Direct SELECT returns metadata; image bytes via signed URLs from `get-board-signed-urls`.
-- INSERT/UPDATE/DELETE: RPC/Edge-Function-only. Row-backed INSERT policy on `storage.objects` (`boards_insert_row_backed`) mirrors PDF pattern (0015): `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row.
+- INSERT/UPDATE/DELETE: RPC/Edge-Function-only. `storage.objects` row-backed policies (0036/0041): INSERT `boards_insert_row_backed` (0015 pattern: `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row, no `is_ready` filter) + SELECT mirror `boards_select_row_backed` (0041 C1 — the Storage API uploads with `INSERT ... RETURNING *`, which requires a SELECT policy covering the inserted row; same scope as the INSERT policy) + DELETE `boards_delete_row_backed` (0041 H1 — staff-only `is_admin() OR is_mr_walid() OR is_teacher()` + row-backed, makes the delete-board EF's caller-token object removal actual). No UPDATE policy and no anon surface on `storage.objects`; `storage.objects` stays ENABLE-without-FORCE (0021 H2) so the service role is never subject to RLS on its own bookkeeping.
 
 ### `progress`
 - SELECT: `student_id = auth.uid() OR is_mr_walid() OR is_admin()`

@@ -546,7 +546,6 @@ export interface BoardUploadSession {
   uploadUrl: string;
   board_id: string;
   storage_path: string;
-  expires_in: number;
 }
 
 export async function uploadBoard(input: {
@@ -564,11 +563,32 @@ export async function uploadBoard(input: {
   });
 }
 
-export async function uploadBoardBytes(uploadUrl: string, file: Blob): Promise<void> {
+/**
+ * Content type derived from the (already validated) image file name,
+ * mirroring imageContentType in supabase/functions/upload-board/index.ts:
+ * jpg/jpeg -> image/jpeg, png -> image/png, webp -> image/webp; unknown
+ * extensions fall back to the File type or octet-stream.
+ */
+function boardImageContentType(file: File): string {
+  const dot = file.name.lastIndexOf('.');
+  const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';
+  if (ext === 'png') {
+    return 'image/png';
+  }
+  if (ext === 'webp') {
+    return 'image/webp';
+  }
+  if (ext === 'jpg' || ext === 'jpeg') {
+    return 'image/jpeg';
+  }
+  return file.type || 'application/octet-stream';
+}
+
+export async function uploadBoardBytes(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': boardImageContentType(file),
     },
     body: file,
   });

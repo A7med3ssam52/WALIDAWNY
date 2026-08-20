@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   expectRpcCall,
   getQueryCallCount,
+  getRpcCalls,
   makeBoard,
   makeLesson,
   makeLessonComment,
@@ -797,15 +798,17 @@ describe('LessonAssetsPage — board section', () => {
     );
     expect(within(card1).getByTestId('board-preview-board-1')).not.toBeDisabled();
     expect(within(card1).getByTestId('board-delete-board-1')).toBeInTheDocument();
+    // board-1 is the only ready board: both arrows are disabled (single-item ready list)
     expect(within(card1).getByTestId('board-move-up-board-1')).toBeDisabled();
-    expect(within(card1).getByTestId('board-move-down-board-1')).not.toBeDisabled();
+    expect(within(card1).getByTestId('board-move-down-board-1')).toBeDisabled();
 
     const card2 = await screen.findByTestId('board-card-board-2');
     expect(within(card2).getByText('سبورة ثانية.jpg')).toBeInTheDocument();
     expect(within(card2).getByText('قيد الرفع')).toBeInTheDocument();
     expect(within(card2).getByTestId('board-img-board-2')).not.toHaveAttribute('src');
     expect(within(card2).getByTestId('board-preview-board-2')).toBeDisabled();
-    expect(within(card2).getByTestId('board-move-up-board-2')).not.toBeDisabled();
+    // pending board: reorder arrows are disabled entirely
+    expect(within(card2).getByTestId('board-move-up-board-2')).toBeDisabled();
     expect(within(card2).getByTestId('board-move-down-board-2')).toBeDisabled();
   });
 
@@ -862,7 +865,6 @@ describe('LessonAssetsPage — board section', () => {
             uploadUrl: BOARD_UPLOAD_URL,
             board_id: 'board-new-1',
             storage_path: 'lesson-1/board-new-1.jpg',
-            expires_in: 3600,
           }),
         };
       }
@@ -887,7 +889,7 @@ describe('LessonAssetsPage — board section', () => {
     renderApp('/walid/lessons/lesson-1');
     await screen.findByTestId('board-card-board-new-1');
 
-    const imageFile = new File(['fake-jpeg-bytes'], 'سبورة جديدة.jpg', { type: 'image/jpeg' });
+    const imageFile = new File(['fake-jpeg-bytes'], 'سبورة جديدة.jpg', { type: 'image/png' });
     fireEvent.change(screen.getByTestId('board-upload-input'), {
       target: { files: [imageFile] },
     });
@@ -909,9 +911,13 @@ describe('LessonAssetsPage — board section', () => {
         }),
       }),
     );
+    // Content-Type is derived from the file name (.jpg → image/jpeg), not from file.type
     expect(fetchMock).toHaveBeenCalledWith(
       BOARD_UPLOAD_URL,
-      expect.objectContaining({ method: 'PUT' }),
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({ 'Content-Type': 'image/jpeg' }),
+      }),
     );
     expect(await screen.findByText('تم رفع الصورة بنجاح')).toBeInTheDocument();
     const uploadedCard = await screen.findByTestId('board-card-board-new-1');
@@ -1007,6 +1013,70 @@ describe('LessonAssetsPage — board section', () => {
       const cards = screen.getAllByTestId(/^board-card-/);
       expect(cards[0]).toHaveAttribute('data-testid', 'board-card-board-2');
       expect(cards[1]).toHaveAttribute('data-testid', 'board-card-board-1');
+    });
+  });
+
+  it('reorders only among ready boards and never sends a pending board to the RPC', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({ id: 'board-1', original_name: 'سبورة أولى.jpg', sort_order: 1 }),
+      makeBoard({
+        id: 'board-2',
+        original_name: 'سبورة ثانية.jpg',
+        sort_order: 2,
+        is_ready: false,
+      }),
+      makeBoard({ id: 'board-3', original_name: 'سبورة ثالثة.jpg', sort_order: 3 }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            makeBoardSignedUrl({ board_id: 'board-1', original_name: 'سبورة أولى.jpg' }),
+            makeBoardSignedUrl({
+              board_id: 'board-3',
+              original_name: 'سبورة ثالثة.jpg',
+              sort_order: 3,
+              signed_url: BOARD_URL_2,
+            }),
+          ],
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-card-board-1');
+    await screen.findByTestId('board-card-board-2');
+    await screen.findByTestId('board-card-board-3');
+
+    // pending board: both arrows disabled
+    expect(screen.getByTestId('board-move-up-board-2')).toBeDisabled();
+    expect(screen.getByTestId('board-move-down-board-2')).toBeDisabled();
+    // board-3 is the last ready board → move-down disabled
+    expect(screen.getByTestId('board-move-down-board-3')).toBeDisabled();
+
+    // clicking a pending board's arrows sends no RPC
+    const before = getRpcCalls().filter((call) => call.fn === 'reorder_boards').length;
+    fireEvent.click(screen.getByTestId('board-move-up-board-2'));
+    fireEvent.click(screen.getByTestId('board-move-down-board-2'));
+    expect(getRpcCalls().filter((call) => call.fn === 'reorder_boards')).toHaveLength(before);
+
+    fireEvent.click(screen.getByTestId('board-move-up-board-3'));
+
+    await waitFor(() => {
+      expect(expectRpcCall('reorder_boards')).toEqual({
+        p_lesson_id: 'lesson-1',
+        p_board_ids: ['board-3', 'board-1'],
+      });
+    });
+    await waitFor(() => {
+      const cards = screen.getAllByTestId(/^board-card-/);
+      expect(cards[0]).toHaveAttribute('data-testid', 'board-card-board-3');
+      expect(cards[1]).toHaveAttribute('data-testid', 'board-card-board-1');
+      expect(cards[2]).toHaveAttribute('data-testid', 'board-card-board-2');
     });
   });
 

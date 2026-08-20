@@ -204,6 +204,7 @@ The time-based status enum used by the legacy access model was dropped by 0028 �
 | `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
 
 - Partial UNIQUE `(lesson_id) WHERE is_primary AND deleted_at IS NULL`.
+- **Storage**: private bucket `pdfs` (see §8). Row-backed INSERT `pdfs_insert_row_backed` (0015, pending-only) + row-backed SELECT mirror `pdfs_select_row_backed` (0021 H1 — the Storage API uploads with `INSERT ... RETURNING *`, which requires a SELECT policy covering the inserted row) + staff-only row-backed DELETE `pdfs_delete_row_backed` (0041 H1 — makes the delete-pdf Edge Function's caller-token `storage.remove()` actual instead of a silent no-op; `is_admin() OR is_mr_walid() OR is_teacher()` + EXISTS on a non-deleted `lesson_pdfs` row).
 
 ### 4.10 `lesson_boards` — Teacher-uploaded board images (0036)
 
@@ -222,7 +223,7 @@ The time-based status enum used by the legacy access model was dropped by 0028 �
 
 - Index `(lesson_id, sort_order)` for ordered retrieval.
 - **RLS**: single policy `lesson_boards_select_gated` FOR SELECT — staff (admin/mr_walid/teacher) see all non-deleted rows; students see only `is_ready=true AND deleted_at IS NULL` rows they have access to (`can_access_lesson`). No INSERT/UPDATE/DELETE policies — all mutations via SECURITY DEFINER RPCs.
-- **Storage**: private bucket `boards` (see §8). Row-backed INSERT policy `boards_insert_row_backed` mirrors PDF pattern (0015): `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row.
+- **Storage**: private bucket `boards` (see §8). Row-backed INSERT policy `boards_insert_row_backed` mirrors PDF pattern (0015): `name ~ '^uuid/uuid\.(jpg|jpeg|png|webp)$'` + EXISTS on non-deleted `lesson_boards` row. 0041 adds the other two surfaces of the same row-backing: `boards_select_row_backed` (C1 — the `INSERT ... RETURNING *` upload mirror, same scope as the INSERT policy, no `is_ready` filter) and `boards_delete_row_backed` (H1 — staff-only `is_admin() OR is_mr_walid() OR is_teacher()` DELETE so the delete-board Edge Function's caller-token object removal is actual). `storage.objects` stays ENABLE-without-FORCE (0021 H2): the service role is never subject to RLS on its own bookkeeping.
 - **No `is_primary`** — all ready images are exposed (gallery style). Manual ordering via `sort_order` (staff `reorder_boards` RPC). Soft-delete via `deleted_at` allowed even for ready rows (unlike PDFs).
 
 ### 4.10 `progress` — one row per student+lesson
@@ -497,7 +498,7 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `set_app_setting` | `(p_key text, p_value jsonb)` | mr_walid: `whatsapp%` keys only; admin: all |
 | `finalize_pdf_upload` | `(p_pdf_id uuid)` | marks `is_ready`, promotes primary, audits; client-callable (staff only via RLS guards) |
 | `create_board_upload_record` | `(p_lesson_id uuid, p_original_name text, p_size_bytes bigint DEFAULT NULL) RETURNS TABLE (id uuid, storage_path text)` | staff (admin/mr_walid/teacher); validates lesson exists/active, MIME from extension (jpg|jpeg|png|webp), size ≤ 10 MiB, generates `storage_path = {lesson_id}/{uuid}.{ext}`, `sort_order = max+1`, inserts pending (`is_ready=false`), audits `board.upload_started`; errors: `permission_denied`, `lesson_not_found`, `lesson_deleted`, `invalid_board_size`, `invalid_file_extension` |
-| `finalize_board_upload` | `(p_board_id uuid)` | staff; sets `is_ready=true`, `updated_at=now()`, audits `board.finalized`; errors: `permission_denied`, `board_not_found`, `board_already_ready` |
+| `finalize_board_upload` | `(p_board_id uuid)` | staff; sets `is_ready=true`, `updated_at=now()`, audits `board.finalized`; errors: `permission_denied`, `board_not_found`, `board_already_ready`, `board_storage_missing` (0041 M2 — refuses while the Storage object does not exist, so a pending row without bytes never becomes student-visible) |
 | `delete_board_upload_record` | `(p_lesson_id uuid, p_board_id uuid)` | staff; soft-delete (`deleted_at=now()`) — allowed even for ready rows; validates ownership; audits `board.deleted`; errors: `permission_denied`, `board_not_found`, `wrong_lesson` |
 | `reorder_boards` | `(p_lesson_id uuid, p_board_ids uuid[])` | staff; enforces exact match to non-deleted boards of the lesson, updates sequential `sort_order`, audits `board.reordered`; errors: `permission_denied`, `lesson_not_found`, `board_not_found`, `wrong_lesson`, `validation_error` |
 | `get_dashboard_stats` | `() RETURNS jsonb` | **read-only, no audit**; `is_admin() OR is_mr_walid() OR is_teacher()` → `permission_denied`; single-round-trip JSON: students (total/active/disabled/deleted/new-this-month), purchases (total/total_revenue/revenue_this_month), content (grades/units/lessons/published/videos(+ready)/pdfs(+ready)/**boards**), engagement (students-with-progress/completed/avg%), by_grade array (students/purchases/revenue), top_units (LIMIT 5 by revenue), recent_purchases (5); aggregates read through `v_dashboard_metrics` where applicable (0018/0028) |

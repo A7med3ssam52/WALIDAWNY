@@ -11,6 +11,9 @@ verify_jwt = true
 [functions.bunny-video-webhook]
 verify_jwt = false
 
+[functions.create-video-upload-session]
+verify_jwt = true
+
 [functions.export-audit-log]
 verify_jwt = true
 

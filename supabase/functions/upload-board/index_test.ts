@@ -258,7 +258,6 @@ Deno.test(
 
     assertEqual(body.board_id, BOARD_ID);
     assertEqual(body.storage_path, RESERVED_PATH);
-    assertEqual(body.expires_in, 60);
     assert(
       typeof body.uploadUrl === 'string' && body.uploadUrl.length > 0,
       'uploadUrl must be a non-empty string',
@@ -502,7 +501,7 @@ Deno.test('upload-board: known lesson + valid name -> 200, clean response shape'
   await expectStatus(res, 200);
   const body = await res.json();
   assert(
-    deepEqual(Object.keys(body).sort(), ['board_id', 'expires_in', 'storage_path', 'uploadUrl']),
+    deepEqual(Object.keys(body).sort(), ['board_id', 'storage_path', 'uploadUrl']),
     `unexpected response keys: ${JSON.stringify(Object.keys(body).sort())}`,
   );
 });

@@ -17,7 +17,7 @@
 //   3. issues the short-lived signed upload URL on the private `boards`
 //      bucket via createSignedUploadUrl (I4 — NOT createSignedUrl,
 //      which is download-only) over the CALLER-token client,
-//   4. returns { uploadUrl, board_id, storage_path, expires_in }; the
+//   4. returns { uploadUrl, board_id, storage_path }; the
 //      client uploads bytes directly to uploadUrl, then calls
 //      finalize_board_upload(board_id) (0036) which marks is_ready=true.
 //
@@ -59,7 +59,7 @@
 //                                  message never echoed)
 //   upload_url_failed         -> 502 (signed-URL issuance failure)
 //
-// Success: { uploadUrl, board_id, storage_path, expires_in }.
+// Success: { uploadUrl, board_id, storage_path }.
 //
 // No secrets are logged anywhere in this module.
 // =====================================================================
@@ -70,7 +70,6 @@ import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 export const MAX_BOARD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MiB (config.toml file_size_limit)
 export const MAX_FILE_NAME_LENGTH = 255;
 export const BOARDS_BUCKET = 'boards';
-export const UPLOAD_URL_TTL_SECONDS = 60; // platform default TTL for signed upload URLs
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -417,7 +416,6 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
       uploadUrl: signed.signedUrl,
       board_id: row.id,
       storage_path: row.storage_path,
-      expires_in: UPLOAD_URL_TTL_SECONDS,
     },
     200,
   );

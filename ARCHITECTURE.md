@@ -430,9 +430,18 @@ Upload (staff):
      → validate MIME/size (image/jpeg|png|webp, ≤10 MiB) → createSignedUploadUrl (I4)
         on private bucket `boards`, path {lesson_id}/{uuid}.{ext}
      → browser uploads bytes to signed URL
-     → finalize_board_upload(p_board_id) RPC: is_ready=true, updated_at, audit (board.finalized)
-   Deletion: delete-board (POST, JWT + staff) → storage remove (best-effort) + delete_board_upload_record (soft-delete, allowed for ready rows) + audit (board.deleted)
+     → finalize_board_upload(p_board_id) RPC: is_ready=true, updated_at, audit (board.finalized);
+        0041 M2: refuses with board_storage_missing until the Storage object exists — a pending
+        row without bytes never becomes student-visible
+   Deletion: delete-board (POST, JWT + staff) → storage remove (best-effort; actual thanks to the
+     0041 H1 staff-only row-backed DELETE policy on storage.objects) + delete_board_upload_record
+     (soft-delete, allowed for ready rows) + audit (board.deleted)
    Reorder: reorder_boards(p_lesson_id, p_board_ids[]) RPC (staff) → sequential sort_order update + audit (board.reordered)
+   Storage posture (0041): storage.objects carries three row-backed boards policies — INSERT
+     boards_insert_row_backed (0036) + SELECT mirror boards_select_row_backed (C1, required by the
+     Storage API's INSERT ... RETURNING * upload path) + DELETE boards_delete_row_backed (H1,
+     staff-only). ENABLE-without-FORCE per 0021 H2; the six-policy inventory is locked in
+     tests/local/sql/08_security.sql.
 
 Read (student):
    get-board-signed-urls (POST, JWT)
@@ -532,8 +541,8 @@ Deployment: one `supabase/functions/<name>/index.ts` per function; `supabase fun
 | 5 | `upload-pdf` | POST, JWT + `is_mr_walid() OR is_admin()` | MIME/size validation → `createSignedUploadUrl` (I4) on `pdfs`; `finalize_pdf_upload` RPC afterwards |
 | 6 | `generate-unit-codes` | POST, JWT + `is_admin() OR is_mr_walid()` | Validate `unit_pricing` + count cap (≤500) → `create_unit_codes_for_staff()` (staff-guarded wrapper) → `create_unit_codes_internal()` (pgcrypto, unambiguous charset, uppercase — A22); internal function is REVOKEd from PUBLIC and has no client grants |
 | 7 | `export-audit-log` | POST, JWT + `is_admin()` | Filters → CSV (UTF-8 BOM) → `audit-exports` → signed URL |
-| 8 | `upload-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | MIME/size validation (image/jpeg|png|webp, ≤10 MiB) → `createSignedUploadUrl` on `boards`; returns `{uploadUrl, board_id, storage_path, expires_in:60}` |
-| 9 | `delete-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | storage remove (best-effort) + `delete_board_upload_record` (soft-delete, allowed for ready rows) + audit (board.deleted) |
+| 8 | `upload-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | MIME/size validation (image/jpeg|png|webp, ≤10 MiB) → `createSignedUploadUrl` on `boards`; returns `{uploadUrl, board_id, storage_path}` |
+| 9 | `delete-board` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | storage remove (best-effort; actual via the 0041 H1 staff-only row-backed DELETE policy) + `delete_board_upload_record` (soft-delete, allowed for ready rows) + audit (board.deleted) |
 | 10 | `get-board-signed-urls` | POST, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin/teacher QA preview** | Server resolves all ready, non-deleted boards for lesson ordered by sort_order; service-role `createSignedUrl` (TTL 900); returns array of `{board_id, original_name, sort_order, signed_url}` |
 | J2 | `recheck-video-states` (scheduled) | internal endpoint (service role) | Selects stuck pre-ready videos (`pending_upload/uploading/processing`, older than threshold, not deleted) → live Bunny API status query → `set_video_status()` transition chains (missing → failed, dead statuses → failed, finished → ready with metadata); transient API errors skipped for the next run |
 

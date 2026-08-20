@@ -11,10 +11,12 @@
 --   * RPC negatives for students (permission_denied on all four)
 --   * create_board_upload_record happy path + guards (extension, size,
 --     lesson, sort_order, mime, audit)
---   * finalize (ready flag, board_already_ready, board_not_found)
+--   * finalize (ready flag, board_already_ready, board_not_found,
+--     board_storage_missing when no Storage object exists - 0041 M2)
 --   * delete (soft delete incl. READY rows, wrong_lesson, not_found)
 --   * reorder (exact ready-set enforcement, wrong_lesson, not_found)
---   * storage.objects row-backed INSERT policy (0015 pattern)
+--   * storage.objects row-backed INSERT policy (0015 pattern) +
+--     RETURNING-id proof of the 0041 C1 SELECT mirror
 -- Fixtures use bb000000-... ids and are removed at the end. Lesson
 -- 4000...0001 = TEST-L1 (published, student ...001 owns it via fixture
 -- purchase); 4000...0002 = TEST-L2 (draft) is used for wrong_lesson.
@@ -261,6 +263,10 @@ DELETE FROM public.lesson_boards WHERE original_name = 'x.jpg';
 -- ---------------------------------------------------------------------
 -- Section 6: finalize_board_upload
 -- ---------------------------------------------------------------------
+-- 0041 M2: finalize now requires the Storage object to exist. The
+-- fixture object for bb3 is planted as the harness superuser (table
+-- owner is exempt from storage.objects RLS, 0021 H2).
+INSERT INTO storage.objects (bucket_id, name) VALUES ('boards', 'bb-fixtures/l1-board-3.webp');
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000009';
 SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
@@ -278,6 +284,20 @@ SELECT tests.expect_error(
 SELECT tests.expect_error(
     'SELECT public.finalize_board_upload(''bb000000-0000-0000-0000-000000000004'')',
     'P0001', 'board_not_found');
+-- a pending row WITHOUT a storage object cannot be finalized (0041 M2);
+-- release it through the delete wrapper (pending rows deletable, 0036)
+SELECT tests.expect_rows(
+    'SELECT public.create_board_upload_record(''40000000-0000-0000-0000-000000000001'', ''bb-no-object.jpg'', NULL)',
+    1, 'fin: pending row without object created for the storage-missing guard');
+SELECT tests.expect_error(
+    'SELECT public.finalize_board_upload((SELECT id FROM public.lesson_boards WHERE original_name = ''bb-no-object.jpg''))',
+    'P0001', 'board_storage_missing');
+SELECT tests.assert(
+    (SELECT NOT is_ready FROM public.lesson_boards WHERE original_name = 'bb-no-object.jpg'),
+    'fin: storage-missing refusal left the row pending');
+SELECT tests.expect_rows(
+    'SELECT public.delete_board_upload_record(''40000000-0000-0000-0000-000000000001'', (SELECT id FROM public.lesson_boards WHERE original_name = ''bb-no-object.jpg''))',
+    1, 'fin: pending row without object released');
 RESET ROLE;
 RESET "app.current_user_id";
 SELECT tests.expect_count(
@@ -375,11 +395,14 @@ SET LOCAL ROLE mr_walid;
 SELECT tests.expect_rows(
     'SELECT public.create_board_upload_record(''40000000-0000-0000-0000-000000000001'', ''BB-STORE-1.jpg'', 42)',
     1, 'sto: pending row reserved for the object tests');
--- row-backed path insertable (staff sees the pending row)
+-- row-backed path insertable (staff sees the pending row); RETURNING id
+-- proves the 0041 C1 SELECT mirror covers the inserted row (the Storage
+-- API's INSERT ... RETURNING * upload path, 0021 H1 pattern)
 SELECT tests.expect_rows(
     'INSERT INTO storage.objects (bucket_id, name)
-     SELECT ''boards'', storage_path FROM public.lesson_boards WHERE original_name = ''BB-STORE-1.jpg''',
-    1, 'sto: row-backed path insertable by staff');
+     SELECT ''boards'', storage_path FROM public.lesson_boards WHERE original_name = ''BB-STORE-1.jpg''
+     RETURNING id',
+    1, 'sto: row-backed path insertable by staff (RETURNING id, 0041 C1)');
 -- shape / bucket / row-backing negatives
 SELECT tests.expect_error(
     'INSERT INTO storage.objects (bucket_id, name) VALUES (''boards'', ''test/x.jpg'')',
@@ -412,8 +435,8 @@ RESET ROLE;
 RESET "app.current_user_id";
 RESET "app.bb_path";
 SELECT tests.assert(
-    (SELECT count(*) = 1 FROM storage.objects WHERE bucket_id = 'boards'),
-    'sto: exactly one test object so far (student denial inserted nothing)');
+    (SELECT count(*) = 2 FROM storage.objects WHERE bucket_id = 'boards'),
+    'sto: exactly two test objects so far (l1-board-3.webp Section-6 fixture + BB-STORE-1.jpg; student denial inserted nothing)');
 
 -- ---------------------------------------------------------------------
 -- Cleanup
@@ -425,7 +448,7 @@ WHERE id IN ('bb000000-0000-0000-0000-000000000001',
              'bb000000-0000-0000-0000-000000000003',
              'bb000000-0000-0000-0000-000000000004',
              'bb000000-0000-0000-0000-000000000005')
-   OR original_name IN ('BB-STORE-1.jpg');
+   OR original_name IN ('BB-STORE-1.jpg', 'bb-no-object.jpg');
 DELETE FROM public.audit_logs WHERE entity_type IN ('lesson_board', 'lesson_boards');
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM public.lesson_boards
@@ -434,7 +457,7 @@ SELECT tests.assert(
                   'bb000000-0000-0000-0000-000000000003',
                   'bb000000-0000-0000-0000-000000000004',
                   'bb000000-0000-0000-0000-000000000005')
-        OR original_name IN ('BB-STORE-1.jpg')),
+        OR original_name IN ('BB-STORE-1.jpg', 'bb-no-object.jpg')),
     'b: all boards fixtures removed');
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM storage.objects WHERE bucket_id = 'boards'),

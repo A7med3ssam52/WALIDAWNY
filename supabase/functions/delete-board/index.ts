@@ -16,7 +16,9 @@
 //   4. removes the Storage object best-effort
 //      (client.storage.from('boards').remove([storage_path])) — an
 //      object without a row is orphaned storage; a removal failure
-//      must not fail the operation,
+//      must not fail the operation (the new DELETE policy in
+//      migrations/0041 makes the removal actual — this EF step stays
+//      as the best-effort first pass),
 //   5. soft-deletes the row through the staff-guarded SECURITY DEFINER
 //      RPC public.delete_board_upload_record (migrations/0036) —
 //      authoritative backstop, audited,

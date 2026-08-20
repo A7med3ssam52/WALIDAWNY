@@ -162,6 +162,7 @@ const BOARD_ERROR_MESSAGES: Record<string, string> = {
   board_reservation_failed: 'فشل إنشاء سجل الصورة. حاول مرة أخرى',
   upload_url_failed: 'فشل إنشاء رابط الرفع. حاول مرة أخرى',
   board_upload_failed: 'فشل رفع الصورة إلى التخزين. حاول مرة أخرى',
+  board_storage_missing: 'تعذر التحقق من الصورة في التخزين. حاول مرة أخرى',
   deletion_failed: 'فشل حذف الصورة. حاول مرة أخرى',
   storage_cleanup_failed: 'تعذر تنظيف الملفات القديمة. حاول مرة أخرى',
   wrong_lesson: 'الصورة لا تنتمي لهذا الدرس',
@@ -560,20 +561,28 @@ export function LessonAssetsPage() {
   };
 
   const handleMoveBoard = async (index: number, direction: -1 | 1) => {
-    if (!lessonId || !sortedBoards || reordering) {
+    if (!lessonId || !sortedBoards || !readyBoards || reordering) {
       return;
     }
-    const target = index + direction;
-    if (target < 0 || target >= sortedBoards.length) {
+    const board = sortedBoards[index];
+    if (!board || !board.is_ready) {
       return;
     }
-    const next = [...sortedBoards];
-    [next[index], next[target]] = [next[target], next[index]];
+    const readyIndex = readyBoards.findIndex((item) => item.id === board.id);
+    if (readyIndex < 0) {
+      return;
+    }
+    const target = readyIndex + direction;
+    if (target < 0 || target >= readyBoards.length) {
+      return;
+    }
+    const next = [...readyBoards];
+    [next[readyIndex], next[target]] = [next[target], next[readyIndex]];
     setReordering(true);
     try {
       await reorderLessonBoards(
         lessonId,
-        next.map((board) => board.id),
+        next.map((item) => item.id),
       );
       await Promise.all([loadBoards(), loadBoardUrls()]);
     } catch (err) {
@@ -639,6 +648,13 @@ export function LessonAssetsPage() {
         a.sort_order - b.sort_order || String(a.created_at).localeCompare(String(b.created_at)),
     );
   }, [boards]);
+
+  const readyBoards = useMemo(() => {
+    if (!sortedBoards) {
+      return null;
+    }
+    return sortedBoards.filter((board) => board.is_ready);
+  }, [sortedBoards]);
 
   const boardUrlById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1247,6 +1263,10 @@ export function LessonAssetsPage() {
                 {sortedBoards.map((board, index) => {
                   const boardUrl = boardUrlById.get(board.id);
                   const isDeleting = deletingBoardId === board.id;
+                  const readyIndex =
+                    readyBoards?.findIndex((item) => item.id === board.id) ?? -1;
+                  const isReady = board.is_ready;
+                  const readyCount = readyBoards?.length ?? 0;
                   return (
                     <div
                       key={board.id}
@@ -1298,7 +1318,7 @@ export function LessonAssetsPage() {
                               icon={<ChevronUp aria-hidden="true" className="h-4 w-4" />}
                               aria-label={`نقل ${board.original_name} لأعلى`}
                               data-testid={`board-move-up-${board.id}`}
-                              disabled={index === 0 || reordering}
+                              disabled={!isReady || readyIndex === 0 || reordering}
                               onClick={() => void handleMoveBoard(index, -1)}
                             >
                               {''}
@@ -1309,7 +1329,7 @@ export function LessonAssetsPage() {
                               icon={<ChevronDown aria-hidden="true" className="h-4 w-4" />}
                               aria-label={`نقل ${board.original_name} لأسفل`}
                               data-testid={`board-move-down-${board.id}`}
-                              disabled={index === sortedBoards.length - 1 || reordering}
+                              disabled={!isReady || readyIndex === readyCount - 1 || reordering}
                               onClick={() => void handleMoveBoard(index, 1)}
                             >
                               {''}

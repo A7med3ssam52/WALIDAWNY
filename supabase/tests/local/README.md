@@ -101,6 +101,28 @@ Hence `0010` grants EXECUTE on exactly these four to `authenticated`.
 They remain out of the PostgREST RPC surface (only functions explicitly
 granted there are exposed), and `anon` has none of them.
 
+## Run records
+
+### 2026-08-20 — final re-verification (boards + video config)
+
+Full clean run on embedded PostgreSQL 18.4 (Windows, Node v24.11.1):
+
+- **Migrations:** `0001…0041` all `PASS` (41/41), including `0041_boards_storage_rls_fix.sql`.
+- **Suites:** `01…11` + the two concurrency scenarios — `=== suites passed: 13, suites failed: 0 ===` → **ALL GREEN**.
+- Postgres stopped cleanly; port 54329 free afterwards. The only repo change since the
+  2026-08-18 record is `[functions.create-video-upload-session] verify_jwt = true` in
+  `supabase/config.toml` (deploy-time flag; not exercised by this harness).
+
+### 2026-08-18 — boards storage/RLS hardening (0041)
+
+Full clean run on embedded PostgreSQL 18.4 (Windows, Node v24.11.1):
+
+- **Migrations:** `0001…0041` all `PASS` (including `0041_boards_storage_rls_fix.sql` —
+  `boards_select_row_backed` C1, `boards_delete_row_backed` + `pdfs_delete_row_backed` H1,
+  `finalize_board_upload` M2 `board_storage_missing`).
+- **Suites:** `01…11` + the two concurrency scenarios — `=== suites passed: 13, suites failed: 0 ===` → **ALL GREEN**.
+- 08_security.sql verifies the exact six-policy storage.objects inventory (2x INSERT + 2x SELECT + 2x DELETE), no UPDATE/anon surface, ENABLE-without-FORCE, and live RETURNING/delete proofs for both buckets; 11_boards.sql verifies the `board_storage_missing` negative, Sections 6–9 and the staff/student storage-DELETE matrix.
+
 ## Notes / caveats
 
 - **Never apply auth-shim.sql to a real project** — it is a harness-only
