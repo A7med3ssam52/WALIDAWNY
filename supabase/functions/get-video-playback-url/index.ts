@@ -4,8 +4,10 @@
 // §7 (EF security model). GET/HEAD, JWT-verified (config.toml:
 // [functions.get-video-playback-url] verify_jwt = true).
 //
-// Returns a short-lived signed HLS master playlist URL for a lesson's
-// PRIMARY ready video:
+// Returns a short-lived signed HLS master playlist URL for a lesson
+// video: the lesson's PRIMARY ready video by default, or the video
+// addressed by the optional `video_id` query parameter (must belong to
+// the lesson, not be deleted, be ready and have source='bunny'):
 //
 //   https://<pull_zone>/<videoId>/playlist.m3u8
 //     ?token=HS256-1-<b64url>&expires=<e>&token_path=%2F<videoId>%2F
@@ -45,21 +47,31 @@
 //     has_access = false -> access_denied (403). Staff previews skip the
 //     gate.
 //
-// The primary ready video lookup is RLS-scoped as well: the
-// lesson_videos SELECT policy (0009) lets staff see all rows and
-// students only the READY PRIMARY row of an accessible lesson — the
-// same filter is applied explicitly here (is_primary + ready +
-// not deleted) so BOTH roles resolve exactly one candidate.
+// The video lookup is RLS-scoped as well: the lesson_videos SELECT
+// policy (0009) lets staff see all rows and students only the READY
+// PRIMARY row of an accessible lesson. With `video_id` the row is
+// resolved by id and validated explicitly (same lesson, not deleted,
+// ready, source='bunny'; a YouTube video is rejected with
+// youtube_video) — a student can only ever resolve their primary ready
+// row through RLS. Without `video_id` the default PRIMARY READY lookup
+// is filtered explicitly (is_primary + ready + not deleted) so BOTH
+// roles resolve exactly one candidate.
 //
 // Error envelope: { error: { code, message } } with stable codes:
 //   unauthorized              -> 401
 //   forbidden                 -> 403 (role insufficient / no profile)
 //   account_inactive_or_deleted -> 403
-//   validation_error          -> 422 (missing/illegal lesson_id)
+//   validation_error          -> 422 (missing/illegal lesson_id or
+//                                  video_id)
 //   lesson_not_found          -> 404 (staff only)
 //   lesson_deleted            -> 422 (staff only; student sees 403)
 //   access_denied             -> 403 (student gate: lesson access)
-//   video_not_ready           -> 409 (no primary ready video yet)
+//   video_not_found           -> 404 (video_id target unknown/soft-deleted)
+//   wrong_lesson              -> 422 (video_id target of another lesson)
+//   video_not_ready           -> 409 (video_id target not ready yet / no
+//                                  primary ready video yet)
+//   youtube_video             -> 422 (video_id target is a YouTube video;
+//                                  not playable via the Bunny CDN)
 //   client_ip_unavailable     -> 500 (no cf-connecting-ip / x-forwarded-for)
 //   internal_error            -> 500 (query/URL-build failures; raw
 //                                  message never echoed)
@@ -163,6 +175,20 @@ function parseLessonId(searchParams: URLSearchParams):
   return { ok: true, lessonId };
 }
 
+function parseVideoId(searchParams: URLSearchParams):
+  | { ok: true; videoId: string | null }
+  | {
+      ok: false;
+      message: string;
+    } {
+  const videoId = searchParams.get('video_id');
+  if (videoId === null) return { ok: true, videoId: null };
+  if (!UUID_RE.test(videoId)) {
+    return { ok: false, message: 'video_id query parameter must be a UUID.' };
+  }
+  return { ok: true, videoId };
+}
+
 export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<Response> {
   if (req.method === 'OPTIONS') return preflightResponse();
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -223,12 +249,21 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   }
   const isStaff = STAFF_ROLES.has(p.role);
 
-  // --- 3) lesson_id query parameter ---
-  const parsed = parseLessonId(new URL(req.url).searchParams);
+  // --- 3) lesson_id / video_id query parameters ---
+  const searchParams = new URL(req.url).searchParams;
+  const parsed = parseLessonId(searchParams);
   if (!parsed.ok) {
     return jsonResponse({ error: { code: 'validation_error', message: parsed.message } }, 422);
   }
   const lessonId = parsed.lessonId;
+  const parsedVideo = parseVideoId(searchParams);
+  if (!parsedVideo.ok) {
+    return jsonResponse(
+      { error: { code: 'validation_error', message: parsedVideo.message } },
+      422,
+    );
+  }
+  const videoId = parsedVideo.videoId;
 
   // --- 4) Lesson reachability (RLS-scoped; see header) ---
   const { data: lesson, error: lessonError } = await client
@@ -290,35 +325,92 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     }
   }
 
-  // --- 6) The PRIMARY READY video (explicit filter; the 0009 policy
-  // additionally gates the student branch on can_access_lesson) ---
-  const { data: video, error: videoError } = await client
-    .from('lesson_videos')
-    .select('id,bunny_video_id')
-    .eq('lesson_id', lessonId)
-    .eq('is_primary', true)
-    .eq('status', 'ready')
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (videoError) {
-    console.error('get-video-playback-url: video query failed', videoError.code ?? 'unknown');
-    return jsonResponse(
-      { error: { code: 'internal_error', message: 'Failed to resolve the video.' } },
-      500,
-    );
-  }
-  if (!video) {
-    return jsonResponse(
-      {
-        error: {
-          code: 'video_not_ready',
-          message: 'The primary video for this lesson is not ready yet.',
+  // --- 6) Resolve the video: explicit video_id or the PRIMARY READY one
+  // (explicit filter; the 0009 policy additionally gates the student
+  // branch on can_access_lesson) ---
+  let videoRow: { id: string; bunny_video_id: string };
+  if (videoId !== null) {
+    const { data: video, error: videoError } = await client
+      .from('lesson_videos')
+      .select('id,lesson_id,status,deleted_at,source,bunny_video_id')
+      .eq('id', videoId)
+      .maybeSingle();
+    if (videoError) {
+      console.error('get-video-playback-url: video query failed', videoError.code ?? 'unknown');
+      return jsonResponse(
+        { error: { code: 'internal_error', message: 'Failed to resolve the video.' } },
+        500,
+      );
+    }
+    const v = video as {
+      id: string;
+      lesson_id: string;
+      status: string;
+      deleted_at: string | null;
+      source: string;
+      bunny_video_id: string;
+    } | null;
+    if (!v || v.deleted_at !== null) {
+      return jsonResponse(
+        { error: { code: 'video_not_found', message: 'Video not found.' } },
+        404,
+      );
+    }
+    if (v.lesson_id !== lessonId) {
+      return jsonResponse(
+        { error: { code: 'wrong_lesson', message: 'Video belongs to another lesson.' } },
+        422,
+      );
+    }
+    if (v.status !== 'ready') {
+      return jsonResponse(
+        {
+          error: { code: 'video_not_ready', message: 'This video is not ready yet.' },
         },
-      },
-      409,
-    );
+        409,
+      );
+    }
+    if (v.source !== 'bunny') {
+      return jsonResponse(
+        {
+          error: {
+            code: 'youtube_video',
+            message: 'YouTube videos are not playable through this endpoint.',
+          },
+        },
+        422,
+      );
+    }
+    videoRow = { id: v.id, bunny_video_id: v.bunny_video_id };
+  } else {
+    const { data: video, error: videoError } = await client
+      .from('lesson_videos')
+      .select('id,bunny_video_id')
+      .eq('lesson_id', lessonId)
+      .eq('is_primary', true)
+      .eq('status', 'ready')
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (videoError) {
+      console.error('get-video-playback-url: video query failed', videoError.code ?? 'unknown');
+      return jsonResponse(
+        { error: { code: 'internal_error', message: 'Failed to resolve the video.' } },
+        500,
+      );
+    }
+    if (!video) {
+      return jsonResponse(
+        {
+          error: {
+            code: 'video_not_ready',
+            message: 'The primary video for this lesson is not ready yet.',
+          },
+        },
+        409,
+      );
+    }
+    videoRow = video as { id: string; bunny_video_id: string };
   }
-  const videoRow = video as { id: string; bunny_video_id: string };
 
   // --- 7) Short-lived signed HLS URL (IP-locked HS256 directory token) ---
   try {

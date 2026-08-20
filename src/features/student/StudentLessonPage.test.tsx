@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const hlsMock = vi.hoisted(() => {
   const handlers: Array<{ event: string; cb: () => void }> = [];
+  const sources: string[] = [];
   return {
     handlers,
+    sources,
     HlsMock: function (this: {
       on: ReturnType<typeof vi.fn>;
       destroy: ReturnType<typeof vi.fn>;
@@ -15,7 +17,9 @@ const hlsMock = vi.hoisted(() => {
         handlers.push({ event, cb });
       });
       this.destroy = vi.fn();
-      this.loadSource = vi.fn();
+      this.loadSource = vi.fn((src: string) => {
+        sources.push(src);
+      });
       this.attachMedia = vi.fn();
     } as unknown as {
       new (): {
@@ -66,6 +70,7 @@ import {
 import { renderApp } from '../../test/utils';
 
 const PLAYBACK_URL = 'https://vz.test/12345/playlist.m3u8?token=x';
+const EXTRA_PLAYBACK_URL = 'https://vz.test/67890/playlist.m3u8?token=y';
 const PDF_URL =
   'https://example.supabase.co/storage/v1/object/sign/pdfs/lesson-1/pdf-1.pdf?token=s';
 const BOARD_URL_1 =
@@ -98,7 +103,9 @@ const DEFAULT_BOARDS = [
   }),
 ];
 
-function mockFunctions(options: { boards?: unknown[]; boardsFail?: boolean } = {}) {
+function mockFunctions(
+  options: { boards?: unknown[]; boardsFail?: boolean; failVideoId?: string; failCode?: string } = {},
+) {
   const fetchMock = vi.fn();
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
@@ -110,12 +117,20 @@ function mockFunctions(options: { boards?: unknown[]; boardsFail?: boolean } = {
       return { ok: true, status: 200, json: async () => options.boards ?? DEFAULT_BOARDS };
     }
     if (target.includes('/functions/v1/get-video-playback-url')) {
+      const videoId = new URL(target).searchParams.get('video_id');
+      if (options.failVideoId && videoId === options.failVideoId) {
+        return {
+          ok: false,
+          status: options.failCode === 'video_not_ready' ? 409 : 500,
+          json: async () => ({ error: { code: options.failCode ?? 'playback_failed' } }),
+        };
+      }
       return {
         ok: true,
         status: 200,
         json: async () => ({
-          playback_url: PLAYBACK_URL,
-          video_id: 'video-1',
+          playback_url: videoId === 'video-2' ? EXTRA_PLAYBACK_URL : PLAYBACK_URL,
+          video_id: videoId ?? 'video-1',
           lesson_id: 'lesson-1',
         }),
       };
@@ -175,15 +190,25 @@ describe('StudentLessonPage', () => {
     resetMockState();
     setAuthenticatedStudent({ grade_id: 'grade-1' });
     hlsMock.handlers.length = 0;
+    hlsMock.sources.length = 0;
   });
 
   it('renders the lesson with video and pdf (signed URLs)', async () => {
-    mockFunctions();
+    const fetchMock = mockFunctions();
     seedLessonPage();
     renderApp('/student/lessons/lesson-1');
 
     expect(await screen.findByRole('heading', { name: 'الدرس الأول' })).toBeInTheDocument();
     expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).includes(
+            '/functions/v1/get-video-playback-url?lesson_id=lesson-1&video_id=video-1',
+          ),
+        ),
+      ).toBe(true);
+    });
     expect(await screen.findByTestId('lesson-pdf-download')).toHaveTextContent('تحميل الملف');
     fireEvent.click(screen.getByTestId('lesson-pdf-toggle'));
     expect(screen.getByTestId('lesson-pdf-frame')).toHaveAttribute('src', PDF_URL);
@@ -214,12 +239,13 @@ describe('StudentLessonPage', () => {
         };
       }
       if (target.includes('/functions/v1/get-video-playback-url')) {
+        const videoId = new URL(target).searchParams.get('video_id') ?? 'video-1';
         return {
           ok: true,
           status: 200,
           json: async () => ({
             playback_url: PLAYBACK_URL,
-            video_id: 'video-1',
+            video_id: videoId,
             lesson_id: 'lesson-1',
           }),
         };
@@ -423,6 +449,122 @@ describe('StudentLessonPage', () => {
     expect(
       await screen.findByText('الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.'),
     ).toBeInTheDocument();
+  });
+
+  it('renders a youtube primary video with YouTubeEmbed without fetching playback', async () => {
+    const fetchMock = mockFunctions();
+    seedLessonPage();
+    mockState.lessonVideos = [
+      makeVideo({
+        id: 'video-1',
+        lesson_id: 'lesson-1',
+        status: 'ready',
+        is_primary: true,
+        source: 'youtube',
+        youtube_video_id: 'abc123XYZ',
+        title: 'شرح أساسي',
+      }),
+    ];
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/abc123XYZ',
+    );
+    expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('get-video-playback-url')),
+    ).toHaveLength(0);
+  });
+
+  it('renders extra bunny videos with their own playback url', async () => {
+    const fetchMock = mockFunctions();
+    seedLessonPage();
+    mockState.lessonVideos.push(
+      makeVideo({
+        id: 'video-2',
+        lesson_id: 'lesson-1',
+        status: 'ready',
+        is_primary: false,
+        bunny_video_id: 'bunny-video-2',
+        title: 'فيديو إضافي',
+      }),
+    );
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
+    expect(screen.getByText('فيديوهات الدرس')).toBeInTheDocument();
+    expect(screen.getByText('فيديو إضافي')).toBeInTheDocument();
+    expect(await screen.findAllByTestId('lesson-video')).toHaveLength(2);
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('video_id=video-2')),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(hlsMock.sources).toContain(EXTRA_PLAYBACK_URL);
+    });
+  });
+
+  it('renders extra youtube videos with YouTubeEmbed', async () => {
+    mockFunctions();
+    seedLessonPage();
+    mockState.lessonVideos.push(
+      makeVideo({
+        id: 'video-3',
+        lesson_id: 'lesson-1',
+        status: 'ready',
+        is_primary: false,
+        source: 'youtube',
+        youtube_video_id: 'dQw4w9WgXcQ',
+        title: 'شرح يوتيوب',
+      }),
+    );
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+    );
+    expect(screen.getByText('شرح يوتيوب')).toBeInTheDocument();
+    expect(screen.getByText('يوتيوب')).toBeInTheDocument();
+  });
+
+  it('shows an inline error for a failed extra video while the primary keeps playing', async () => {
+    mockFunctions({ failVideoId: 'video-2' });
+    seedLessonPage();
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'video-2', lesson_id: 'lesson-1', status: 'ready', is_primary: false }),
+    );
+    renderApp('/student/lessons/lesson-1');
+
+    expect(
+      await screen.findByText('تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('lesson-video')).toBeInTheDocument();
+    expect(screen.queryByText('تعذر تحميل الدرس')).not.toBeInTheDocument();
+  });
+
+  it('shows a processing message for an extra video that is not ready yet', async () => {
+    mockFunctions({ failVideoId: 'video-2', failCode: 'video_not_ready' });
+    seedLessonPage();
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'video-2', lesson_id: 'lesson-1', status: 'ready', is_primary: false }),
+    );
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByText('الفيديو قيد التجهيز')).toBeInTheDocument();
+    expect(screen.getByTestId('lesson-video')).toBeInTheDocument();
+  });
+
+  it('hides the extra videos card when no extra videos exist', async () => {
+    mockFunctions();
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    expect(screen.queryByTestId('lesson-extra-videos')).not.toBeInTheDocument();
+    expect(screen.queryByText('فيديوهات الدرس')).not.toBeInTheDocument();
   });
 
   it('shows an empty state when the lesson does not exist', async () => {

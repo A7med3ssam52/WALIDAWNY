@@ -10,11 +10,16 @@ import type { StubConfig } from '../_test_helpers.ts';
 const USER_STUDENT = { id: '70000000-0000-0000-0000-000000000001' };
 const USER_STAFF = { id: '70000000-0000-0000-0000-000000000009' };
 const LESSON_ID = '40000000-0000-0000-0000-000000000001';
+const OTHER_LESSON_ID = '40000000-0000-0000-0000-000000000002';
 const VIDEO_ID = '50000000-0000-0000-0000-000000000001';
+const SECONDARY_VIDEO_ID = '50000000-0000-0000-0000-000000000002';
 const BUNNY_VIDEO_ID = '12345678-1234-1234-1234-123456789abc';
+const SECONDARY_BUNNY_ID = '22345678-1234-1234-1234-123456789abc';
 
-function get(lessonId: string, user: { id: string }, method = 'GET'): Request {
-  const url = `https://example.supabase.co/functions/v1/get-video-playback-url?lesson_id=${lessonId}`;
+function get(lessonId: string, user: { id: string }, method = 'GET', videoId?: string): Request {
+  const url =
+    `https://example.supabase.co/functions/v1/get-video-playback-url?lesson_id=${lessonId}` +
+    (videoId ? `&video_id=${videoId}` : '');
   return new Request(url, {
     method,
     headers: { Authorization: `Bearer ${user.id}` },
@@ -37,6 +42,7 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
             bunny_video_id: BUNNY_VIDEO_ID,
             status: 'ready',
             is_primary: true,
+            source: 'bunny',
             deleted_at: null,
           },
         ],
@@ -385,3 +391,182 @@ Deno.test(
     assert(!deepEqual(bodyA.playback_url, bodyB.playback_url), 'different tokens');
   },
 );
+
+// ---------------------------------------------------------------------
+// Optional video_id (multi-video: any ready bunny video of the lesson)
+// ---------------------------------------------------------------------
+
+Deno.test('get-video-playback-url: malformed video_id -> 422 validation_error', async () => {
+  const { dep } = deps(cfg());
+  const res = await handle(get(LESSON_ID, USER_STUDENT, 'GET', 'not-a-uuid'), dep);
+  await expectStatus(res, 422);
+  const body = await res.json();
+  assertEqual(body.error.code, 'validation_error');
+});
+
+Deno.test(
+  'get-video-playback-url: video_id of a non-primary ready video -> 200 with that video',
+  async () => {
+    const { dep } = deps(
+      cfg({
+        user: USER_STAFF,
+        tables: {
+          profiles: {
+            rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }],
+          },
+          lesson_videos: {
+            rows: [
+              {
+                id: VIDEO_ID,
+                lesson_id: LESSON_ID,
+                bunny_video_id: BUNNY_VIDEO_ID,
+                status: 'ready',
+                is_primary: true,
+                source: 'bunny',
+                deleted_at: null,
+              },
+              {
+                id: SECONDARY_VIDEO_ID,
+                lesson_id: LESSON_ID,
+                bunny_video_id: SECONDARY_BUNNY_ID,
+                status: 'ready',
+                is_primary: false,
+                source: 'bunny',
+                deleted_at: null,
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const res = await handle(get(LESSON_ID, USER_STAFF, 'GET', SECONDARY_VIDEO_ID), dep);
+    await expectStatus(res, 200);
+    const body = await res.json();
+    assertEqual(body.video_id, SECONDARY_VIDEO_ID);
+    assertEqual(body.lesson_id, LESSON_ID);
+    assert(
+      body.playback_url.startsWith(
+        `https://vz-test.b-cdn.net/${SECONDARY_BUNNY_ID}/playlist.m3u8?token=HS256-1-`,
+      ),
+      'signed URL uses the requested video',
+    );
+  },
+);
+
+Deno.test('get-video-playback-url: video_id of a primary ready video -> 200 (student gate still runs)', async () => {
+  const { dep, rpcCalls } = deps(cfg());
+  const res = await handle(get(LESSON_ID, USER_STUDENT, 'GET', VIDEO_ID), dep);
+  await expectStatus(res, 200);
+  const body = await res.json();
+  assertEqual(body.video_id, VIDEO_ID);
+  assertEqual(rpcCalls.length, 1, 'lesson-access gate still evaluated');
+  assertEqual(rpcCalls[0].fn, 'get_my_lesson_access');
+});
+
+Deno.test('get-video-playback-url: video_id unknown -> 404 video_not_found', async () => {
+  const { dep } = deps(
+    cfg({
+      user: USER_STAFF,
+      tables: {
+        profiles: {
+          rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }],
+        },
+        lesson_videos: { rows: [] },
+      },
+    }),
+  );
+  const res = await handle(get(LESSON_ID, USER_STAFF, 'GET', SECONDARY_VIDEO_ID), dep);
+  await expectStatus(res, 404);
+  const body = await res.json();
+  assertEqual(body.error.code, 'video_not_found');
+});
+
+Deno.test('get-video-playback-url: video_id of another lesson -> 422 wrong_lesson', async () => {
+  const { dep } = deps(
+    cfg({
+      user: USER_STAFF,
+      tables: {
+        profiles: {
+          rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }],
+        },
+        lesson_videos: {
+          rows: [
+            {
+              id: SECONDARY_VIDEO_ID,
+              lesson_id: OTHER_LESSON_ID,
+              bunny_video_id: SECONDARY_BUNNY_ID,
+              status: 'ready',
+              is_primary: false,
+              source: 'bunny',
+              deleted_at: null,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(get(LESSON_ID, USER_STAFF, 'GET', SECONDARY_VIDEO_ID), dep);
+  await expectStatus(res, 422);
+  const body = await res.json();
+  assertEqual(body.error.code, 'wrong_lesson');
+});
+
+Deno.test('get-video-playback-url: video_id not ready -> 409 video_not_ready', async () => {
+  const { dep } = deps(
+    cfg({
+      user: USER_STAFF,
+      tables: {
+        profiles: {
+          rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }],
+        },
+        lesson_videos: {
+          rows: [
+            {
+              id: SECONDARY_VIDEO_ID,
+              lesson_id: LESSON_ID,
+              bunny_video_id: SECONDARY_BUNNY_ID,
+              status: 'processing',
+              is_primary: false,
+              source: 'bunny',
+              deleted_at: null,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(get(LESSON_ID, USER_STAFF, 'GET', SECONDARY_VIDEO_ID), dep);
+  await expectStatus(res, 409);
+  const body = await res.json();
+  assertEqual(body.error.code, 'video_not_ready');
+});
+
+Deno.test('get-video-playback-url: video_id of a YouTube video -> 422 youtube_video', async () => {
+  const { dep } = deps(
+    cfg({
+      user: USER_STAFF,
+      tables: {
+        profiles: {
+          rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }],
+        },
+        lesson_videos: {
+          rows: [
+            {
+              id: SECONDARY_VIDEO_ID,
+              lesson_id: LESSON_ID,
+              bunny_video_id: null,
+              status: 'ready',
+              is_primary: false,
+              source: 'youtube',
+              deleted_at: null,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(get(LESSON_ID, USER_STAFF, 'GET', SECONDARY_VIDEO_ID), dep);
+  await expectStatus(res, 422);
+  const body = await res.json();
+  assertEqual(body.error.code, 'youtube_video');
+});

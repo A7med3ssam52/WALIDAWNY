@@ -657,7 +657,7 @@ export async function listLessonVideos(lessonId: string): Promise<LessonVideo[]>
     // URL (review finding MED-3) — thumbnails go through
     // get-video-thumbnail-url (short-lived IP-locked signed URLs) instead.
     .select(
-      'id,lesson_id,bunny_video_id,status,is_primary,duration_seconds,error_message,created_at,deleted_at',
+      'id,lesson_id,source,bunny_video_id,youtube_video_id,title,status,is_primary,duration_seconds,error_message,created_at,deleted_at',
     )
     .eq('lesson_id', lessonId)
     .is('deleted_at', null)
@@ -669,10 +669,40 @@ export async function listLessonVideos(lessonId: string): Promise<LessonVideo[]>
   return (data ?? []) as LessonVideo[];
 }
 
-export async function getPlaybackUrl(lessonId: string): Promise<PlaybackResponse> {
+// Add a YouTube video to the lesson by URL (id extraction is server-side).
+export async function addYoutubeVideo(
+  lessonId: string,
+  url: string,
+  title?: string,
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('add_youtube_video', {
+    p_lesson_id: lessonId,
+    p_youtube_url: url,
+    p_title: title ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+// Soft-delete a lesson video (Bunny or YouTube).
+export async function deleteLessonVideo(lessonId: string, videoId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('delete_lesson_video', {
+    p_lesson_id: lessonId,
+    p_video_id: videoId,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getPlaybackUrl(
+  lessonId: string,
+  videoId?: string,
+): Promise<PlaybackResponse> {
   return invokeFunction<PlaybackResponse>('get-video-playback-url', {
     method: 'GET',
-    query: { lesson_id: lessonId },
+    query: { lesson_id: lessonId, ...(videoId ? { video_id: videoId } : {}) },
   });
 }
 

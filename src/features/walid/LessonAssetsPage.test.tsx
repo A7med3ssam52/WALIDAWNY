@@ -9,6 +9,7 @@ import {
   makeLesson,
   makeLessonComment,
   makeVideo,
+  mockRpcError,
   mockState,
   resetMockState,
   setAuthenticatedStudent,
@@ -39,26 +40,21 @@ function makeBoardSignedUrl(overrides: Record<string, unknown> = {}): Record<str
   };
 }
 
-interface FakeTusInstance {
-  file: unknown;
-  options: {
-    endpoint?: string;
-    uploadUrl?: string;
-    headers?: Record<string, string>;
-    metadata?: Record<string, string>;
-    chunkSize?: number;
-    retryDelays?: number[];
-    removeFingerprintOnSuccess?: boolean;
-    onProgress?: (bytesSent: number, bytesTotal: number) => void;
-    onSuccess?: () => void;
-    onError?: (error: unknown) => void;
-  };
-  start: ReturnType<typeof vi.fn>;
-  abort: ReturnType<typeof vi.fn>;
-}
+const uploadManagerMocks = vi.hoisted(() => ({
+  enqueueVideoUpload: vi.fn(),
+  cancelJob: vi.fn(),
+  subscribe: vi.fn(),
+  getSnapshot: vi.fn(() => []),
+  listeners: [] as Array<(jobs: Record<string, unknown>[]) => void>,
+}));
 
-const { tusUploads } = vi.hoisted(() => ({
-  tusUploads: [] as FakeTusInstance[],
+vi.mock('../../upload/uploadManager', () => ({
+  uploadManager: {
+    enqueueVideoUpload: uploadManagerMocks.enqueueVideoUpload,
+    cancelJob: uploadManagerMocks.cancelJob,
+    subscribe: uploadManagerMocks.subscribe,
+    getSnapshot: uploadManagerMocks.getSnapshot,
+  },
 }));
 
 const hlsMocks = vi.hoisted(() => ({
@@ -83,24 +79,6 @@ vi.mock('hls.js', () => {
   return { default: FakeHls };
 });
 
-vi.mock('tus-js-client', () => {
-  class FakeUpload {
-    file: unknown;
-    options: FakeTusInstance['options'];
-    start: ReturnType<typeof vi.fn>;
-    abort: ReturnType<typeof vi.fn>;
-
-    constructor(file: unknown, options: FakeTusInstance['options']) {
-      this.file = file;
-      this.options = options;
-      this.start = vi.fn();
-      this.abort = vi.fn(async () => undefined);
-      tusUploads.push(this);
-    }
-  }
-  return { Upload: FakeUpload };
-});
-
 function seedLesson() {
   mockState.lessons.push(
     makeLesson({
@@ -113,8 +91,27 @@ function seedLesson() {
   );
 }
 
-function lastUpload(): FakeTusInstance {
-  return tusUploads[tusUploads.length - 1];
+function makeUploadJob(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    jobId: 'job-1',
+    lessonId: 'lesson-1',
+    videoId: 'video-new-1',
+    fileName: 'درس.mp4',
+    fileSize: 16 * MB,
+    progress: 0,
+    bytesSent: 0,
+    bytesTotal: 16 * MB,
+    stage: 'queued',
+    error: null,
+    ...overrides,
+  };
+}
+
+async function emitJobSnapshot(job: Record<string, unknown>) {
+  await act(async () => {
+    const listener = uploadManagerMocks.listeners[uploadManagerMocks.listeners.length - 1];
+    listener?.([job]);
+  });
 }
 
 function makeSession(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -146,24 +143,6 @@ function pickVideoFile() {
   });
 }
 
-async function fireProgress(instance: FakeTusInstance, bytesSent: number, bytesTotal: number) {
-  await act(async () => {
-    instance.options.onProgress?.(bytesSent, bytesTotal);
-  });
-}
-
-async function fireSuccess(instance: FakeTusInstance) {
-  await act(async () => {
-    instance.options.onSuccess?.();
-  });
-}
-
-async function fireError(instance: FakeTusInstance) {
-  await act(async () => {
-    instance.options.onError?.(new Error('network error'));
-  });
-}
-
 describe('LessonAssetsPage — video section', () => {
   const fetchMock = vi.fn();
 
@@ -173,21 +152,45 @@ describe('LessonAssetsPage — video section', () => {
     fetchMock.mockReset();
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
-    tusUploads.length = 0;
+    uploadManagerMocks.enqueueVideoUpload.mockReset();
+    uploadManagerMocks.cancelJob.mockReset();
+    uploadManagerMocks.subscribe.mockReset();
+    uploadManagerMocks.getSnapshot.mockReset();
+    uploadManagerMocks.getSnapshot.mockReturnValue([]);
+    uploadManagerMocks.listeners.length = 0;
+    uploadManagerMocks.enqueueVideoUpload.mockResolvedValue('job-1');
+    uploadManagerMocks.subscribe.mockImplementation(
+      (listener: (jobs: Record<string, unknown>[]) => void) => {
+        uploadManagerMocks.listeners.push(listener);
+        return () => {};
+      },
+    );
     hlsMocks.loadSource.mockClear();
     hlsMocks.attachMedia.mockClear();
     hlsMocks.destroy.mockClear();
   });
 
   afterEach(() => {
+    document.querySelectorAll('button[aria-label="إغلاق الإشعار"]').forEach((button) => {
+      fireEvent.click(button);
+    });
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
-  it('renders the video list with all status badges, primary, duration and signed thumbnail', async () => {
+  it('renders a mixed list (ready + pending + youtube) with all badges, thumbnails and actions', async () => {
     seedLesson();
     mockState.lessonVideos.push(
       makeVideo({ id: 'v-ready', status: 'ready', is_primary: true, duration_seconds: 125 }),
+      makeVideo({
+        id: 'v-youtube',
+        source: 'youtube',
+        youtube_video_id: 'abc123DEF45',
+        bunny_video_id: null,
+        title: 'شرح الدرس على يوتيوب',
+        status: 'ready',
+        is_primary: false,
+      }),
       makeVideo({ id: 'v-pending', status: 'pending_upload', is_primary: false }),
       makeVideo({ id: 'v-uploading', status: 'uploading', is_primary: false }),
       makeVideo({ id: 'v-processing', status: 'processing', is_primary: false }),
@@ -220,7 +223,7 @@ describe('LessonAssetsPage — video section', () => {
     expect(within(readyRow).getByText('الأساسي')).toBeInTheDocument();
     expect(within(readyRow).getByText(/المدة 02:05/)).toBeInTheDocument();
     expect(within(readyRow).getByRole('button', { name: 'معاينة' })).toBeInTheDocument();
-    expect(within(readyRow).getByRole('button', { name: 'استبدال' })).toBeInTheDocument();
+    expect(within(readyRow).getByRole('button', { name: 'حذف' })).toBeInTheDocument();
     expect(await within(readyRow).findByAltText('صورة مصغرة للفيديو')).toHaveAttribute(
       'src',
       'https://vz.example.test/signed-thumb.jpg?token=HS256-1-abc',
@@ -230,17 +233,28 @@ describe('LessonAssetsPage — video section', () => {
       expect.objectContaining({ method: 'GET' }),
     );
 
+    const youtubeRow = screen.getByTestId('video-row-v-youtube');
+    expect(within(youtubeRow).getByText('يوتيوب')).toBeInTheDocument();
+    expect(within(youtubeRow).getByText('جاهز')).toBeInTheDocument();
+    expect(within(youtubeRow).getByText('شرح الدرس على يوتيوب')).toBeInTheDocument();
+    expect(within(youtubeRow).getByText('abc123DEF45')).toBeInTheDocument();
+    expect(within(youtubeRow).queryByRole('button', { name: 'معاينة' })).not.toBeInTheDocument();
+    expect(within(youtubeRow).queryByAltText('صورة مصغرة للفيديو')).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `${THUMB_EF_URL}?video_id=v-youtube`,
+      expect.anything(),
+    );
+
     expect(screen.getAllByText('قيد الرفع')).toHaveLength(2);
     expect(screen.getByText('قيد المعالجة')).toBeInTheDocument();
     expect(screen.getByText('مستبدل')).toBeInTheDocument();
-    expect(screen.queryByAltText('صورة مصغرة للفيديو')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'استبدال' })).not.toBeInTheDocument();
 
     const failedRow = screen.getByTestId('video-row-v-failed');
     expect(within(failedRow).getByText('فشل')).toBeInTheDocument();
     expect(within(failedRow).getByText(/فشلت المعالجة بسبب خطأ داخلي/)).toBeInTheDocument();
     expect(within(failedRow).getByText(/حاول رفع الفيديو مرة أخرى/)).toBeInTheDocument();
     expect(within(failedRow).queryByRole('button', { name: 'معاينة' })).not.toBeInTheDocument();
-    expect(within(failedRow).queryByRole('button', { name: 'استبدال' })).not.toBeInTheDocument();
     expect(within(failedRow).queryByAltText('صورة مصغرة للفيديو')).not.toBeInTheDocument();
   });
 
@@ -322,7 +336,7 @@ describe('LessonAssetsPage — video section', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('uploads a new video end-to-end: session Edge Function, TUS upload with progress, then success', async () => {
+  it('starts a background upload on file selection: session EF, enqueue, toast and live progress in the pending row', async () => {
     seedLesson();
     fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
       if (String(url) === VIDEO_EF_URL) {
@@ -333,12 +347,19 @@ describe('LessonAssetsPage — video section', () => {
     renderApp('/walid/lessons/lesson-1');
     await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
 
+    mockState.lessonVideos.push(
+      makeVideo({
+        id: 'video-new-1',
+        lesson_id: 'lesson-1',
+        bunny_video_id: 'bunny-video-new-1',
+        status: 'pending_upload',
+        is_primary: true,
+      }),
+    );
     pickVideoFile();
-    expect(screen.getByText(/درس\.mp4/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
 
     await waitFor(() => {
-      expect(tusUploads).toHaveLength(1);
+      expect(uploadManagerMocks.enqueueVideoUpload).toHaveBeenCalledTimes(1);
     });
     expect(fetchMock).toHaveBeenCalledWith(
       VIDEO_EF_URL,
@@ -351,45 +372,90 @@ describe('LessonAssetsPage — video section', () => {
         body: JSON.stringify({ lesson_id: 'lesson-1', mode: 'create' }),
       }),
     );
-
-    const upload = lastUpload();
-    expect(upload.start).toHaveBeenCalled();
-    expect(upload.options.endpoint).toBe(TUS_ENDPOINT);
-    expect(upload.options.headers).toEqual({
-      AuthorizationSignature: 'sig-123',
-      AuthorizationExpire: '2027-01-01T00:00:00Z',
-      LibraryId: 'lib-1',
-      VideoId: 'bunny-video-new-1',
+    const [enqueueArg] = uploadManagerMocks.enqueueVideoUpload.mock.calls[0];
+    expect(enqueueArg).toMatchObject({ lessonId: 'lesson-1', file: expect.any(File) });
+    expect(enqueueArg.session).toMatchObject({
+      video_id: 'video-new-1',
+      bunny_video_id: 'bunny-video-new-1',
+      upload_url: TUS_ENDPOINT,
+      tus_headers: {
+        AuthorizationSignature: 'sig-123',
+        AuthorizationExpire: '2027-01-01T00:00:00Z',
+        LibraryId: 'lib-1',
+        VideoId: 'bunny-video-new-1',
+      },
+      metadata: { filetype: 'video/mp4', title: 'فيديو الدرس' },
     });
-    expect(upload.options.metadata).toEqual({ filetype: 'video/mp4', title: 'فيديو الدرس' });
-    expect(upload.options.chunkSize).toBe(8 * MB);
-    expect(upload.options.retryDelays).toEqual([0, 1000, 3000, 5000]);
-    expect(upload.options.removeFingerprintOnSuccess).toBe(true);
+    expect(await screen.findByText('بدأ الرفع في الخلفية')).toBeInTheDocument();
 
-    await fireProgress(upload, 4 * MB, 8 * MB);
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '50');
-    expect(screen.getByText('جارٍ رفع الملف (50%)...')).toBeInTheDocument();
-    expect(screen.getByText('4.0 م.ب من 8.0 م.ب')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'إلغاء الرفع' })).toBeInTheDocument();
-
-    mockState.lessonVideos.push(
-      makeVideo({
-        id: 'video-new-1',
-        lesson_id: 'lesson-1',
-        bunny_video_id: 'bunny-video-new-1',
-        status: 'processing',
-        is_primary: true,
-      }),
-    );
-    await fireSuccess(upload);
-
-    expect(screen.getByRole('button', { name: 'رفع فيديو جديد' })).toBeInTheDocument();
     const row = await screen.findByTestId('video-row-video-new-1');
-    expect(within(row).getByText('قيد المعالجة')).toBeInTheDocument();
+    await emitJobSnapshot(
+      makeUploadJob({ stage: 'uploading', progress: 50, bytesSent: 4 * MB, bytesTotal: 8 * MB }),
+    );
+    const progressBar = within(row).getByRole('progressbar');
+    expect(progressBar).toHaveAttribute('aria-valuenow', '50');
+    expect(within(row).getByText('جارٍ رفع الملف (50%)...')).toBeInTheDocument();
+    expect(within(row).getByText('4.0 م.ب من 8.0 م.ب')).toBeInTheDocument();
+
+    const videoRow = mockState.lessonVideos.find((video) => video.id === 'video-new-1');
+    if (videoRow) {
+      videoRow.status = 'processing';
+    }
+    await emitJobSnapshot(
+      makeUploadJob({ stage: 'done', progress: 100, bytesSent: 8 * MB, bytesTotal: 8 * MB }),
+    );
+    expect(await screen.findByText('تم رفع الفيديو — جاري المعالجة')).toBeInTheDocument();
+    expect(await within(row).findByText('قيد المعالجة')).toBeInTheDocument();
   });
 
-  it('maps the lesson_has_pending_upload session error to Arabic and creates no TUS upload', async () => {
+  it('enqueues a second upload with a fresh create session even when a ready video exists', async () => {
+    seedLesson();
+    mockState.lessonVideos.push(makeVideo({ id: 'video-1', status: 'ready', is_primary: true }));
+    const sessions = [
+      makeSession({ video_id: 'video-new-1', bunny_video_id: 'bunny-video-new-1' }),
+      makeSession({ video_id: 'video-new-2', bunny_video_id: 'bunny-video-new-2' }),
+    ];
+    let sessionIndex = 0;
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      if (String(url) === VIDEO_EF_URL) {
+        return { ok: true, status: 200, json: async () => sessions[sessionIndex++] };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('video-row-video-1');
+
+    pickVideoFile();
+    await waitFor(() => {
+      expect(uploadManagerMocks.enqueueVideoUpload).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      VIDEO_EF_URL,
+      expect.objectContaining({
+        body: JSON.stringify({ lesson_id: 'lesson-1', mode: 'create' }),
+      }),
+    );
+
+    pickVideoFile();
+    await waitFor(() => {
+      expect(uploadManagerMocks.enqueueVideoUpload).toHaveBeenCalledTimes(2);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      VIDEO_EF_URL,
+      expect.objectContaining({
+        body: JSON.stringify({ lesson_id: 'lesson-1', mode: 'create' }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      VIDEO_EF_URL,
+      expect.objectContaining({ body: expect.stringContaining('old_video_id') }),
+    );
+    const [secondArg] = uploadManagerMocks.enqueueVideoUpload.mock.calls[1];
+    expect(secondArg).toMatchObject({ lessonId: 'lesson-1' });
+    expect(secondArg.session).toMatchObject({ video_id: 'video-new-2' });
+  });
+
+  it('maps the lesson_has_pending_upload session error to Arabic and enqueues nothing', async () => {
     seedLesson();
     fetchMock.mockResolvedValue({
       ok: false,
@@ -400,176 +466,225 @@ describe('LessonAssetsPage — video section', () => {
     await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
 
     pickVideoFile();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
 
     expect(await screen.findByText('يوجد رفع قيد التنفيذ بالفعل لهذا الدرس')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(tusUploads).toHaveLength(0);
-    });
+    expect(uploadManagerMocks.enqueueVideoUpload).not.toHaveBeenCalled();
   });
 
-  it('sends the old video id when replacing an existing ready video', async () => {
+  it('shows an Arabic failure toast and marks the row when the background job fails', async () => {
     seedLesson();
-    mockState.lessonVideos.push(makeVideo({ id: 'video-1', status: 'ready', is_primary: true }));
     fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
       if (String(url) === VIDEO_EF_URL) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            makeSession({ video_id: 'video-new-1', bunny_video_id: 'bunny-video-new-1' }),
-        };
+        return { ok: true, status: 200, json: async () => makeSession() };
       }
       return { ok: true, status: 200, json: async () => ({}) };
     });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
+
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'video-new-1', status: 'pending_upload', is_primary: true }),
+    );
+    pickVideoFile();
+    await waitFor(() => {
+      expect(uploadManagerMocks.enqueueVideoUpload).toHaveBeenCalledTimes(1);
+    });
+
+    await emitJobSnapshot(
+      makeUploadJob({ stage: 'failed', error: 'فشل رفع الفيديو. حاول مرة أخرى' }),
+    );
+    expect(await screen.findAllByText('فشل رفع الفيديو. حاول مرة أخرى')).toHaveLength(2);
+    const row = screen.getByTestId('video-row-video-new-1');
+    expect(within(row).getByText('فشل رفع الفيديو. حاول مرة أخرى')).toBeInTheDocument();
+  });
+
+  it('cancels a pending upload from its row through the session Edge Function', async () => {
+    seedLesson();
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'v-pending', status: 'pending_upload', is_primary: false }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      if (String(url) === VIDEO_EF_URL) {
+        return { ok: true, status: 200, json: async () => ({ released: true }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    const row = await screen.findByTestId('video-row-v-pending');
+
+    fireEvent.click(within(row).getByRole('button', { name: 'إلغاء' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        VIDEO_EF_URL,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'cancel',
+            lesson_id: 'lesson-1',
+            video_id: 'v-pending',
+          }),
+        }),
+      );
+    });
+    expect(await screen.findByText('تم إلغاء الرفع')).toBeInTheDocument();
+  });
+
+  it('deletes a video after confirmation: RPC, toast and list refresh', async () => {
+    seedLesson();
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'video-1', status: 'ready', is_primary: true }),
+      makeVideo({ id: 'video-2', status: 'ready', is_primary: false }),
+    );
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('video-row-video-2');
+
+    fireEvent.click(
+      within(screen.getByTestId('video-row-video-2')).getByRole('button', { name: 'حذف' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'تأكيد حذف الفيديو' })).toBeInTheDocument();
+    const row = mockState.lessonVideos.find((video) => video.id === 'video-2');
+    if (row) {
+      row.deleted_at = '2026-08-18T00:00:00.000Z';
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'حذف الفيديو' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('delete_lesson_video')).toEqual({
+        p_lesson_id: 'lesson-1',
+        p_video_id: 'video-2',
+      });
+    });
+    expect(await screen.findByText('تم حذف الفيديو')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('video-row-video-2')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('video-row-video-1')).toBeInTheDocument();
+  });
+
+  it('maps delete video errors to Arabic toasts', async () => {
+    seedLesson();
+    mockState.lessonVideos.push(makeVideo({ id: 'video-1', status: 'ready', is_primary: true }));
+    mockRpcError('delete_lesson_video', 'video_not_found');
     renderApp('/walid/lessons/lesson-1');
     await screen.findByTestId('video-row-video-1');
 
-    fireEvent.click(screen.getByRole('button', { name: 'استبدال' }));
-    expect(screen.getByRole('dialog', { name: 'تأكيد استبدال الفيديو' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'متابعة الاستبدال' }));
-
-    expect(screen.queryByRole('dialog', { name: 'تأكيد استبدال الفيديو' })).not.toBeInTheDocument();
-    expect(screen.getByText('استبدال الفيديو الحالي بالفيديو المرفوع')).toBeInTheDocument();
-
-    pickVideoFile();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
-
-    await waitFor(() => {
-      expect(tusUploads).toHaveLength(1);
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
-      VIDEO_EF_URL,
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ lesson_id: 'lesson-1', mode: 'replace', old_video_id: 'video-1' }),
-      }),
+    fireEvent.click(
+      within(screen.getByTestId('video-row-video-1')).getByRole('button', { name: 'حذف' }),
     );
+    fireEvent.click(screen.getByRole('button', { name: 'حذف الفيديو' }));
+    expect(await screen.findByText('الفيديو غير موجود')).toBeInTheDocument();
 
-    const upload = lastUpload();
+    mockRpcError('delete_lesson_video', 'wrong_lesson');
+    fireEvent.click(
+      within(screen.getByTestId('video-row-video-1')).getByRole('button', { name: 'حذف' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'حذف الفيديو' }));
+    expect(await screen.findByText('الفيديو لا ينتمي لهذا الدرس')).toBeInTheDocument();
+  });
+
+  it('adds a valid YouTube video through the RPC with url and optional title', async () => {
+    seedLesson();
     mockState.lessonVideos.push(
       makeVideo({
-        id: 'video-new-1',
-        lesson_id: 'lesson-1',
-        bunny_video_id: 'bunny-video-new-1',
-        status: 'processing',
-        is_primary: true,
+        id: 'youtube-1',
+        source: 'youtube',
+        youtube_video_id: 'abc123DEF45',
+        bunny_video_id: null,
+        title: 'شرح الدرس على يوتيوب',
       }),
     );
-    const oldRow = mockState.lessonVideos.find((video) => video.id === 'video-1');
-    if (oldRow) {
-      oldRow.status = 'replaced';
-      oldRow.is_primary = false;
-    }
-    await fireSuccess(upload);
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('video-row-youtube-1');
 
-    expect(await screen.findByTestId('video-row-video-new-1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('video-row-video-1')).getByText('مستبدل')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123DEF45' },
+    });
+    fireEvent.change(screen.getByLabelText('عنوان اختياري'), {
+      target: { value: 'شرح الدرس على يوتيوب' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('add_youtube_video')).toEqual({
+        p_lesson_id: 'lesson-1',
+        p_youtube_url: 'https://www.youtube.com/watch?v=abc123DEF45',
+        p_title: 'شرح الدرس على يوتيوب',
+      });
+    });
+    expect(await screen.findByText('تمت إضافة الفيديو')).toBeInTheDocument();
+    const row = screen.getByTestId('video-row-youtube-1');
+    expect(within(row).getByText('يوتيوب')).toBeInTheDocument();
+    expect(within(row).getByText('شرح الدرس على يوتيوب')).toBeInTheDocument();
   });
 
-  it('shows an error with a retry button after a TUS failure and resumes with the same session creds', async () => {
+  it('accepts youtu.be links and bare ids, and rejects invalid links client-side without calling the RPC', async () => {
     seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
+
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'not-a-youtube-link' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    expect(await screen.findByText('رابط يوتيوب غير صالح')).toBeInTheDocument();
+    expect(expectRpcCall('add_youtube_video')).toBeUndefined();
+
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'https://youtu.be/abc123DEF45' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    await waitFor(() => {
+      expect(expectRpcCall('add_youtube_video')).toEqual({
+        p_lesson_id: 'lesson-1',
+        p_youtube_url: 'https://youtu.be/abc123DEF45',
+        p_title: null,
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'abc123DEF45' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    await waitFor(() => {
+      expect(getRpcCalls().filter((call) => call.fn === 'add_youtube_video')).toHaveLength(2);
+    });
+  });
+
+  it('maps duplicate and missing-lesson youtube errors to Arabic', async () => {
+    seedLesson();
+    mockRpcError('add_youtube_video', 'youtube_video_duplicate');
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
+
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'https://www.youtube.com/watch?v=abc123DEF45' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    expect(await screen.findByText('هذا الفيديو مضاف مسبقاً')).toBeInTheDocument();
+
+    mockRpcError('add_youtube_video', 'lesson_not_found');
+    fireEvent.change(screen.getByLabelText('إضافة فيديو من يوتيوب'), {
+      target: { value: 'https://youtu.be/abc123DEF45' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    expect(await screen.findByText('الدرس غير موجود')).toBeInTheDocument();
+  });
+
+  it('fetches a playback url for the selected ready video (non-primary) with its video id', async () => {
+    seedLesson();
+    mockState.lessonVideos.push(
+      makeVideo({ id: 'video-1', status: 'ready', is_primary: true }),
+      makeVideo({ id: 'video-2', status: 'ready', is_primary: false }),
+    );
     fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
-      if (String(url) === VIDEO_EF_URL) {
-        return { ok: true, status: 200, json: async () => makeSession() };
-      }
-      return { ok: true, status: 200, json: async () => ({}) };
-    });
-    renderApp('/walid/lessons/lesson-1');
-    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
-
-    pickVideoFile();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
-    await waitFor(() => {
-      expect(tusUploads).toHaveLength(1);
-    });
-
-    await fireError(lastUpload());
-    expect(await screen.findByText('فشل رفع الفيديو. حاول مرة أخرى')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'إعادة المحاولة' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
-    await waitFor(() => {
-      expect(tusUploads).toHaveLength(2);
-    });
-    const retryUpload = lastUpload();
-    expect(retryUpload.options.endpoint).toBe(TUS_ENDPOINT);
-    expect(retryUpload.options.uploadUrl).toBeUndefined();
-    expect(retryUpload.options.headers).toEqual({
-      AuthorizationSignature: 'sig-123',
-      AuthorizationExpire: '2027-01-01T00:00:00Z',
-      LibraryId: 'lib-1',
-      VideoId: 'bunny-video-new-1',
-    });
-    expect(retryUpload.start).toHaveBeenCalled();
-  });
-
-  it('cancels an in-flight upload with an Arabic confirmation', async () => {
-    seedLesson();
-    const cancelBodies: unknown[] = [];
-    fetchMock.mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
-      if (String(url) === VIDEO_EF_URL) {
-        const body = init?.body ? JSON.parse(String(init.body)) : null;
-        if (body?.action === 'cancel') {
-          cancelBodies.push(body);
-          return { ok: true, status: 200, json: async () => ({ released: true }) };
-        }
-        return { ok: true, status: 200, json: async () => makeSession() };
-      }
-      return { ok: true, status: 200, json: async () => ({}) };
-    });
-    renderApp('/walid/lessons/lesson-1');
-    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
-
-    pickVideoFile();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
-    await waitFor(() => {
-      expect(tusUploads).toHaveLength(1);
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الرفع' }));
-    await waitFor(() => {
-      expect(lastUpload().abort).toHaveBeenCalled();
-    });
-    expect(await screen.findByText('تم إلغاء الرفع')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'رفع فيديو جديد' })).toBeInTheDocument();
-    expect(cancelBodies).toEqual([
-      { action: 'cancel', lesson_id: 'lesson-1', video_id: 'video-new-1' },
-    ]);
-  });
-
-  it('cancelling without a session (request failed) still resets the UI', async () => {
-    seedLesson();
-    fetchMock.mockImplementation(async () => ({
-      ok: false,
-      status: 500,
-      json: async () => ({ error: { code: 'function_error', message: 'boom' } }),
-    }));
-    renderApp('/walid/lessons/lesson-1');
-    await screen.findByText('لا توجد فيديوهات لهذا الدرس بعد');
-
-    pickVideoFile();
-    fireEvent.click(screen.getByRole('button', { name: 'رفع الفيديو' }));
-    expect(await screen.findByText('تعذر تنفيذ العملية. حاول مرة أخرى')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'إعادة المحاولة' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }));
-    expect(await screen.findByText('تم إلغاء الرفع')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'رفع فيديو جديد' })).toBeInTheDocument();
-    expect(tusUploads).toHaveLength(0);
-  });
-
-  it('fetches a playback url and plays it in an inline modal player', async () => {
-    seedLesson();
-    mockState.lessonVideos.push(makeVideo({ id: 'video-1', status: 'ready', is_primary: true }));
-    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
-      if (String(url) === `${PLAYBACK_EF_URL}?lesson_id=lesson-1`) {
+      if (String(url) === `${PLAYBACK_EF_URL}?lesson_id=lesson-1&video_id=video-2`) {
         return {
           ok: true,
           status: 200,
           json: async () => ({
             playback_url: 'https://vz.example.test/playback/abc.mp4',
-            video_id: 'video-1',
+            video_id: 'video-2',
             lesson_id: 'lesson-1',
           }),
         };
@@ -577,13 +692,15 @@ describe('LessonAssetsPage — video section', () => {
       return { ok: true, status: 200, json: async () => ({}) };
     });
     renderApp('/walid/lessons/lesson-1');
-    await screen.findByTestId('video-row-video-1');
+    await screen.findByTestId('video-row-video-2');
 
-    fireEvent.click(screen.getByRole('button', { name: 'معاينة' }));
+    fireEvent.click(
+      within(screen.getByTestId('video-row-video-2')).getByRole('button', { name: 'معاينة' }),
+    );
 
     expect(await screen.findByRole('dialog', { name: 'معاينة الفيديو' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      `${PLAYBACK_EF_URL}?lesson_id=lesson-1`,
+      `${PLAYBACK_EF_URL}?lesson_id=lesson-1&video_id=video-2`,
       expect.objectContaining({
         method: 'GET',
         headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
@@ -609,7 +726,9 @@ describe('LessonAssetsPage — video section', () => {
     renderApp('/walid/lessons/lesson-1');
     await screen.findByTestId('video-row-video-1');
 
-    fireEvent.click(screen.getByRole('button', { name: 'معاينة' }));
+    fireEvent.click(
+      within(screen.getByTestId('video-row-video-1')).getByRole('button', { name: 'معاينة' }),
+    );
 
     expect(await screen.findByText('الفيديو غير جاهز بعد')).toBeInTheDocument();
     expect(document.querySelector('video')).not.toBeInTheDocument();
@@ -679,6 +798,12 @@ describe('LessonAssetsPage — comments moderation', () => {
     setAuthenticatedWalid();
   });
 
+  afterEach(() => {
+    document.querySelectorAll('button[aria-label="إغلاق الإشعار"]').forEach((button) => {
+      fireEvent.click(button);
+    });
+  });
+
   it('lists the lesson comments and deletes a comment as staff', async () => {
     seedLesson();
     mockState.lessonComments.push(
@@ -735,6 +860,9 @@ describe('LessonAssetsPage — board section', () => {
   });
 
   afterEach(() => {
+    document.querySelectorAll('button[aria-label="إغلاق الإشعار"]').forEach((button) => {
+      fireEvent.click(button);
+    });
     vi.unstubAllGlobals();
   });
 

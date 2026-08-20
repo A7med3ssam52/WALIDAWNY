@@ -13,21 +13,19 @@
 //        a ready video of the SAME lesson), optional sanitized file_name
 //        (becomes the video title when present; otherwise the lesson title
 //        is used) — all pre-checked over the caller token,
-//     2. enforces the Phase 1 orphan rule: at most one pending_upload row
-//        per lesson (lesson_has_pending_upload),
-//     3. creates the video object on Bunny: POST
+//     2. creates the video object on Bunny: POST
 //        https://video.bunnycdn.com/library/{libraryId}/videos with the
 //        AccessKey header, body { title } (verified against
 //        docs.bunny.net/stream/tus-resumable-uploads),
-//     4. reserves the pending lesson_videos row via the staff-guarded
+//     3. reserves the pending lesson_videos row via the staff-guarded
 //        SECURITY DEFINER RPC public.create_video_upload_record
 //        (migrations/0016) — required because 0009 gives lesson_videos a
 //        SELECT-only policy + FORCE RLS, so a caller-token INSERT is
 //        blocked; the wrapper re-validates every rule atomically (the
 //        authoritative backstop),
-//     5. on wrapper failure the freshly created Bunny video is deleted
+//     4. on wrapper failure the freshly created Bunny video is deleted
 //        best-effort (no orphan objects on the library),
-//     6. computes the TUS upload headers (AuthorizationSignature =
+//     5. computes the TUS upload headers (AuthorizationSignature =
 //        SHA-256 hex of libraryId+apiKey+expire+videoId — verified docs)
 //        and returns { video_id, bunny_video_id, upload_url,
 //        tus_headers, metadata, expires_in }; the client then uploads
@@ -35,11 +33,10 @@
 //        bunny-video-webhook on progress/finish.
 //
 //   action = "cancel":
-//   releases an abandoned/cancelled upload session so the lesson can
-//   start a new one (an aborted TUS upload never fires a webhook and
-//   recheck-video-states treats Bunny status 0 as a no-op, so without
-//   this the pending row would block the lesson forever — Phase 5
-//   review MED-2):
+//   releases an abandoned/cancelled upload session (an aborted TUS
+//   upload never fires a webhook and recheck-video-states treats Bunny
+//   status 0 as a no-op, so the pending row would linger forever —
+//   Phase 5 review MED-2):
 //     1. the video row must exist, belong to the lesson and still be
 //        'pending_upload' (video_not_found / wrong_lesson /
 //        video_not_pending),
@@ -68,7 +65,8 @@
 //   lesson_deleted            -> 422
 //   old_video_not_found       -> 404
 //   wrong_lesson              -> 422 (old/video row of another lesson)
-//   lesson_has_pending_upload -> 422 (orphan rule)
+//   lesson_has_pending_upload -> 422 (defensive: a pre-0042 wrapper may
+//                                  still raise it)
 //   video_not_found           -> 404 (cancel target unknown/deleted)
 //   video_not_pending         -> 409 (cancel target already advanced)
 //   permission_denied         -> 403 (wrapper guard)
@@ -440,9 +438,9 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
 
   // --- 4a) CANCEL action: release an abandoned upload session. An aborted
   // TUS upload never fires a webhook and recheck-video-states treats Bunny
-  // status 0 (queued) as a no-op, so without this the pending row would
-  // permanently lock the lesson (orphan rule). Pre-checks over the caller
-  // token; the 0017 wrapper re-validates atomically (authoritative). ---
+  // status 0 (queued) as a no-op, so the pending row would linger forever.
+  // Pre-checks over the caller token; the 0017 wrapper re-validates
+  // atomically (authoritative). ---
   if (action === 'cancel') {
     const { data: video, error: vError } = await client
       .from('lesson_videos')
@@ -539,36 +537,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     return jsonResponse({ released: true, video_id: videoId }, 200);
   }
 
-  // --- 5) Orphan rule (Phase 1): at most one pending upload per lesson.
-  // Pre-checked here for UX; the 0016 wrapper re-enforces it atomically. ---
-  const { count: pendingCount, error: pendingError } = await client
-    .from('lesson_videos')
-    .select('id', { count: 'exact', head: true })
-    .eq('lesson_id', lessonId)
-    .eq('status', 'pending_upload');
-  if (pendingError) {
-    console.error(
-      'create-video-upload-session: pending-count failed',
-      pendingError.code ?? 'unknown',
-    );
-    return jsonResponse(
-      { error: { code: 'internal_error', message: 'Failed to validate upload state.' } },
-      500,
-    );
-  }
-  if ((pendingCount ?? 0) > 0) {
-    return jsonResponse(
-      {
-        error: {
-          code: 'lesson_has_pending_upload',
-          message: 'This lesson already has a pending upload.',
-        },
-      },
-      422,
-    );
-  }
-
-  // --- 6) Replace mode: old video must be a ready video of this lesson ---
+  // --- 5) Replace mode: old video must be a ready video of this lesson ---
   if (mode === 'replace') {
     const { data: oldVideo, error: oldError } = await client
       .from('lesson_videos')
@@ -607,7 +576,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     }
   }
 
-  // --- 7) Create the video object on Bunny (title = file_name or lesson title) ---
+  // --- 6) Create the video object on Bunny (title = file_name or lesson title) ---
   const title = fileName ?? lessonRow.title ?? 'Lesson video';
   const created = await deps.bunnyCreateVideo(title);
   if (!created) {
@@ -617,7 +586,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // --- 8) Reserve the pending row through the staff-guarded wrapper.
+  // --- 7) Reserve the pending row through the staff-guarded wrapper.
   // On failure the freshly created Bunny object is cleaned up
   // best-effort so no orphan accumulates on the library. ---
   const { data: rows, error: rpcError } = await client.rpc('create_video_upload_record', {
@@ -652,6 +621,8 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
         422,
       );
     }
+    // Defensive: a pre-0042 wrapper may still raise this until the
+    // migration is live; the EF itself no longer pre-checks it.
     if (rpcError.code === 'lesson_has_pending_upload') {
       return jsonResponse(
         {
@@ -708,7 +679,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // --- 9) TUS upload credentials (SHA-256 hex — docs-bunny formula) ---
+  // --- 8) TUS upload credentials (SHA-256 hex — docs-bunny formula) ---
   const expire = deps.nowUnix() + TUS_SIGNATURE_TTL_SECONDS;
   const signature = await tusAuthorizationSignature(
     deps.bunnyLibraryId,

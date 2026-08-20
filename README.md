@@ -21,6 +21,8 @@
 - **Curriculum:** grades → units → lessons with draft/published/hidden statuses, ordering, soft delete/restore
 - **Purchases:** permanent per-unit pricing (base + platform fee = total), single-use activation codes (`WLDN-XXXX-XXXX-XXXX`), atomic redemption, free trial lessons per unit
 - **Bunny video:** server-side upload sessions (TUS direct upload with progress/cancel/resume), processing webhooks, state machine, IP-locked tokenized protected playback (HLS + signed thumbnails), deterministic replacement, abandoned-session release, stuck-video reconciliation
+- **Multi-video lessons + YouTube (0042):** multiple videos per lesson (Bunny uploads or YouTube links — server-side id extraction, duplicate guard), students see every ready video (primary + extras, YouTubeEmbed for YouTube rows), per-video playback via `get-video-playback-url?video_id=`, soft-delete with automatic primary promotion
+- **Background uploads:** uploads survive tab close / device sleep — `public/sw.js` (IndexedDB job queue, manual TUS HEAD/PATCH, auto-resume on activate) + `src/upload/uploadManager.ts` (singleton, Wake Lock, localStorage job meta) + `BackgroundUploadBanner` in `App.tsx`; inline fallback via tus-js-client
 - **PDFs:** private Supabase Storage, signed URLs, access-gated by `can_access_lesson`
 - **Boards:** teacher-uploaded board images (jpg/png/webp, ≤10 MiB) in a private `boards` bucket, signed-URL-only viewing for subscribed students (gallery per lesson, staff ordering/delete), row-backed storage RLS (0041)
 - **Progress:** resume position, monotonic percent, deterministic 90% completion, video-replacement resets

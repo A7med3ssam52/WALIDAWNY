@@ -101,7 +101,10 @@ export type VideoStatus =
 export type LessonVideo = {
   id: string;
   lesson_id: string;
-  bunny_video_id: string;
+  source: 'bunny' | 'youtube';
+  bunny_video_id: string | null;
+  youtube_video_id: string | null;
+  title: string | null;
   status: VideoStatus;
   is_primary: boolean;
   duration_seconds: number | null;
@@ -687,6 +690,11 @@ export interface Database {
       };
       delete_lesson_comment: { Args: { p_comment_id: string }; Returns: void };
       list_lesson_comments: { Args: { p_lesson_id: string }; Returns: LessonComment[] };
+      add_youtube_video: {
+        Args: { p_lesson_id: string; p_youtube_url: string; p_title?: string | null };
+        Returns: void;
+      };
+      delete_lesson_video: { Args: { p_lesson_id: string; p_video_id: string }; Returns: void };
     };
   };
 }

@@ -1781,7 +1781,8 @@ RESET "app.current_user_id";
 --   2. create mode: is_primary=true ONLY when the lesson has no live
 --      primary (B9/MED-10); replace mode: never takes primary here —
 --      promotion happens on 'ready' via set_video_status (0008, UNCHANGED)
---   3. orphan rule: at most ONE pending_upload row per lesson
+--   3. 0042: the one-pending-row-per-lesson orphan rule was REMOVED -
+--      parallel upload sessions may coexist (multi-upload background)
 -- Fixtures used: l1 (v1 primary ready, v2 ready non-primary, v3
 -- processing non-primary), l4 (soft-deleted), l8 (no videos), l5
 -- (published, no videos), W = mr_walid ...009, A = student ...001.
@@ -1825,17 +1826,25 @@ SELECT tests.assert(
      FROM public.lesson_videos WHERE bunny_video_id = 'BV17-5'),
     'video17: replace row pending, non-primary, title trimmed');
 
--- (b) orphan rule: a second pending row on l1 is rejected
-SELECT tests.expect_error(
+-- (b) multi-upload rule (0042): the one-pending-row-per-lesson orphan
+-- guard was REMOVED - a second pending row on l1 is now accepted (two
+-- background upload sessions for the same lesson). BV17-6 stays pending
+-- until the section cleanup (f) removes it with the other wrapper rows.
+SELECT tests.expect_rows(
     'SELECT public.create_video_upload_record(''40000000-0000-0000-0000-000000000001'', ''BV17-6'', ''LIB-1'', ''T17'', ''create'', NULL)',
-    'P0001', 'lesson_has_pending_upload');
+    1, 'video17: second pending row on l1 accepted (0042 multi-upload)');
+SELECT tests.assert(
+    (SELECT count(*) = 2 FROM public.lesson_videos
+     WHERE lesson_id = '40000000-0000-0000-0000-000000000001'
+       AND status = 'pending_upload' AND deleted_at IS NULL),
+    'video17: two pending rows coexist on the same lesson (0042)');
 RESET ROLE;
 RESET "app.current_user_id";
--- remove the pending row before continuing: lesson_videos has FORCE RLS with
+-- remove the pending rows before continuing: lesson_videos has FORCE RLS with
 -- no DELETE policy, so a DELETE as mr_walid silently affects 0 rows (the
--- orphan guard would then reject (c)); the cleanup must run as the session
--- superuser
-DELETE FROM public.lesson_videos WHERE bunny_video_id = 'BV17-5';
+-- section cleanup would then leave pending rows behind); the cleanup must
+-- run as the session superuser
+DELETE FROM public.lesson_videos WHERE bunny_video_id IN ('BV17-5', 'BV17-6');
 
 -- (c) create mode: first video of a lesson takes the primary slot (l8),
 -- a lesson with an existing primary does not (l1)

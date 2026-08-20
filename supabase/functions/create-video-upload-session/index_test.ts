@@ -265,18 +265,31 @@ Deno.test('create-video-upload-session: soft-deleted lesson -> 422 lesson_delete
 });
 
 Deno.test(
-  'create-video-upload-session: pending upload exists -> 422 lesson_has_pending_upload (no Bunny call)',
+  'create-video-upload-session: a second session succeeds while a pending upload exists (RPC + Bunny called)',
   async () => {
-    const { dep, createdTitles } = deps(
+    const { dep, rpcCalls, createdTitles } = deps(
       staffCfg({
-        tables: { lesson_videos: { rows: [], count: 1 } },
+        tables: {
+          lesson_videos: {
+            rows: [
+              {
+                id: '50000000-0000-0000-0000-000000000099',
+                lesson_id: LESSON_ID,
+                status: 'pending_upload',
+                deleted_at: null,
+              },
+            ],
+          },
+        },
       }),
     );
     const res = await handle(post({ lesson_id: LESSON_ID, mode: 'create' }), dep);
-    await expectStatus(res, 422);
+    await expectStatus(res, 200);
     const body = await res.json();
-    assertEqual(body.error.code, 'lesson_has_pending_upload');
-    assertEqual(createdTitles.length, 0, 'no Bunny video created');
+    assertEqual(body.video_id, '50000000-0000-0000-0000-000000000020');
+    assertEqual(rpcCalls.length, 1);
+    assertEqual(rpcCalls[0].fn, 'create_video_upload_record');
+    assertEqual(createdTitles.length, 1, 'Bunny video created for the second upload');
   },
 );
 
@@ -374,24 +387,6 @@ Deno.test(
     );
     const res = await handle(post({ lesson_id: LESSON_ID, mode: 'create' }), dep);
     await expectStatus(res, 403);
-    assert(deepEqual(deleted, [BUNNY_GUID]), 'orphan Bunny video deleted');
-  },
-);
-
-Deno.test(
-  'create-video-upload-session: wrapper lesson_has_pending_upload -> 422 + cleanup',
-  async () => {
-    const { dep, deleted } = deps(
-      staffCfg({
-        rpc: {
-          create_video_upload_record: {
-            error: { code: 'lesson_has_pending_upload', message: 'pending' },
-          },
-        },
-      }),
-    );
-    const res = await handle(post({ lesson_id: LESSON_ID, mode: 'create' }), dep);
-    await expectStatus(res, 422);
     assert(deepEqual(deleted, [BUNNY_GUID]), 'orphan Bunny video deleted');
   },
 );

@@ -2,6 +2,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import { ConfigErrorScreen } from '../features/auth/ConfigErrorScreen';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { BackgroundUploadBanner } from '../components/BackgroundUploadBanner';
 import { InstallPrompt } from '../components/InstallPrompt';
 import { Providers } from './providers';
 import { AppRoutes } from './router';
@@ -15,6 +16,7 @@ export function App() {
     <BrowserRouter>
       <Providers>
         <AppRoutes />
+        <BackgroundUploadBanner />
         <InstallPrompt />
       </Providers>
     </BrowserRouter>

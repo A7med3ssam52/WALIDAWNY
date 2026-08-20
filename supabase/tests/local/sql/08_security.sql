@@ -514,6 +514,15 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.publish_unit(uuid
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.hide_unit(uuid)', 'EXECUTE'),
     'sec: anon cannot exec hide_unit (0038)');
 
+-- 0042 multi-video RPCs + internal helper: staff-only surface, locked
+-- from anon (the video policy gate itself is exercised in 12_videos)
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.add_youtube_video(uuid, text, text)', 'EXECUTE'),
+    'sec: anon cannot exec add_youtube_video (0042)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_lesson_video(uuid, uuid)', 'EXECUTE'),
+    'sec: anon cannot exec delete_lesson_video (0042)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_from_url(text)', 'EXECUTE'),
+    'sec: anon cannot exec youtube_video_id_from_url (0042)');
+
 -- =====================================================================
 -- Cleanup
 -- =====================================================================

@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Upload as TusUpload } from 'tus-js-client';
 import {
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   Eye,
   FileUp,
   Image as ImageIcon,
   ImageUp,
   MessageSquareText,
   RefreshCw,
-  Replace,
   Trash2,
   Video as VideoIcon,
 } from 'lucide-react';
@@ -30,9 +29,11 @@ import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
 import { VideoPlayer } from '../../components/VideoPlayer';
 import {
+  addYoutubeVideo,
   cancelVideoUploadSession,
   createVideoUploadSession,
   deleteBoardUpload,
+  deleteLessonVideo,
   deletePdfUpload,
   finalizeBoardUpload,
   finalizePdfUpload,
@@ -53,6 +54,8 @@ import {
   uploadPdfBytes,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
+import { uploadManager } from '../../upload/uploadManager';
+import type { VideoUploadJob } from '../../upload/uploadManager';
 import type {
   Lesson,
   LessonBoard,
@@ -61,7 +64,6 @@ import type {
   LessonPdf,
   LessonVideo,
   VideoStatus,
-  VideoUploadSession,
 } from '../../types/database';
 
 const COMMENT_ERROR_MESSAGES: Record<string, string> = {
@@ -107,10 +109,12 @@ const VIDEO_ERROR_MESSAGES: Record<string, string> = {
   wrong_lesson: 'الفيديو لا ينتمي لهذا الدرس',
   bunny_create_failed: 'فشل إنشاء جلسة الرفع. حاول مرة أخرى',
   video_not_ready: 'الفيديو غير جاهز بعد',
-  video_not_found: 'جلسة الرفع غير موجودة',
+  video_not_found: 'الفيديو غير موجود',
   video_not_pending: 'جلسة الرفع لم تعد قيد الانتظار',
   session_cancel_failed: 'تعذر إلغاء جلسة الرفع. حاول مرة أخرى',
   upload_failed: 'فشل رفع الفيديو. حاول مرة أخرى',
+  invalid_youtube_url: 'رابط يوتيوب غير صالح',
+  youtube_video_duplicate: 'هذا الفيديو مضاف مسبقاً',
   function_error: 'تعذر تنفيذ العملية. حاول مرة أخرى',
   unauthorized: 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
 };
@@ -213,38 +217,28 @@ function isVideoFile(file: File): boolean {
   return videoTypes.includes(file.type) || /\.(mp4|webm|mov)$/i.test(file.name);
 }
 
+function parseYoutubeVideoId(input: string): string | null {
+  const value = input.trim();
+  const patterns = [
+    /youtu\.be\/([\w-]{11})/,
+    /youtube\.com\/(?:watch\?v=|embed\/|shorts\/)([\w-]{11})/,
+    /^([\w-]{11})$/,
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
 type UploadStage = 'idle' | 'requesting' | 'uploading' | 'finalizing';
 
 const STAGE_LABELS: Record<Exclude<UploadStage, 'idle'>, string> = {
   requesting: 'جاري إنشاء رابط الرفع...',
   uploading: 'جاري رفع الملف...',
   finalizing: 'جاري تأكيد الملف...',
-};
-
-type VideoUploadStage = 'idle' | 'requesting' | 'uploading' | 'failed';
-
-interface VideoUploadState {
-  stage: VideoUploadStage;
-  file: File | null;
-  error: string | null;
-  progress: number;
-  bytesSent: number;
-  bytesTotal: number;
-  session: VideoUploadSession | null;
-  mode: 'create' | 'replace';
-  oldVideoId: string | null;
-}
-
-const INITIAL_VIDEO_UPLOAD: VideoUploadState = {
-  stage: 'idle',
-  file: null,
-  error: null,
-  progress: 0,
-  bytesSent: 0,
-  bytesTotal: 0,
-  session: null,
-  mode: 'create',
-  oldVideoId: null,
 };
 
 interface PreviewState {
@@ -256,7 +250,6 @@ interface PreviewState {
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024;
 const MAX_BOARD_SIZE = 10 * 1024 * 1024;
-const VIDEO_CHUNK_SIZE = 8 * 1024 * 1024;
 const VIDEO_POLL_INTERVAL_MS = 4000;
 
 function isVideoActive(video: LessonVideo): boolean {
@@ -346,19 +339,23 @@ export function LessonAssetsPage() {
 
   const [videos, setVideos] = useState<LessonVideo[] | null>(null);
   const [videosError, setVideosError] = useState(false);
-  const [videoUpload, setVideoUpload] = useState<VideoUploadState>(INITIAL_VIDEO_UPLOAD);
-  const [replaceVideo, setReplaceVideo] = useState<LessonVideo | null>(null);
+  const [videoPickError, setVideoPickError] = useState<string | null>(null);
+  const [managerJobs, setManagerJobs] = useState<VideoUploadJob[]>([]);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [deleteVideo, setDeleteVideo] = useState<LessonVideo | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [youtubeTitle, setYoutubeTitle] = useState('');
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [youtubeSubmitting, setYoutubeSubmitting] = useState(false);
 
   const [comments, setComments] = useState<LessonComment[] | null>(null);
   const [commentsError, setCommentsError] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [cancellingVideoId, setCancellingVideoId] = useState<string | null>(null);
+  const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
 
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
-  const tusUploadRef = useRef<TusUpload | null>(null);
-  const activeVideoSessionRef = useRef<VideoUploadSession | null>(null);
 
   const loadLesson = useCallback(async () => {
     if (!lessonId) {
@@ -600,21 +597,6 @@ export function LessonAssetsPage() {
     void loadBoards();
   }, [loadLesson, loadPdfs, loadVideos, loadComments, loadBoards]);
 
-  useEffect(() => {
-    return () => {
-      const upload = tusUploadRef.current;
-      if (upload) {
-        void upload.abort().catch(() => undefined);
-        tusUploadRef.current = null;
-      }
-      const session = activeVideoSessionRef.current;
-      if (lessonId && session) {
-        activeVideoSessionRef.current = null;
-        void cancelVideoUploadSession(lessonId, session.video_id).catch(() => undefined);
-      }
-    };
-  }, [lessonId]);
-
   const anyVideoActive = useMemo(() => (videos ?? []).some(isVideoActive), [videos]);
 
   useEffect(() => {
@@ -719,151 +701,109 @@ export function LessonAssetsPage() {
     }
   };
 
-  const handleVideoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleVideoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
+    if (event.target) {
+      event.target.value = '';
+    }
     if (!selected) {
       return;
     }
     if (!isVideoFile(selected)) {
-      setVideoUpload((prev) => ({
-        ...prev,
-        file: null,
-        error: 'يجب اختيار ملف فيديو بصيغة MP4 أو WebM أو MOV فقط',
-      }));
+      setVideoPickError('يجب اختيار ملف فيديو بصيغة MP4 أو WebM أو MOV فقط');
       return;
     }
     if (selected.size > MAX_VIDEO_SIZE) {
-      setVideoUpload((prev) => ({
-        ...prev,
-        file: null,
-        error: 'حجم الملف يتجاوز الحد المسموح (2 جيجابايت)',
-      }));
+      setVideoPickError('حجم الملف يتجاوز الحد المسموح (2 جيجابايت)');
       return;
     }
-    setVideoUpload((prev) => ({ ...prev, file: selected, error: null }));
-  };
-
-  const startTusUpload = useCallback(
-    (session: VideoUploadSession, file: File) => {
-      const baseOptions = {
-        headers: { ...session.tus_headers },
-        metadata: { ...session.metadata },
-        chunkSize: VIDEO_CHUNK_SIZE,
-        retryDelays: [0, 1000, 3000, 5000],
-        removeFingerprintOnSuccess: true,
-        onProgress: (bytesSent: number, bytesTotal: number) => {
-          const percent =
-            bytesTotal > 0 ? Math.min(100, Math.round((bytesSent / bytesTotal) * 100)) : 0;
-          setVideoUpload((prev) => ({ ...prev, progress: percent, bytesSent, bytesTotal }));
-        },
-        onSuccess: () => {
-          tusUploadRef.current = null;
-          activeVideoSessionRef.current = null;
-          setVideoUpload(INITIAL_VIDEO_UPLOAD);
-          showToast('تم رفع الفيديو — جاري المعالجة');
-          void loadVideos();
-        },
-        onError: () => {
-          tusUploadRef.current = null;
-          setVideoUpload((prev) => ({
-            ...prev,
-            stage: 'failed',
-            error: VIDEO_ERROR_MESSAGES.upload_failed,
-          }));
-        },
-      };
-      const upload = new TusUpload(file, { ...baseOptions, endpoint: session.upload_url });
-      tusUploadRef.current = upload;
-      upload.start();
-    },
-    [loadVideos, showToast],
-  );
-
-  const startVideoUpload = useCallback(async () => {
-    if (
-      !lessonId ||
-      !videoUpload.file ||
-      videoUpload.stage === 'uploading' ||
-      videoUpload.stage === 'requesting'
-    ) {
+    setVideoPickError(null);
+    if (!lessonId) {
       return;
     }
-    const { file, mode, oldVideoId } = videoUpload;
-    setVideoUpload((prev) => ({ ...prev, stage: 'requesting', error: null }));
     try {
-      const session = await createVideoUploadSession(lessonId, mode, oldVideoId ?? undefined);
-      activeVideoSessionRef.current = session;
-      setVideoUpload((prev) => ({ ...prev, stage: 'uploading', session }));
-      startTusUpload(session, file);
+      const session = await createVideoUploadSession(lessonId, 'create');
+      await uploadManager.enqueueVideoUpload({ lessonId, file: selected, session });
+      showToast('بدأ الرفع في الخلفية');
+      void loadVideos();
     } catch (err) {
-      setVideoUpload((prev) => ({ ...prev, stage: 'failed', error: videoErrorMessage(err) }));
-    }
-  }, [lessonId, videoUpload, startTusUpload]);
-
-  const retryVideoUpload = () => {
-    const { file, session } = videoUpload;
-    if (!file) {
-      return;
-    }
-    if (session) {
-      setVideoUpload((prev) => ({
-        ...prev,
-        stage: 'uploading',
-        error: null,
-        progress: 0,
-        bytesSent: 0,
-        bytesTotal: 0,
-      }));
-      startTusUpload(session, file);
-    } else {
-      void startVideoUpload();
+      showToast(videoErrorMessage(err), 'error');
     }
   };
 
-  const cancelVideoUpload = async () => {
-    await tusUploadRef.current?.abort().catch(() => undefined);
-    tusUploadRef.current = null;
-    activeVideoSessionRef.current = null;
-    const { session } = videoUpload;
-    setVideoUpload(INITIAL_VIDEO_UPLOAD);
-    if (lessonId && session) {
-      try {
-        await cancelVideoUploadSession(lessonId, session.video_id);
-        showToast('تم إلغاء الرفع');
-      } catch {
-        showToast('تم إلغاء الرفع لكن تعذر تحرير جلسة الرفع على الخادم');
+  useEffect(() => {
+    return uploadManager.subscribe((jobs) => {
+      setManagerJobs(jobs.filter((job) => job.lessonId === lessonId));
+    });
+  }, [lessonId]);
+
+  const handledJobIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    for (const job of managerJobs) {
+      if (handledJobIdsRef.current.has(job.jobId)) {
+        continue;
       }
-    } else {
-      showToast('تم إلغاء الرفع');
+      if (job.stage === 'done') {
+        handledJobIdsRef.current.add(job.jobId);
+        showToast('تم رفع الفيديو — جاري المعالجة');
+        void loadVideos();
+      } else if (job.stage === 'failed') {
+        handledJobIdsRef.current.add(job.jobId);
+        showToast(VIDEO_ERROR_MESSAGES.upload_failed, 'error');
+        void loadVideos();
+      }
     }
-  };
+  }, [managerJobs, loadVideos, showToast]);
 
-  const openNewVideoPicker = () => {
-    setVideoUpload((prev) => ({ ...prev, mode: 'create', oldVideoId: null, error: null }));
-    videoFileInputRef.current?.click();
-  };
-
-  const confirmReplace = () => {
-    if (!replaceVideo || videoUpload.stage !== 'idle') {
+  const handleDeleteVideo = async (video: LessonVideo) => {
+    if (!lessonId) {
       return;
     }
-    setReplaceVideo(null);
-    setVideoUpload((prev) => ({
-      ...prev,
-      mode: 'replace',
-      oldVideoId: replaceVideo.id,
-      error: null,
-    }));
-    videoFileInputRef.current?.click();
+    setDeleteVideo(null);
+    setDeletingVideoId(video.id);
+    try {
+      await deleteLessonVideo(lessonId, video.id);
+      showToast('تم حذف الفيديو');
+      await loadVideos();
+    } catch (err) {
+      showToast(videoErrorMessage(err), 'error');
+    } finally {
+      setDeletingVideoId(null);
+    }
   };
 
-  const openPreview = async () => {
+  const handleAddYoutubeVideo = async () => {
+    if (!lessonId) {
+      return;
+    }
+    const videoId = parseYoutubeVideoId(youtubeUrl);
+    if (!videoId) {
+      setYoutubeError('رابط يوتيوب غير صالح');
+      return;
+    }
+    setYoutubeSubmitting(true);
+    setYoutubeError(null);
+    try {
+      await addYoutubeVideo(lessonId, youtubeUrl.trim(), youtubeTitle.trim() || undefined);
+      showToast('تمت إضافة الفيديو');
+      setYoutubeUrl('');
+      setYoutubeTitle('');
+      await loadVideos();
+    } catch (err) {
+      setYoutubeError(videoErrorMessage(err));
+    } finally {
+      setYoutubeSubmitting(false);
+    }
+  };
+
+  const openPreview = async (video: LessonVideo) => {
     if (!lessonId) {
       return;
     }
     setPreview({ loading: true, url: null, error: null });
     try {
-      const response = await getPlaybackUrl(lessonId);
+      const response = await getPlaybackUrl(lessonId, video.id);
       setPreview({ loading: false, url: response.playback_url, error: null });
     } catch (err) {
       setPreview({ loading: false, url: null, error: videoErrorMessage(err) });
@@ -927,7 +867,7 @@ export function LessonAssetsPage() {
 
         <Card
           title="فيديوهات الدرس"
-          subtitle="رفع فيديو جديد أو استبدال فيديو موجود (MP4 / WebM / MOV، بحد أقصى 2 جيجابايت)"
+          subtitle="أضف فيديو من جهازك (MP4 / WebM / MOV، بحد أقصى 2 جيجابايت) أو أضف فيديو من يوتيوب بالرابط"
           actions={
             <Button
               variant="secondary"
@@ -957,159 +897,211 @@ export function LessonAssetsPage() {
                 />
               ) : (
                 <ul className="flex flex-col gap-2">
-                  {sortedVideos.map((video) => (
-                    <li
-                      key={video.id}
-                      data-testid={`video-row-${video.id}`}
-                      className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"
-                    >
-                      <div className="flex min-w-0 items-start gap-3">
-                        <VideoThumbnail videoId={video.id} isReady={video.status === 'ready'} />
-                        <div className="min-w-0">
-                          <p className="text-xs text-foreground-subtle" dir="ltr">
-                            {video.bunny_video_id}
-                          </p>
-                          <p className="mt-1 text-xs text-foreground-subtle">
-                            أُضيف {formatDateTime(video.created_at)}
-                            {video.duration_seconds !== null && video.duration_seconds !== undefined
-                              ? ` — المدة ${formatDuration(video.duration_seconds)}`
-                              : ''}
-                          </p>
-                          {video.status === 'failed' ? (
-                            <p role="alert" className="mt-1 text-xs font-medium text-error">
-                              {video.error_message ?? 'فشل معالجة الفيديو'} — حاول رفع الفيديو مرة
-                              أخرى
-                            </p>
+                  {sortedVideos.map((video) => {
+                    const job = managerJobs.find((item) => item.videoId === video.id);
+                    const isBunnyReady =
+                      video.source === 'bunny' && video.status === 'ready';
+                    const isCancelling = cancellingVideoId === video.id;
+                    const isDeleting = deletingVideoId === video.id;
+                    const jobActive =
+                      job && ['queued', 'uploading', 'paused'].includes(job.stage);
+                    return (
+                      <li
+                        key={video.id}
+                        data-testid={`video-row-${video.id}`}
+                        className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          {isBunnyReady ? (
+                            <VideoThumbnail videoId={video.id} isReady />
                           ) : null}
+                          <div className="min-w-0">
+                            {video.source === 'youtube' ? (
+                              <p className="truncate text-sm font-medium text-foreground" dir="rtl">
+                                {video.title ?? 'فيديو يوتيوب'}
+                              </p>
+                            ) : null}
+                            <p className="text-xs text-foreground-subtle" dir="ltr">
+                              {video.source === 'youtube'
+                                ? (video.youtube_video_id ?? '')
+                                : (video.bunny_video_id ?? '')}
+                            </p>
+                            <p className="mt-1 text-xs text-foreground-subtle">
+                              أُضيف {formatDateTime(video.created_at)}
+                              {video.duration_seconds !== null &&
+                              video.duration_seconds !== undefined
+                                ? ` — المدة ${formatDuration(video.duration_seconds)}`
+                                : ''}
+                            </p>
+                            {video.status === 'failed' ? (
+                              <p role="alert" className="mt-1 text-xs font-medium text-error">
+                                {video.error_message ?? 'فشل معالجة الفيديو'} — حاول رفع الفيديو
+                                مرة أخرى
+                              </p>
+                            ) : null}
+                            {job && job.stage === 'failed' ? (
+                              <p role="alert" className="mt-1 text-xs font-medium text-error">
+                                {VIDEO_ERROR_MESSAGES.upload_failed}
+                              </p>
+                            ) : null}
+                            {jobActive ? (
+                              <div className="mt-2 flex max-w-md flex-col gap-1">
+                                <p className="text-xs text-foreground-muted" role="status">
+                                  جارٍ رفع الملف ({job.progress}%)...
+                                </p>
+                                <div
+                                  role="progressbar"
+                                  aria-valuenow={job.progress}
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  className="h-2 w-full overflow-hidden rounded-full bg-border"
+                                >
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-all duration-500 ease-standard"
+                                    style={{ width: `${job.progress}%` }}
+                                  />
+                                </div>
+                                <p className="text-xs text-foreground-subtle">
+                                  {formatMib(job.bytesSent)} من {formatMib(job.bytesTotal)}
+                                </p>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        <Badge variant={VIDEO_STATUS_BADGE_VARIANT[video.status]}>
-                          {VIDEO_STATUS_LABELS[video.status]}
-                        </Badge>
-                        {video.is_primary ? <Badge variant="info">الأساسي</Badge> : null}
-                        {video.status === 'pending_upload' ? (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                            onClick={() => void handleCancelPendingVideo(video)}
-                            disabled={cancellingVideoId === video.id}
-                          >
-                            {cancellingVideoId === video.id ? 'جاري الإلغاء...' : 'إلغاء'}
-                          </Button>
-                        ) : null}
-                        {video.status === 'ready' ? (
-                          <>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <Badge variant={VIDEO_STATUS_BADGE_VARIANT[video.status]}>
+                            {VIDEO_STATUS_LABELS[video.status]}
+                          </Badge>
+                          {video.is_primary ? <Badge variant="info">الأساسي</Badge> : null}
+                          {video.source === 'youtube' ? (
+                            <Badge
+                              variant="info"
+                              icon={
+                                <ExternalLink aria-hidden="true" className="h-3 w-3" />
+                              }
+                            >
+                              يوتيوب
+                            </Badge>
+                          ) : null}
+                          {video.status === 'pending_upload' ? (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                              onClick={() => void handleCancelPendingVideo(video)}
+                              disabled={isCancelling}
+                            >
+                              {isCancelling ? 'جاري الإلغاء...' : 'إلغاء'}
+                            </Button>
+                          ) : null}
+                          {isBunnyReady ? (
                             <Button
                               size="sm"
                               variant="secondary"
                               icon={<Eye aria-hidden="true" className="h-4 w-4" />}
-                              onClick={() => void openPreview()}
+                              onClick={() => void openPreview(video)}
                             >
                               معاينة
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              icon={<Replace aria-hidden="true" className="h-4 w-4" />}
-                              onClick={() => setReplaceVideo(video)}
-                            >
-                              استبدال
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                            onClick={() => setDeleteVideo(video)}
+                            disabled={isDeleting}
+                          >
+                            {isDeleting ? 'جاري الحذف...' : 'حذف'}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
 
               <div className="glass-tile rounded-lg border border-dashed border-primary/25 p-4">
-                <input
-                  ref={videoFileInputRef}
-                  id="video-file"
-                  name="video-file"
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  aria-label="اختيار ملف الفيديو"
-                  onChange={handleVideoFileChange}
-                  className="hidden"
-                />
-                {videoUpload.stage === 'idle' || videoUpload.stage === 'failed' ? (
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Button
-                        icon={<VideoIcon aria-hidden="true" className="h-4 w-4" />}
-                        onClick={openNewVideoPicker}
-                      >
-                        رفع فيديو جديد
-                      </Button>
-                      {videoUpload.file ? (
-                        <span className="text-sm text-foreground-muted">
-                          {videoUpload.file.name} — {formatFileSize(videoUpload.file.size)}
-                        </span>
-                      ) : null}
-                      {videoUpload.mode === 'replace' && videoUpload.oldVideoId ? (
-                        <Badge variant="warning">استبدال الفيديو الحالي بالفيديو المرفوع</Badge>
-                      ) : null}
-                    </div>
-                    {videoUpload.file ? (
-                      <div className="flex items-center gap-3">
-                        <Button onClick={() => void startVideoUpload()}>رفع الفيديو</Button>
-                        {videoUpload.stage === 'failed' ? (
-                          <>
-                            <Button variant="secondary" onClick={retryVideoUpload}>
-                              إعادة المحاولة
-                            </Button>
-                            <Button variant="ghost" onClick={() => void cancelVideoUpload()}>
-                              إلغاء
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {videoUpload.error ? (
-                      <p role="alert" className="text-xs font-medium text-error">
-                        {videoUpload.error}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {videoUpload.file?.name ?? ''} —{' '}
-                        {formatFileSize(videoUpload.file?.size ?? 0)}
-                      </p>
-                      {videoUpload.stage === 'uploading' ? (
-                        <Button size="sm" variant="danger" onClick={() => void cancelVideoUpload()}>
-                          إلغاء الرفع
-                        </Button>
-                      ) : null}
-                    </div>
-                    <p className="text-sm text-foreground-muted" role="status">
-                      {videoUpload.stage === 'requesting'
-                        ? 'جارٍ إنشاء جلسة الرفع...'
-                        : `جارٍ رفع الملف (${videoUpload.progress}%)...`}
-                    </p>
-                    <div
-                      role="progressbar"
-                      aria-valuenow={videoUpload.progress}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      className="h-2 w-full max-w-md overflow-hidden rounded-full bg-border"
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={videoFileInputRef}
+                      id="video-file"
+                      name="video-file"
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      aria-label="اختيار ملف الفيديو"
+                      onChange={(event) => void handleVideoFileChange(event)}
+                      className="hidden"
+                    />
+                    <Button
+                      icon={<VideoIcon aria-hidden="true" className="h-4 w-4" />}
+                      onClick={() => videoFileInputRef.current?.click()}
                     >
-                      <div
-                        className="h-full rounded-full bg-primary transition-all duration-500 ease-standard"
-                        style={{ width: `${videoUpload.progress}%` }}
-                      />
+                      إضافة فيديو
+                    </Button>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <p className="text-xs text-foreground-subtle">
+                        الرفع يستمر في الخلفية — يمكنك مغادرة الصفحة وسيكتمل الرفع تلقائياً
+                      </p>
+                      {videoPickError ? (
+                        <p role="alert" className="text-xs font-medium text-error">
+                          {videoPickError}
+                        </p>
+                      ) : null}
                     </div>
-                    <p className="text-xs text-foreground-subtle">
-                      {formatMib(videoUpload.bytesSent)} من {formatMib(videoUpload.bytesTotal)}
-                    </p>
                   </div>
-                )}
+                  <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="flex min-w-56 flex-1 flex-col gap-1">
+                        <label
+                          htmlFor="youtube-url"
+                          className="text-sm font-medium text-secondary-foreground"
+                        >
+                          إضافة فيديو من يوتيوب
+                        </label>
+                        <input
+                          id="youtube-url"
+                          name="youtube-url"
+                          type="url"
+                          dir="ltr"
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          value={youtubeUrl}
+                          onChange={(event) => setYoutubeUrl(event.target.value)}
+                          className="block w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
+                        />
+                      </div>
+                      <div className="flex min-w-56 flex-1 flex-col gap-1">
+                        <label
+                          htmlFor="youtube-title"
+                          className="text-sm font-medium text-secondary-foreground"
+                        >
+                          عنوان اختياري
+                        </label>
+                        <input
+                          id="youtube-title"
+                          name="youtube-title"
+                          type="text"
+                          placeholder="عنوان الفيديو"
+                          value={youtubeTitle}
+                          onChange={(event) => setYoutubeTitle(event.target.value)}
+                          className="block w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
+                        />
+                      </div>
+                      <Button
+                        loading={youtubeSubmitting}
+                        disabled={!youtubeUrl.trim()}
+                        onClick={() => void handleAddYoutubeVideo()}
+                      >
+                        إضافة
+                      </Button>
+                    </div>
+                    {youtubeError ? (
+                      <p role="alert" className="text-xs font-medium text-error">
+                        {youtubeError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1469,17 +1461,26 @@ export function LessonAssetsPage() {
       </div>
 
       <Modal
-        open={replaceVideo !== null}
-        title="تأكيد استبدال الفيديو"
-        description="سيتم استبدال الفيديو الحالي بالفيديو الجديد، وسيظهر الفيديو القديم كمستبدل بعد اكتمال الرفع. هل تريد المتابعة؟"
-        confirmLabel="متابعة الاستبدال"
+        open={deleteVideo !== null}
+        title="تأكيد حذف الفيديو"
+        description="سيتم حذف الفيديو نهائيًا من الدرس. هل تريد المتابعة؟"
+        confirmLabel="حذف الفيديو"
         cancelLabel="إلغاء"
-        onConfirm={confirmReplace}
-        onCancel={() => setReplaceVideo(null)}
+        danger
+        loading={deletingVideoId !== null}
+        onConfirm={() => {
+          if (deleteVideo) {
+            void handleDeleteVideo(deleteVideo);
+          }
+        }}
+        onCancel={() => setDeleteVideo(null)}
       >
-        {replaceVideo ? (
+        {deleteVideo ? (
           <p className="mt-3 text-xs text-foreground-subtle" dir="ltr">
-            {replaceVideo.bunny_video_id} — أُضيف {formatDateTime(replaceVideo.created_at)}
+            {deleteVideo.source === 'youtube'
+              ? (deleteVideo.youtube_video_id ?? '')
+              : (deleteVideo.bunny_video_id ?? '')}{' '}
+            — أُضيف {formatDateTime(deleteVideo.created_at)}
           </p>
         ) : null}
       </Modal>

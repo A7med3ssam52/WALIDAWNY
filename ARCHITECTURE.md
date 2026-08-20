@@ -353,18 +353,24 @@ Pricing lifecycle (staff sets the base via set_unit_price; admin sets the single
         direct DML on unit_pricing is blocked by FORCE RLS.
 ```
 
-### 7.3 Video lifecycle flow (Bunny)
+### 7.3 Video lifecycle flow (Bunny + YouTube, multi-video lessons — 0042)
 
 ```
 Create/Select Lesson
    ↓
-create-video-upload-session (POST, JWT + is_mr_walid() OR is_admin(), profile active/not-deleted)
+create-video-upload-session (POST, JWT + is_mr_walid() OR is_admin() OR is_teacher(), profile active/not-deleted)
    mode=create  → Bunny create direct upload; INSERT lesson_videos (pending_upload, is_primary=false
-                  unless it is the lesson's FIRST video — MED-10)
+                  unless it is the lesson's FIRST video — MED-10). 0042: MULTIPLE pending uploads per
+                  lesson are allowed (the one-pending-row orphan rule was removed from both the EF
+                  and the create_video_upload_record wrapper) — parallel background uploads coexist.
    mode=replace → new row (pending_upload, is_primary=false) + old_video_id kept for finalize
+   action=cancel → releases an abandoned session (delete_video_upload_record 0017)
    returns uploadUrl + videoId (scoped, safe for browser)
    ↓
-Browser uploads bytes directly to Bunny Storage upload URL
+Browser uploads bytes to Bunny Storage upload URL — the upload may run in the BACKGROUND:
+   src/upload/uploadManager.ts (singleton, Wake Lock, localStorage job meta) + public/sw.js
+   (IndexedDB jobs, manual TUS HEAD/PATCH, automatic resume on activate) + BackgroundUploadBanner
+   — uploads survive tab close / device sleep; fallback path uploads inline via tus-js-client
    ↓
 Bunny processing → webhook events (uploading → processing → ready/failed)
 bunny-video-webhook (POST, public + shared webhook token — ?token= or x-webhook-token header, constant-time compare; NO Bunny-side signature secret)
@@ -377,12 +383,25 @@ bunny-video-webhook (POST, public + shared webhook token — ?token= or x-webhoo
         AND deleted_at IS NULL; soft-delete clears is_primary in the same transaction [BINDING B9]
      → notify_new_content if lesson published (deduped)
    ↓
+YouTube (no Bunny pipeline — inserted directly as status='ready'):
+   add_youtube_video (RPC, JWT + staff three-way) → the 11-char youtube id is extracted SERVER-SIDE
+     by youtube_video_id_from_url (youtu.be/, watch?v=, /embed/, /shorts/, m. subdomain, bare id);
+     invalid_youtube_url / youtube_video_duplicate (pre-check + partial unique index);
+     first video of a lesson takes is_primary; audit video.youtube_added
+   ↓
+Delete a video (Bunny or YouTube):
+   delete_lesson_video (RPC, JWT + staff three-way) → soft-delete (0004 clears is_primary in the
+     same transaction); when the deleted video WAS the primary, the oldest ready non-deleted
+     sibling is promoted (0008 pattern); audit video.deleted
+   ↓
 Protected playback
 get-video-playback-url (GET/HEAD, JWT)
    student:  can_access_lesson(lesson_id) — trial lesson OR active purchase — profile active/not-deleted
    staff QA preview: is_mr_walid() OR is_admin() OR is_teacher() — content-visible check, NO purchase
               requirement [BINDING B5]
-   server resolves the lesson's primary ready video (client never passes video_id)
+   resolves the lesson's primary ready video by default, OR the video_id query target (must belong
+   to the lesson, not deleted, ready, source='bunny'; a YouTube target → youtube_video error; the
+   student branch stays RLS-scoped to their primary ready row)
    → Bunny tokenized signed URL (IP-locked HS256 DIRECTORY token, query form, TTL 20 min — S3;
      verified against the production pull zone; the docs' bcdn_token path form returns 403)
    ↓
@@ -533,9 +552,9 @@ Deployment: one `supabase/functions/<name>/index.ts` per function; `supabase fun
 
 | # | Function | Method/Auth | Purpose |
 |---|---|---|---|
-| 1 | `create-video-upload-session` | POST, JWT + `is_mr_walid() OR is_admin()` | Bunny create upload session; inserts `lesson_videos` (pending_upload); `mode=create/replace`; `action=cancel` releases an abandoned session (0017, best-effort Bunny delete) |
+| 1 | `create-video-upload-session` | POST, JWT + `is_mr_walid() OR is_admin() OR is_teacher()` | Bunny create upload session; inserts `lesson_videos` (pending_upload); `mode=create/replace`; `action=cancel` releases an abandoned session (0017, best-effort Bunny delete); **0042: multiple sessions per lesson allowed** (orphan rule removed — parallel uploads, background SW pipeline) |
 | 2 | `bunny-video-webhook` | POST, **public + shared webhook token** (`?token=` or `x-webhook-token`, constant-time; no Bunny-side signature secret) | Map events → `set_video_status()` transitions; ready → duration/thumbnail; finalize replacement; `notify_new_content`; rejects unauthenticated requests |
-| 3 | `get-video-playback-url` | GET/HEAD, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin/teacher QA preview** [BINDING B5] | Server resolves primary `ready` video; IP-locked HS256 directory token, query form (TTL 20 min); non-privileged roles rejected |
+| 3 | `get-video-playback-url` | GET/HEAD, JWT; **student** (`can_access_lesson`, active/not-deleted) **or mr_walid/admin/teacher QA preview** [BINDING B5] | Resolves the primary `ready` video by default **or the optional `video_id` query target** (same lesson, not deleted, ready, `source='bunny'` — a YouTube target is rejected); IP-locked HS256 directory token, query form (TTL 20 min); non-privileged roles rejected |
 | 3b | `get-video-thumbnail-url` | GET/HEAD, JWT; same gates as row 3 | Short-lived IP-locked signed `thumbnail.jpg` (same directory token); the raw `thumbnail_url` column is never sent to clients |
 | 4 | `get-pdf-signed-url` | POST, JWT; **student role only** + active/not-deleted | Server resolves primary `ready` PDF (MED-7); `can_access_lesson()`; service-role `createSignedUrl` (TTL 10–15 min) |
 | 5 | `upload-pdf` | POST, JWT + `is_mr_walid() OR is_admin()` | MIME/size validation → `createSignedUploadUrl` (I4) on `pdfs`; `finalize_pdf_upload` RPC afterwards |

@@ -62,8 +62,10 @@ SELECT tests.expect_rows('DELETE FROM public.unit_purchases WHERE student_id = '
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 1, 'A: units = published own-grade only');
 SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 3, 'A: lessons = published own-grade chain only');
 
--- lesson_videos: only primary + ready of accessible lessons
-SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos', 1, 'A: videos = primary ready only');
+-- lesson_videos: EVERY ready non-deleted video of accessible lessons
+-- (0042: the is_primary condition was removed - multi-video feature; v1
+-- primary ready + v2 ready non-primary visible, v3 processing hidden)
+SELECT tests.expect_count('SELECT count(*) FROM public.lesson_videos', 2, 'A: videos = all ready of accessible lessons (0042)');
 SELECT tests.expect_error('INSERT INTO public.lesson_videos (lesson_id, bunny_video_id, bunny_library_id) VALUES (''40000000-0000-0000-0000-000000000001'', ''BV-INSERT'', ''LIB-1'')', '42501', 'violates row-level security policy');
 
 -- lesson_pdfs: only primary + ready of accessible lessons

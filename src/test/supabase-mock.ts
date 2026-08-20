@@ -222,7 +222,10 @@ export function makeVideo(overrides: Partial<AnyRecord> = {}): AnyRecord {
   return {
     id: 'video-1',
     lesson_id: 'lesson-1',
+    source: 'bunny',
     bunny_video_id: 'bunny-video-1',
+    youtube_video_id: null,
+    title: null,
     status: 'ready',
     is_primary: true,
     duration_seconds: 125,

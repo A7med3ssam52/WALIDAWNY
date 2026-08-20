@@ -13,6 +13,7 @@ import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { StudentNav } from '../../components/StudentNav';
 import { VideoPlayer } from '../../components/VideoPlayer';
+import { YouTubeEmbed } from '../../components/YouTubeEmbed';
 import { useToast } from '../../components/Toast';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import { useAuth } from '../auth/AuthContext';
@@ -63,6 +64,70 @@ function errorCode(error: unknown): string | null {
   return null;
 }
 
+function ExtraVideoRow({ lessonId, video }: { lessonId: string; video: LessonVideo }) {
+  if (video.source === 'youtube' && video.youtube_video_id) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">{video.title ?? 'فيديو الدرس'}</p>
+          <Badge variant="info">يوتيوب</Badge>
+        </div>
+        <YouTubeEmbed videoId={video.youtube_video_id} title={video.title ?? 'فيديو الدرس'} />
+      </div>
+    );
+  }
+  return <ExtraBunnyVideoRow lessonId={lessonId} video={video} />;
+}
+
+function ExtraBunnyVideoRow({ lessonId, video }: { lessonId: string; video: LessonVideo }) {
+  const [playback, setPlayback] = useState<PlaybackResponse | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getPlaybackUrl(lessonId, video.id)
+      .then((value) => {
+        if (active) {
+          setPlayback(value);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setPlaybackError(errorCode(error) ?? 'playback_failed');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [lessonId, video.id]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-foreground">{video.title ?? 'فيديو الدرس'}</p>
+        <Badge variant="info">Bunny</Badge>
+      </div>
+      {playback ? (
+        <VideoPlayer src={playback.playback_url} />
+      ) : playbackError === 'video_not_ready' ? (
+        <div className="glass-card rounded-2xl p-4">
+          <p className="text-sm text-foreground-muted">الفيديو قيد التجهيز</p>
+        </div>
+      ) : playbackError ? (
+        <div className="glass-card rounded-2xl p-4">
+          <p className="text-sm text-foreground-muted">
+            تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.
+          </p>
+        </div>
+      ) : (
+        <div className="glass-card flex justify-center rounded-2xl p-8">
+          <Spinner />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LessonPageSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-hidden="true">
@@ -91,6 +156,7 @@ export function StudentLessonPage() {
   const [access, setAccess] = useState<LessonAccessInfo | null>(null);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [primaryVideo, setPrimaryVideo] = useState<LessonVideo | null>(null);
+  const [extraVideos, setExtraVideos] = useState<LessonVideo[]>([]);
   const [primaryPdf, setPrimaryPdf] = useState<LessonPdf | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [progressLoaded, setProgressLoaded] = useState(false);
@@ -117,6 +183,7 @@ export function StudentLessonPage() {
     setUnit(null);
     setSiblings([]);
     setPrimaryVideo(null);
+    setExtraVideos([]);
     setPrimaryPdf(null);
     setProgress(null);
     setProgressLoaded(false);
@@ -179,9 +246,9 @@ export function StudentLessonPage() {
           .filter((row) => row.status === 'published')
           .sort((a, b) => a.sort_order - b.sort_order),
       );
-      setPrimaryVideo(
-        videos.find((video) => video.is_primary && video.status === 'ready') ?? null,
-      );
+      const readyVideos = videos.filter((video) => video.status === 'ready');
+      setPrimaryVideo(readyVideos.find((video) => video.is_primary) ?? null);
+      setExtraVideos(readyVideos.filter((video) => !video.is_primary));
       setPrimaryPdf(pdfs.find((pdf) => pdf.is_primary && pdf.is_ready) ?? null);
       setProgress(progressRow);
       setProgressLoaded(true);
@@ -197,11 +264,11 @@ export function StudentLessonPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!lesson || !primaryVideo) {
+    if (!lesson || !primaryVideo || primaryVideo.source === 'youtube') {
       return;
     }
     let active = true;
-    getPlaybackUrl(lesson.id)
+    getPlaybackUrl(lesson.id, primaryVideo.id)
       .then((value) => {
         if (active) {
           setPlayback(value);
@@ -453,7 +520,12 @@ export function StudentLessonPage() {
         ) : null}
 
         {primaryVideo ? (
-          playback && progressLoaded ? (
+          primaryVideo.source === 'youtube' && primaryVideo.youtube_video_id ? (
+            <YouTubeEmbed
+              videoId={primaryVideo.youtube_video_id}
+              title={primaryVideo.title ?? 'فيديو الدرس'}
+            />
+          ) : playback && progressLoaded ? (
             <VideoPlayer
               src={playback.playback_url}
               initialPosition={progress?.position_seconds ?? 0}
@@ -491,6 +563,16 @@ export function StudentLessonPage() {
               <Spinner />
             </div>
           )
+        ) : null}
+
+        {extraVideos.length > 0 ? (
+          <Card title="فيديوهات الدرس" data-testid="lesson-extra-videos">
+            <div className="flex flex-col gap-4" data-testid="extra-video-list">
+              {extraVideos.map((video) => (
+                <ExtraVideoRow key={video.id} lessonId={lesson.id} video={video} />
+              ))}
+            </div>
+          </Card>
         ) : null}
 
         {!primaryVideo && !primaryPdf ? (

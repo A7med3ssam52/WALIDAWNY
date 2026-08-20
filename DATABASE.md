@@ -167,25 +167,30 @@ The time-based status enum used by the legacy access model was dropped by 0028 �
 - Partial UNIQUE `(unit_id) WHERE is_trial AND deleted_at IS NULL` — at most one trial lesson per unit (decision D).
 - Trigger: on status → `published`, calls `notify_new_content()` (deduped, A28; targets **active purchasers of the lesson's grade** only).
 
-### 4.8 `lesson_videos` — Bunny-backed assets (A2: one primary per lesson, multiple allowed)
+### 4.8 `lesson_videos` — Bunny/YouTube assets (A2: one primary per lesson, multiple videos allowed — 0042)
 
 | Column | Type | Constraints |
 |---|---|---|
 | `id` | uuid | PK |
 | `lesson_id` | uuid | NOT NULL, FK → `lessons(id)` ON DELETE CASCADE |
-| `bunny_video_id` | text | NOT NULL UNIQUE (stable Bunny identifier) |
-| `bunny_library_id` | text | NOT NULL |
-| `title` | text | NULL |
-| `status` | video_status | NOT NULL DEFAULT 'pending_upload' |
+| `source` | text | NOT NULL DEFAULT 'bunny' — `'bunny'` or `'youtube'` (0042) |
+| `bunny_video_id` | text | NULL (was NOT NULL UNIQUE; NULL allowed for YouTube rows — 0042 C1) |
+| `bunny_library_id` | text | NOT NULL (YouTube rows carry the literal `'youtube'` placeholder) |
+| `youtube_video_id` | text | NULL (YouTube rows only — 0042 C1) |
+| `title` | text | NULL (YouTube default: «فيديو يوتيوب») |
+| `status` | video_status | NOT NULL DEFAULT 'pending_upload' (YouTube rows insert directly as 'ready' — no Bunny pipeline) |
 | `duration_seconds` | int | NULL |
 | `thumbnail_url` | text | NULL |
-| `is_primary` | boolean | NOT NULL DEFAULT false (never auto-true on insert; promoted explicitly by `set_video_status`/webhook finalize — MED-10) |
+| `is_primary` | boolean | NOT NULL DEFAULT false (never auto-true on insert; promoted explicitly by `set_video_status`/webhook finalize or `add_youtube_video`/`delete_lesson_video` — MED-10) |
 | `error_message` | text | NULL |
 | `sort_order` | int | NOT NULL DEFAULT 0 |
 | `deleted_at` | timestamptz | NULL |
 | `created_at` / `updated_at` | timestamptz | NOT NULL DEFAULT now() |
 
 - **[BINDING B9]** Partial UNIQUE: `UNIQUE (lesson_id) WHERE is_primary AND deleted_at IS NULL` → exactly one primary per lesson; soft-delete of a video clears `is_primary` in the **same transaction** (a soft-deleted primary releases the primary slot). Index `(lesson_id)`.
+- **0042 C1 cross-column CHECK** `lesson_videos_source_check`: `source='bunny'` ⇔ `bunny_video_id` present + `youtube_video_id` NULL; `source='youtube'` ⇔ the reverse.
+- **0042 C1 partial UNIQUE** `uq_lesson_videos_youtube ON (youtube_video_id) WHERE NOT NULL` — a YouTube id is globally unique (soft-deleted rows included; a deleted id is never re-registered).
+- **0042 C2 student SELECT policy** `lesson_videos_select_gated`: students see **every** `status='ready' AND deleted_at IS NULL` video of an accessible lesson (`is_primary` condition removed — multi-video UX); staff branches unchanged.
 - Progress rows referencing a video survive soft-delete (no cascade).
 
 ### 4.9 `lesson_pdfs` — Supabase Storage-backed files
@@ -499,6 +504,8 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `finalize_pdf_upload` | `(p_pdf_id uuid)` | marks `is_ready`, promotes primary, audits; client-callable (staff only via RLS guards) |
 | `create_board_upload_record` | `(p_lesson_id uuid, p_original_name text, p_size_bytes bigint DEFAULT NULL) RETURNS TABLE (id uuid, storage_path text)` | staff (admin/mr_walid/teacher); validates lesson exists/active, MIME from extension (jpg|jpeg|png|webp), size ≤ 10 MiB, generates `storage_path = {lesson_id}/{uuid}.{ext}`, `sort_order = max+1`, inserts pending (`is_ready=false`), audits `board.upload_started`; errors: `permission_denied`, `lesson_not_found`, `lesson_deleted`, `invalid_board_size`, `invalid_file_extension` |
 | `finalize_board_upload` | `(p_board_id uuid)` | staff; sets `is_ready=true`, `updated_at=now()`, audits `board.finalized`; errors: `permission_denied`, `board_not_found`, `board_already_ready`, `board_storage_missing` (0041 M2 — refuses while the Storage object does not exist, so a pending row without bytes never becomes student-visible) |
+| `add_youtube_video` | `(p_lesson_id uuid, p_youtube_url text, p_title text DEFAULT NULL) RETURNS TABLE (id uuid, is_primary boolean)` | staff (admin/mr_walid/teacher, 0042 C4); **youtube id extracted SERVER-side** (`youtube_video_id_from_url` — youtu.be/, watch?v=, /embed/, /shorts/, m. subdomain, bare 11-char id); guards: lesson exists/not-deleted, `invalid_youtube_url`, `youtube_video_duplicate` (pre-check + partial unique index as final guard); first video of a lesson takes `is_primary`; inserts source='youtube' with `status='ready'` (no Bunny pipeline), title NULL/empty → «فيديو يوتيوب» (≤255 chars); audits `video.youtube_added`; errors: `permission_denied`, `lesson_not_found`, `lesson_deleted`, `invalid_youtube_url`, `youtube_video_duplicate` |
+| `delete_lesson_video` | `(p_lesson_id uuid, p_video_id uuid)` | staff (admin/mr_walid/teacher, 0042 C5); soft-deletes any status/source row (0004 trigger clears `is_primary` in the same transaction — B9); when the deleted video WAS the primary, promotes the **oldest ready non-deleted sibling** (0008 pattern; a lesson with no ready sibling stays primary-less); guards: `video_not_found` (missing or already soft-deleted), `wrong_lesson`; audits `video.deleted` |
 | `delete_board_upload_record` | `(p_lesson_id uuid, p_board_id uuid)` | staff; soft-delete (`deleted_at=now()`) — allowed even for ready rows; validates ownership; audits `board.deleted`; errors: `permission_denied`, `board_not_found`, `wrong_lesson` |
 | `reorder_boards` | `(p_lesson_id uuid, p_board_ids uuid[])` | staff; enforces exact match to non-deleted boards of the lesson, updates sequential `sort_order`, audits `board.reordered`; errors: `permission_denied`, `lesson_not_found`, `board_not_found`, `wrong_lesson`, `validation_error` |
 | `get_dashboard_stats` | `() RETURNS jsonb` | **read-only, no audit**; `is_admin() OR is_mr_walid() OR is_teacher()` → `permission_denied`; single-round-trip JSON: students (total/active/disabled/deleted/new-this-month), purchases (total/total_revenue/revenue_this_month), content (grades/units/lessons/published/videos(+ready)/pdfs(+ready)/**boards**), engagement (students-with-progress/completed/avg%), by_grade array (students/purchases/revenue), top_units (LIMIT 5 by revenue), recent_purchases (5); aggregates read through `v_dashboard_metrics` where applicable (0018/0028) |
@@ -512,6 +519,7 @@ Phase 6/7 add: `grade_exam_attempt` (staff, essay grading → `final_score` + `e
 | Function | Signature | Notes |
 |---|---|---|
 | `recheck_video_states` | `()` | reconcile stuck Bunny videos; SECURITY DEFINER |
+| `youtube_video_id_from_url` | `(p_url text) RETURNS text` | internal 0042 helper (IMMUTABLE, no client grants); extracts the 11-char YouTube id from youtu.be/, watch?v=, /embed/, /shorts/, m. subdomain or a bare id; NULL for any other input |
 | `set_video_status` | `(video_id uuid, new_status video_status, ...)` | internal, **no client grants** (MED-6); validates legal transitions, audits, performs `is_primary` promotion/demotion (MED-10); there is no separate public variant |
 | `audit_log` | `(action text, entity_type text, entity_id uuid, metadata jsonb)` | internal, **no client grants**; called by RPCs/triggers |
 | `notify_new_content` | `(p_lesson_id uuid)` | SECURITY DEFINER; deduped; targets **active purchasers of the lesson's grade only**; bulk fan-out acceptable at current scale (LOW-19) |
