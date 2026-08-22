@@ -1052,6 +1052,72 @@ describe('LessonAssetsPage — board section', () => {
     expect(within(uploadedCard).getByText('جاهز')).toBeInTheDocument();
   });
 
+  it('maps a gateway-shaped 401 rejection to the session-expired message instead of the generic one', async () => {
+    seedLesson();
+    let uploadAttempted = false;
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-board')) {
+        uploadAttempted = true;
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({
+            code: 'UNAUTHORIZED_INVALID_JWT_FORMAT',
+            message: 'Invalid JWT',
+          }),
+        };
+      }
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-upload-input');
+
+    const imageFile = new File(['fake-png-bytes'], 'board.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [imageFile] },
+    });
+    fireEvent.click(screen.getByTestId('board-upload-button'));
+
+    await waitFor(() => {
+      expect(uploadAttempted).toBe(true);
+    });
+    expect(
+      await screen.findByText('انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى'),
+    ).toBeInTheDocument();
+  });
+
+  it('maps a network-level failure of the upload session call to a connection error message', async () => {
+    seedLesson();
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-board')) {
+        throw new TypeError('Failed to fetch');
+      }
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-upload-input');
+
+    const imageFile = new File(['fake-png-bytes'], 'board.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [imageFile] },
+    });
+    fireEvent.click(screen.getByTestId('board-upload-button'));
+
+    expect(
+      await screen.findByText(
+        'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('deletes a board after confirmation and removes it from the list', async () => {
     seedLesson();
     mockState.lessonBoards.push(
