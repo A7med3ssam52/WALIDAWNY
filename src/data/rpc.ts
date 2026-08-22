@@ -1,4 +1,4 @@
-import { getSupabaseClient } from '../lib/supabase';
+import { getSupabaseClient, supabasePublishableKey, supabaseUrl } from '../lib/supabase';
 
 import type {
   AppNotification,
@@ -585,15 +585,20 @@ function boardImageContentType(file: File): string {
 }
 
 export async function uploadBoardBytes(uploadUrl: string, file: File): Promise<void> {
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': boardImageContentType(file),
-    },
-    body: file,
-  });
+  let response: Response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': boardImageContentType(file),
+      },
+      body: file,
+    });
+  } catch {
+    throw codeError('network_error');
+  }
   if (!response.ok) {
-    throw new Error('board_upload_failed');
+    throw codeError(response.status >= 500 || response.status === 429 ? 'internal_error' : 'board_upload_failed');
   }
 }
 
@@ -1068,6 +1073,56 @@ export async function unitPurchaseStats(): Promise<UnitPurchaseStats> {
   return (data ?? {}) as UnitPurchaseStats;
 }
 
+function codeError(code: string): Error & { code: string } {
+  const error = new Error(code) as Error & { code?: string };
+  error.code = code;
+  return error as Error & { code: string };
+}
+
+/**
+ * Normalizes a non-OK Edge Function response into a stable error code.
+ * Handles both the EF envelope ({ error: { code } }) and the platform
+ * gateway envelope ({ code, message }) emitted when verify_jwt rejects
+ * a request before it reaches the function body.
+ */
+async function functionErrorFromResponse(response: Response): Promise<Error> {
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    try {
+      const text = await response.text();
+      if (text.trim().startsWith('{')) {
+        body = JSON.parse(text);
+      }
+    } catch {
+      body = null;
+    }
+  }
+  const efCode = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  if (typeof efCode === 'string' && efCode.trim()) {
+    return codeError(efCode.trim().toLowerCase());
+  }
+  const gwCode = (body as { code?: unknown } | null)?.code;
+  if (typeof gwCode === 'string' && gwCode.trim()) {
+    const normalized = gwCode.trim().toLowerCase();
+    if (normalized.startsWith('unauthorized')) {
+      return codeError('unauthorized');
+    }
+    return codeError(normalized);
+  }
+  if (response.status === 401) {
+    return codeError('unauthorized');
+  }
+  if (response.status === 403) {
+    return codeError('forbidden');
+  }
+  if (response.status >= 500 || response.status === 429) {
+    return codeError('internal_error');
+  }
+  return codeError('function_error');
+}
+
 export async function invokeFunction<T = unknown>(
   name: string,
   options: { method?: string; body?: unknown; query?: Record<string, string> } = {},
@@ -1075,23 +1130,29 @@ export async function invokeFunction<T = unknown>(
   const { data } = await getSupabaseClient().auth.getSession();
   const token = data.session?.access_token ?? '';
   const query = options.query ? `?${new URLSearchParams(options.query).toString()}` : '';
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}${query}`;
-  const response = await fetch(url, {
-    method: options.method ?? 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(options.method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
-    },
-    body: options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: { code?: string } } | null;
-    const code = body?.error?.code ?? 'function_error';
-    const error = new Error(code) as Error & { code?: string };
-    error.code = code;
-    throw error;
+  const url = `${supabaseUrl}/functions/v1/${name}${query}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: options.method ?? 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: supabasePublishableKey,
+        ...(options.method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
+    });
+  } catch {
+    throw codeError('network_error');
   }
-  return (await response.json()) as T;
+  if (!response.ok) {
+    throw await functionErrorFromResponse(response);
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw codeError('internal_error');
+  }
 }
 
 export async function listExams(lessonId: string): Promise<Exam[]> {

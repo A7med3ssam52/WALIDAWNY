@@ -70,6 +70,9 @@ const COMMENT_ERROR_MESSAGES: Record<string, string> = {
   comment_not_found: 'التعليق غير موجود',
   permission_denied: 'ليست لديك صلاحية',
   access_denied: 'ليست لديك صلاحية',
+  network_error: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى',
+  internal_error: 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل',
+  unauthorized: 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
 };
 
 function commentErrorMessage(error: unknown): string {
@@ -97,6 +100,10 @@ const PDF_ERROR_MESSAGES: Record<string, string> = {
   pdf_upload_failed: 'فشل رفع الملف إلى التخزين. حاول مرة أخرى',
   upload_url_failed: 'فشل إنشاء رابط الرفع. حاول مرة أخرى',
   pdf_reservation_failed: 'فشل إنشاء سجل الملف. حاول مرة أخرى',
+  network_error: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى',
+  internal_error: 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل',
+  'jwt expired': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
+  'invalid jwt': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
 };
 
 const VIDEO_ERROR_MESSAGES: Record<string, string> = {
@@ -117,6 +124,10 @@ const VIDEO_ERROR_MESSAGES: Record<string, string> = {
   youtube_video_duplicate: 'هذا الفيديو مضاف مسبقاً',
   function_error: 'تعذر تنفيذ العملية. حاول مرة أخرى',
   unauthorized: 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
+  network_error: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى',
+  internal_error: 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل',
+  'jwt expired': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
+  'invalid jwt': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
 };
 
 const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
@@ -170,6 +181,12 @@ const BOARD_ERROR_MESSAGES: Record<string, string> = {
   deletion_failed: 'فشل حذف الصورة. حاول مرة أخرى',
   storage_cleanup_failed: 'تعذر تنظيف الملفات القديمة. حاول مرة أخرى',
   wrong_lesson: 'الصورة لا تنتمي لهذا الدرس',
+  network_error: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مرة أخرى',
+  internal_error: 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل',
+  invalid_board_size: 'حجم الصورة يتجاوز الحد المسموح (10 ميجابايت)',
+  board_already_ready: 'الصورة مرفوعة بالفعل — اضغط «تحديث الصور»',
+  'jwt expired': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
+  'invalid jwt': 'انتهت الجلسة — يرجى تسجيل الدخول مرة أخرى',
 };
 
 function boardErrorMessage(error: unknown): string {
