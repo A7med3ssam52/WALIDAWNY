@@ -15,3 +15,5 @@ supabase/tests/local/harness.log
 *.log
 dev-out.txt
 full-run-repeat.txt
+
+dump.sql

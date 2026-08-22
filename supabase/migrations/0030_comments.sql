@@ -27,7 +27,7 @@ ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'comment_reply';
 --    No updated_at column, so set_updated_at is NOT attached; the table
 --    joins the audit_trigger inventory (MED-8).
 -- ---------------------------------------------------------------------
-CREATE TABLE public.lesson_comments (
+CREATE TABLE IF NOT EXISTS public.lesson_comments (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_id  uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
     author_id  uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -36,8 +36,8 @@ CREATE TABLE public.lesson_comments (
     status     text NOT NULL DEFAULT 'visible' CHECK (status IN ('visible', 'removed')),
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX lesson_comments_lesson_idx ON public.lesson_comments(lesson_id);
-CREATE INDEX lesson_comments_parent_idx ON public.lesson_comments(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS lesson_comments_lesson_idx ON public.lesson_comments(lesson_id);
+CREATE INDEX IF NOT EXISTS lesson_comments_parent_idx ON public.lesson_comments(parent_id) WHERE parent_id IS NOT NULL;
 
 ALTER TABLE public.lesson_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lesson_comments FORCE ROW LEVEL SECURITY;

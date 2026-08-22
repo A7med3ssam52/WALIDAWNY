@@ -25,14 +25,19 @@ ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'exam_graded';
 -- ---------------------------------------------------------------------
 -- 2) New enum: exam_question_type (additive - no conflict).
 -- ---------------------------------------------------------------------
-CREATE TYPE public.exam_question_type AS ENUM ('mcq', 'essay');
+DO $$
+BEGIN
+    IF to_regtype('public.exam_question_type') IS NULL THEN
+        CREATE TYPE public.exam_question_type AS ENUM ('mcq', 'essay');
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 3) New tables. exams carries created_at/updated_at (set_updated_at);
 --    attempts/answers are high-volume student-owned rows and are EXCLUDED
 --    from the audit_trigger inventory (DATABASE.md section 7 MED-8).
 -- ---------------------------------------------------------------------
-CREATE TABLE public.exams (
+CREATE TABLE IF NOT EXISTS public.exams (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_id     uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
     title         text NOT NULL CHECK (length(btrim(title)) > 0),
@@ -42,14 +47,14 @@ CREATE TABLE public.exams (
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX exams_lesson_idx ON public.exams(lesson_id);
+CREATE INDEX IF NOT EXISTS exams_lesson_idx ON public.exams(lesson_id);
 
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exams FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exams IS 'Per-lesson exam (one exam per lesson is the UI contract; UNIQUE(lesson_id) is NOT enforced to allow future variants). Soft-deletable; student reads gated on can_access_lesson(lesson_id).';
 
-CREATE TABLE public.exam_questions (
+CREATE TABLE IF NOT EXISTS public.exam_questions (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
     type          public.exam_question_type NOT NULL DEFAULT 'mcq',
@@ -69,14 +74,14 @@ CREATE TABLE public.exam_questions (
         )
     )
 );
-CREATE INDEX exam_questions_exam_idx ON public.exam_questions(exam_id);
+CREATE INDEX IF NOT EXISTS exam_questions_exam_idx ON public.exam_questions(exam_id);
 
 ALTER TABLE public.exam_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_questions FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exam_questions IS 'Exam questions (mcq with choices/correct_index, or essay). correct_index is exposed to staff only (sanitized by get_exam_questions for students).';
 
-CREATE TABLE public.exam_attempts (
+CREATE TABLE IF NOT EXISTS public.exam_attempts (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
     student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -89,14 +94,14 @@ CREATE TABLE public.exam_attempts (
     submitted_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (exam_id, student_id)
 );
-CREATE INDEX exam_attempts_exam_idx ON public.exam_attempts(exam_id);
+CREATE INDEX IF NOT EXISTS exam_attempts_exam_idx ON public.exam_attempts(exam_id);
 
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_attempts FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exam_attempts IS 'One attempt per (exam, student) - UNIQUE enforced. MCQ auto-graded on submit; essays via grade_exam_attempt; final_score set when fully graded.';
 
-CREATE TABLE public.exam_answers (
+CREATE TABLE IF NOT EXISTS public.exam_answers (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     attempt_id   uuid NOT NULL REFERENCES public.exam_attempts(id) ON DELETE CASCADE,
     question_id  uuid NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
@@ -105,7 +110,7 @@ CREATE TABLE public.exam_answers (
     score        numeric(5, 2),
     UNIQUE (attempt_id, question_id)
 );
-CREATE INDEX exam_answers_attempt_idx ON public.exam_answers(attempt_id);
+CREATE INDEX IF NOT EXISTS exam_answers_attempt_idx ON public.exam_answers(attempt_id);
 
 ALTER TABLE public.exam_answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_answers FORCE ROW LEVEL SECURITY;

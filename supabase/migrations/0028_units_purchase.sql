@@ -16,38 +16,53 @@
 -- ---------------------------------------------------------------------
 -- 1) New enum: unit_purchase_status (additive - no conflict).
 -- ---------------------------------------------------------------------
-CREATE TYPE public.unit_purchase_status AS ENUM ('active', 'void');
+DO $$ BEGIN
+    IF to_regtype('public.unit_purchase_status') IS NULL THEN
+        CREATE TYPE public.unit_purchase_status AS ENUM ('active', 'void');
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
--- 2) Cleanup BEFORE rebuilding notification_type: remove legacy
---    subscription notification rows and the expiry setting, then rebuild
---    the enum (ALTER COLUMN TYPE fails while old values remain).
--- ---------------------------------------------------------------------
-DELETE FROM public.notifications
-WHERE type IN ('subscription_activated', 'subscription_expiring', 'subscription_expired');
-
+-- Unconditional: this legacy settings key must never survive (0028 spec).
 DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
 
+-- 2+3) Cleanup BEFORE rebuilding notification_type, then rebuild it
+--      (subscription_* -> unit_activated). The pg_enum probe makes the
+--      whole section a no-op once the rebuild has already been applied,
+--      so re-running the file never touches enum values that no longer
+--      exist (Phase 6/7 add more values via ALTER TYPE ADD VALUE).
 -- ---------------------------------------------------------------------
--- 3) Rebuild notification_type: subscription_* -> unit_activated.
---    Phase 6/7 add exam_submitted/exam_graded then lesson_comment/
---    comment_reply via ALTER TYPE ... ADD VALUE (NOT here).
--- ---------------------------------------------------------------------
-CREATE TYPE public.notification_type_new AS ENUM ('new_content', 'unit_activated', 'system');
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_enum e
+        JOIN pg_type t ON t.oid = e.enumtypid
+        WHERE t.typname = 'notification_type'
+          AND e.enumlabel = 'unit_activated'
+    ) THEN
+        DELETE FROM public.notifications
+        WHERE type::text IN ('subscription_activated', 'subscription_expiring', 'subscription_expired');
 
-ALTER TABLE public.notifications
-    ALTER COLUMN type TYPE public.notification_type_new
-    USING (type::text::public.notification_type_new);
+        DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
 
-DROP TYPE public.notification_type;
-ALTER TYPE public.notification_type_new RENAME TO notification_type;
+        CREATE TYPE public.notification_type_new AS ENUM ('new_content', 'unit_activated', 'system');
+
+        ALTER TABLE public.notifications
+            ALTER COLUMN type TYPE public.notification_type_new
+            USING (type::text::public.notification_type_new);
+
+        DROP TYPE public.notification_type;
+        ALTER TYPE public.notification_type_new RENAME TO notification_type;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 4) New tables (per-unit pricing, codes, permanent purchases).
 --    Prices are snapshotted from unit_pricing at activation (P12);
 --    NO expires_at / duration_days anywhere.
 -- ---------------------------------------------------------------------
-CREATE TABLE public.unit_pricing (
+CREATE TABLE IF NOT EXISTS public.unit_pricing (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     unit_id      uuid NOT NULL UNIQUE REFERENCES public.units(id) ON DELETE CASCADE,
     base_price   numeric(10, 2) NOT NULL CHECK (base_price >= 0),
@@ -63,7 +78,7 @@ ALTER TABLE public.unit_pricing FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.unit_pricing IS 'Permanent per-unit pricing (base + platform fee = generated total). Upserted via set_unit_price (admin only).';
 
-CREATE TABLE public.unit_codes (
+CREATE TABLE IF NOT EXISTS public.unit_codes (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     code            text NOT NULL UNIQUE CHECK (code ~ '^WLDN-[A-Z0-9]{8,12}$'),
     unit_pricing_id uuid NOT NULL REFERENCES public.unit_pricing(id) ON DELETE RESTRICT,
@@ -77,15 +92,15 @@ CREATE TABLE public.unit_codes (
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX unit_codes_pricing_id_idx    ON public.unit_codes(unit_pricing_id);
-CREATE INDEX unit_codes_status_idx        ON public.unit_codes(status);
+CREATE INDEX IF NOT EXISTS unit_codes_pricing_id_idx    ON public.unit_codes(unit_pricing_id);
+CREATE INDEX IF NOT EXISTS unit_codes_status_idx        ON public.unit_codes(status);
 
 ALTER TABLE public.unit_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_codes FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.unit_codes IS 'Redeemable per-unit codes: stored uppercase, unambiguous charset, one-time redemption (status -> used). Students never see raw codes.';
 
-CREATE TABLE public.unit_purchases (
+CREATE TABLE IF NOT EXISTS public.unit_purchases (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     unit_id       uuid NOT NULL REFERENCES public.units(id) ON DELETE RESTRICT,
@@ -97,9 +112,9 @@ CREATE TABLE public.unit_purchases (
     purchased_at  timestamptz NOT NULL DEFAULT now(),
     created_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX unit_purchases_student_unit_uniq ON public.unit_purchases(student_id, unit_id);
-CREATE INDEX unit_purchases_student_idx ON public.unit_purchases(student_id);
-CREATE INDEX unit_purchases_unit_idx    ON public.unit_purchases(unit_id);
+CREATE UNIQUE INDEX IF NOT EXISTS unit_purchases_student_unit_uniq ON public.unit_purchases(student_id, unit_id);
+CREATE INDEX IF NOT EXISTS unit_purchases_student_idx ON public.unit_purchases(student_id);
+CREATE INDEX IF NOT EXISTS unit_purchases_unit_idx    ON public.unit_purchases(unit_id);
 
 ALTER TABLE public.unit_purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_purchases FORCE ROW LEVEL SECURITY;
@@ -151,9 +166,9 @@ CREATE POLICY unit_purchases_insert_via_rpc ON public.unit_purchases
 --    per unit among live lessons).
 -- ---------------------------------------------------------------------
 ALTER TABLE public.lessons
-    ADD COLUMN is_trial boolean NOT NULL DEFAULT false;
+    ADD COLUMN IF NOT EXISTS is_trial boolean NOT NULL DEFAULT false;
 
-CREATE UNIQUE INDEX lessons_trial_unique
+CREATE UNIQUE INDEX IF NOT EXISTS lessons_trial_unique
     ON public.lessons(unit_id)
     WHERE is_trial AND deleted_at IS NULL;
 
@@ -180,6 +195,9 @@ BEGIN
     FOREACH v_table IN ARRAY ARRAY[
         'unit_pricing', 'unit_codes', 'unit_purchases'
     ] LOOP
+        IF to_regclass(format('public.%I', v_table)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', v_table);
         EXECUTE format(
             'CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I
@@ -366,7 +384,7 @@ BEGIN
         jsonb_build_object('unit_id', v_unit.id, 'price', v_purchase.total_price));
 
     INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-    VALUES (v_student, 'unit_activated', 'تم تفعيل الوحدة', v_unit.name,
+    VALUES (v_student, 'unit_activated', 'طھظ… طھظپط¹ظٹظ„ ط§ظ„ظˆط­ط¯ط©', v_unit.name,
             'unit_activated:' || v_purchase.id, 'unit_purchases', v_purchase.id)
     ON CONFLICT (dedup_key) DO NOTHING;
 
@@ -532,6 +550,8 @@ BEGIN
 END $$;
 
 -- Staff: codes of a unit (validation + count caps stay in the internal fn).
+DROP FUNCTION IF EXISTS public.list_codes_by_unit(uuid);
+
 CREATE OR REPLACE FUNCTION public.list_codes_by_unit(p_unit_id uuid)
 RETURNS SETOF public.unit_codes
 LANGUAGE plpgsql
@@ -789,7 +809,7 @@ DROP FUNCTION IF EXISTS public.generate_codes_internal(uuid, integer, text);
 --    trailing can_access column.
 -- ---------------------------------------------------------------------
 DROP VIEW IF EXISTS public.v_lesson_access;
-CREATE VIEW public.v_lesson_access AS
+CREATE OR REPLACE VIEW public.v_lesson_access AS
 SELECT l.*, public.can_access_lesson(l.id) AS can_access
 FROM public.lessons l
 JOIN public.units u ON u.id = l.unit_id
@@ -819,7 +839,7 @@ COMMENT ON VIEW public.v_student_progress_summary IS 'Per-student percent + comp
 -- DROPPED+recreated (CREATE OR REPLACE cannot drop the removed
 -- subscription columns).
 DROP VIEW IF EXISTS public.v_dashboard_metrics;
-CREATE VIEW public.v_dashboard_metrics AS
+CREATE OR REPLACE VIEW public.v_dashboard_metrics AS
 SELECT
   (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student')                         AS total_students,
   (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student')   AS active_students,
@@ -967,7 +987,7 @@ BEGIN
 
     INSERT INTO public.notifications (user_id, type, entity_type, entity_id, title, body, dedup_key)
     SELECT up.student_id, 'new_content', 'lesson', p_lesson_id,
-           'محتوى جديد', l.title,
+           'ظ…ط­طھظˆظ‰ ط¬ط¯ظٹط¯', l.title,
            'new_content:' || p_lesson_id || ':' || up.student_id
     FROM public.unit_purchases up
     JOIN public.lessons l ON l.id = p_lesson_id

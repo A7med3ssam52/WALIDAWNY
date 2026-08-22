@@ -26,8 +26,11 @@ const MIGRATIONS = path.join(ROOT, 'supabase', 'migrations');
 // banned subscription patterns (post-0028 these only appear in 0028's own
 // intentional removal statements)
 // ---------------------------------------------------------------------------
+// 'subscription' as a bare substring covers every legacy name variant
+// (subscriptions, subscription_codes, redeem_subscription_code,
+// create_manual_subscription, ...) without maintaining parallel lists
 const FORBIDDEN_PAT =
-  /subscriptions|pricing_plan|subscription_codes|code_redemptions|subscription_status|subscription_activated|subscription_expiring|subscription_expired|expiry_warning_days|v_active_subscriptions|expire_subscriptions/i;
+  /subscription|pricing_plan|code_redemption|expiry_warning_days|v_active_subscriptions|v_dashboard_metrics|create_codes_for_staff|generate_codes_internal|get_dashboard_stats/i;
 
 // legit public objects that must survive (final-schema surfaces)
 const LEGIT_RE =
@@ -42,9 +45,20 @@ const FORBIDDEN_OBJ_RE =
 const MIXED_EXPLICIT_RE =
   /COMMENT ON TABLE public\.app_settings|notification_type|set_updated_at|audit_trigger|notify_new_content|can_access_lesson|get_dashboard_stats|v_dashboard_metrics|v_lesson_access|v_student_progress_summary|app_settings|is_teacher|create_grade/i;
 
+// a mixed statement is only safe to keep when it self-guards every table
+// access with to_regclass (survives DBs where the subscription subsystem
+// was already removed); anything else would fail with 42P01 mid-file
+const SELF_GUARDED_RE = /to_regclass\(format\(/i;
+
+// benign mixed statements: forbidden words appear incidentally (legacy enum
+// member names, settings-key cleanup) while the subject itself is legit and
+// must survive on every deployment
+const BENIGN_MIXED_RE =
+  /CREATE TYPE public\.notification_type|INSERT INTO public\.app_settings|DELETE FROM public\.app_settings\s*\n?\s*WHERE key = 'expiry_warning_days'|CREATE OR REPLACE FUNCTION public\.(can_access_lesson|notify_new_content)\(/i;
+
 // statement whose subject IS a forbidden object -> PURE (drop)
 const SUBJECT_FORBIDDEN_RE =
-  /^(CREATE OR REPLACE FUNCTION|CREATE TABLE|ALTER TABLE|COMMENT ON TABLE|COMMENT ON VIEW|CREATE VIEW|CREATE INDEX|DROP INDEX|GRANT|REVOKE|CREATE POLICY|DROP POLICY|ALTER FUNCTION|CREATE OR REPLACE VIEW|DROP VIEW|DROP TYPE|CREATE TYPE)[\s\S]{0,80}?\b(pricing_plans|subscriptions|subscription_codes|code_redemptions|v_active_subscriptions|subscription_status|expire_subscriptions|redeem_subscription_code|get_my_subscriptions|get_my_current_subscription|create_manual_subscription|revoke_subscription_code|set_pricing_plan|delete_pricing_plan|create_codes_for_staff|generate_codes_internal)\b/i;
+  /^(CREATE OR REPLACE FUNCTION|CREATE TABLE|ALTER TABLE|COMMENT ON TABLE|COMMENT ON VIEW|CREATE VIEW|CREATE INDEX|DROP INDEX|GRANT|REVOKE|CREATE POLICY|DROP POLICY|ALTER FUNCTION|CREATE OR REPLACE VIEW|DROP VIEW|DROP TYPE|CREATE TYPE)[\s\S]{0,80}?\b(pricing_plans|subscriptions|subscription_codes|code_redemptions|v_active_subscriptions|v_dashboard_metrics|subscription_status|expire_subscriptions|redeem_subscription_code|get_my_subscriptions|get_my_current_subscription|create_manual_subscription|revoke_subscription_code|set_pricing_plan|delete_pricing_plan|create_codes_for_staff|generate_codes_internal)\b/i;
 
 // ---------------------------------------------------------------------------
 // $$-aware statement splitter. Each chunk keeps its trailing `;` plus any
@@ -165,18 +179,24 @@ function filterMigration(content, file) {
   let dropped = 0;
   let mixed = 0;
   for (const chunk of splitStatements(content)) {
-    if (!FORBIDDEN_PAT.test(chunk)) {
+    const code0 = stripComments(chunk);
+    if (!FORBIDDEN_PAT.test(code0)) {
       out += chunk;
       continue;
     }
-    const code = stripComments(chunk);
+    const code = code0;
     const hasLegit = LEGIT_RE.test(code);
     const subjectForbidden = SUBJECT_FORBIDDEN_RE.test(code.trimStart());
     const isMixed = !subjectForbidden && (hasLegit || MIXED_EXPLICIT_RE.test(code));
     if (isMixed) {
-      out += chunk;
-      mixed++;
-      console.log(`  keep(mixed): ${file} | ${firstMeaningfulLine(chunk)}`);
+      if (SELF_GUARDED_RE.test(code) || BENIGN_MIXED_RE.test(code.trim())) {
+        out += chunk;
+        mixed++;
+        console.log(`  keep(guarded-mixed): ${file} | ${firstMeaningfulLine(chunk)}`);
+      } else {
+        dropped++;
+        console.log(`  drop(mixed): ${file} | ${firstMeaningfulLine(chunk)}`);
+      }
     } else {
       dropped++;
       console.log(`  drop: ${file} | ${firstMeaningfulLine(chunk)}`);
@@ -205,7 +225,8 @@ const header =
   '-- always go into new numbered migration files (never edit this file).\n' +
   '-- Statements from legacy migrations 0001-0026 that reference the removed\n' +
   '-- subscription subsystem are dropped at regen time; mixed statements are\n' +
-  '-- kept and logged as notes. 0028_units_purchase.sql performs the actual\n' +
+  '-- dropped too unless they self-guard table access with to_regclass (the\n' +
+  '-- guarded trigger loops). 0028_units_purchase.sql performs the actual\n' +
   '-- DROP of the subscription objects.\n' +
   '-- Verified by the embedded-PostgreSQL harness (tests/local).\n' +
   '-- =====================================================================\n' +

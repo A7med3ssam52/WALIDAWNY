@@ -145,6 +145,11 @@ BEGIN
         'profiles', 'grades', 'pricing_plans', 'units', 'lessons',
         'lesson_videos', 'lesson_pdfs', 'progress', 'app_settings'
     ] LOOP
+        -- Legacy tables may already be gone (0028 drops the subscription
+        -- subsystem); skip missing tables instead of failing with 42P01.
+        IF to_regclass(format('public.%I', v_table)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('DROP TRIGGER IF EXISTS set_updated_at ON public.%I', v_table);
         EXECUTE format(
             'CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.%I

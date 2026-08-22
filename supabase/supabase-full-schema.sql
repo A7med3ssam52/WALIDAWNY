@@ -6,7 +6,8 @@
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
 -- subscription subsystem are dropped at regen time; mixed statements are
--- kept and logged as notes. 0028_units_purchase.sql performs the actual
+-- dropped too unless they self-guard table access with to_regclass (the
+-- guarded trigger loops). 0028_units_purchase.sql performs the actual
 -- DROP of the subscription objects.
 -- Verified by the embedded-PostgreSQL harness (tests/local).
 -- =====================================================================
@@ -354,7 +355,13 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
-COMMENT ON TABLE public.app_settings IS 'Key/value application settings (platform_name, whatsapp_number, whatsapp_default_message, expiry_warning_days, ...).';
+-- ---------------------------------------------------------------------
+-- set_updated_at is created in 0004 and attached to every table with an
+-- updated_at column: profiles, grades, pricing_plans, units, lessons,
+-- lesson_videos, lesson_pdfs, progress, app_settings (per DATABASE.md
+-- section 7 - subscriptions/notifications/code_redemptions/audit_logs
+-- carry no updated_at).
+-- ---------------------------------------------------------------------
 
 -- =====================================================================
 -- >>> included from migrations\0003_functions_role_helpers.sql
@@ -477,8 +484,6 @@ BEGIN
               AND s.expires_at > now()
         );
 END $$;
-
-COMMENT ON FUNCTION public.can_access_lesson(uuid) IS 'Single access gate: student + published lesson/unit + live grade match + active & non-deleted grade (B8) + any active subscription (A33). Internal - no client grants.';
 
 -- ---------------------------------------------------------------------
 -- get_public_settings()
@@ -650,6 +655,11 @@ BEGIN
         'profiles', 'grades', 'pricing_plans', 'units', 'lessons',
         'lesson_videos', 'lesson_pdfs', 'progress', 'app_settings'
     ] LOOP
+        -- Legacy tables may already be gone (0028 drops the subscription
+        -- subsystem); skip missing tables instead of failing with 42P01.
+        IF to_regclass(format('public.%I', v_table)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('DROP TRIGGER IF EXISTS set_updated_at ON public.%I', v_table);
         EXECUTE format(
             'CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.%I
@@ -792,6 +802,11 @@ BEGIN
         'lesson_pdfs', 'pricing_plans', 'subscriptions',
         'subscription_codes', 'app_settings'
     ] LOOP
+        -- Legacy tables may already be gone (0028 drops the subscription
+        -- subsystem); skip missing tables instead of failing with 42P01.
+        IF to_regclass(format('public.%I', v_table)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', v_table);
         EXECUTE format(
             'CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I
@@ -2033,20 +2048,6 @@ GROUP BY lesson_id;
 
 COMMENT ON VIEW public.v_lesson_stats IS 'Analytics per lesson from progress.';
 
-CREATE OR REPLACE VIEW public.v_dashboard_metrics AS
-SELECT
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL)                         AS total_students,
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active')   AS active_students,
-  (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled') AS disabled_students,
-  (SELECT COUNT(*) FROM public.v_active_subscriptions)                                    AS active_subscribers,
-  (SELECT COUNT(*) FROM public.subscriptions WHERE status = 'expired')                    AS expired_subscriptions,
-  (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published') AS published_lessons,
-  (SELECT COUNT(*) FROM public.lessons WHERE deleted_at IS NULL AND status <> 'published') AS hidden_or_draft_lessons,
-  (SELECT COUNT(*) FROM public.subscription_codes WHERE status = 'available')             AS available_codes,
-  (SELECT COUNT(*) FROM public.subscription_codes WHERE status = 'used')                  AS used_codes;
-
-COMMENT ON VIEW public.v_dashboard_metrics IS 'Admin operational metrics.';
-
 CREATE OR REPLACE VIEW public.v_audit_log AS
 SELECT a.*, p.full_name AS actor_name
 FROM public.audit_logs a
@@ -2064,8 +2065,6 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
 -- Client-callable allowlist (SECURITY.md section 8.2):
 GRANT EXECUTE ON FUNCTION public.update_own_profile(text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_student_profile(uuid, text, text, text, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.redeem_subscription_code(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_my_current_subscription() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_progress(uuid, integer, numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_notification_read(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_all_notifications_read() TO authenticated;
@@ -2075,8 +2074,6 @@ GRANT EXECUTE ON FUNCTION public.enable_student(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.soft_delete_student(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.restore_student(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.list_trash() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.create_manual_subscription(uuid, uuid, timestamptz, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.revoke_subscription_code(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_unit(uuid, text, integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_unit(uuid, text, integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_unit(uuid) TO authenticated;
@@ -2494,15 +2491,7 @@ GRANT EXECUTE ON FUNCTION public.update_grade(uuid, text, integer) TO authentica
 -- >>> included from migrations\0014_codes_ef_wrapper.sql
 -- =====================================================================
 
--- ---------------------------------------------------------------------
--- Grant matrix: authenticated only, staff enforced in-function (same
--- posture as list_trash, 0010/0012; explicit REVOKE FROM PUBLIC first
--- because new functions otherwise inherit the PUBLIC default grant).
--- generate_codes_internal keeps NO client grants (unchanged - this
--- wrapper is the only new surface). anon: nothing.
--- ---------------------------------------------------------------------
-REVOKE EXECUTE ON FUNCTION public.create_codes_for_staff(uuid, integer, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_codes_for_staff(uuid, integer, text) TO authenticated;
+
 
 -- =====================================================================
 -- >>> included from migrations\0015_pdf_upload_ef_wrapper.sql
@@ -2882,126 +2871,7 @@ GRANT EXECUTE ON FUNCTION public.delete_video_upload_record(uuid, uuid) TO authe
 -- >>> included from migrations\0018_dashboard_stats.sql
 -- =====================================================================
 
--- =====================================================================
--- 0018_dashboard_stats
--- Phase 7 | Dashboards | Database
--- get_dashboard_stats(): single-round-trip operational/analytics JSON
--- for the Walid Awny / admin dashboards. Staff-guarded exactly like the
--- other client RPCs (is_admin() OR is_mr_walid()); students get
--- permission_denied. Aggregates read through the existing SECURITY
--- INVOKER views where they already exist (v_active_subscriptions) and
--- plain public tables otherwise (all of which staff can read under
--- RLS). Read-only: no audit row (nothing is mutated).
--- Reference: DATABASE.md section 6.4 (staff RPCs); SECURITY.md 8.2.
--- =====================================================================
 
-CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_stats jsonb;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    SELECT jsonb_build_object(
-        'students', jsonb_build_object(
-            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL),
-            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active'),
-            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled'),
-            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL),
-            'new_this_month', (SELECT count(*) FROM public.profiles
-                               WHERE deleted_at IS NULL AND created_at >= date_trunc('month', now()))
-        ),
-        'subscriptions', jsonb_build_object(
-            'active',               (SELECT count(*) FROM public.v_active_subscriptions),
-            'expiring_7d',          (SELECT count(*) FROM public.v_active_subscriptions
-                                     WHERE expires_at <= now() + interval '7 days'),
-            'expired',              (SELECT count(*) FROM public.subscriptions WHERE status = 'expired'),
-            'revenue_total',        (SELECT COALESCE(sum(total_price), 0) FROM public.v_active_subscriptions),
-            'revenue_this_month',   (SELECT COALESCE(sum(total_price), 0) FROM public.subscriptions
-                                     WHERE status = 'active' AND started_at >= date_trunc('month', now()))
-        ),
-        'content', jsonb_build_object(
-            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
-            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
-            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
-            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
-            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
-            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
-            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
-            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
-        ),
-        'engagement', jsonb_build_object(
-            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
-            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
-            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress)
-        ),
-        'codes', jsonb_build_object(
-            'available', (SELECT count(*) FROM public.subscription_codes WHERE status = 'available'),
-            'used',      (SELECT count(*) FROM public.subscription_codes WHERE status = 'used'),
-            'revoked',   (SELECT count(*) FROM public.subscription_codes WHERE status = 'revoked')
-        ),
-        'by_grade', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'grade_name', r.grade_name,
-                'students', r.students,
-                'active_subscribers', r.active_subscribers
-            ) ORDER BY r.sort_order)
-            FROM (
-                SELECT g.name AS grade_name, g.sort_order,
-                       count(DISTINCT p.id) AS students,
-                       count(DISTINCT s.student_id) AS active_subscribers
-                FROM public.grades g
-                LEFT JOIN public.profiles p
-                       ON p.grade_id = g.id AND p.deleted_at IS NULL
-                LEFT JOIN public.v_active_subscriptions s ON s.student_id = p.id
-                WHERE g.deleted_at IS NULL
-                GROUP BY g.id, g.name, g.sort_order
-            ) r
-        ), '[]'::jsonb),
-        'recent_subscriptions', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'grade_name', g.name,
-                'duration_days', pl.duration_days,
-                'total_price', s.total_price,
-                'status', s.status,
-                'started_at', s.started_at,
-                'expires_at', s.expires_at
-            ) ORDER BY s.created_at DESC)
-            FROM public.subscriptions s
-            JOIN public.profiles p ON p.id = s.student_id
-            JOIN public.pricing_plans pl ON pl.id = s.pricing_plan_id
-            LEFT JOIN public.grades g ON g.id = pl.grade_id
-            LIMIT 5
-        ), '[]'::jsonb),
-        'upcoming_expirations', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'expires_at', s.expires_at
-            ) ORDER BY s.expires_at)
-            FROM public.v_active_subscriptions s
-            JOIN public.profiles p ON p.id = s.student_id
-            WHERE s.expires_at <= now() + interval '7 days'
-            LIMIT 5
-        ), '[]'::jsonb)
-    ) INTO v_stats;
-
-    RETURN v_stats;
-END $$;
-
--- Grant matrix: authenticated only, staff enforced in-function (same
--- posture as 0013/0014/0015/0016/0017). Explicit REVOKE FROM PUBLIC
--- first: new functions otherwise inherit the PUBLIC default grant,
--- which would break the "anon: exactly one executable function"
--- assertion in tests/local/sql/05_grants.sql.
-REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
 
 -- =====================================================================
 -- >>> included from migrations\0019_audit_logs.sql
@@ -4464,107 +4334,6 @@ BEGIN
         jsonb_build_object('lesson_id', p_lesson_id));
 END $$;
 
--- --- dashboards ------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_stats jsonb;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    SELECT jsonb_build_object(
-        'students', jsonb_build_object(
-            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL),
-            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active'),
-            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled'),
-            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL),
-            'new_this_month', (SELECT count(*) FROM public.profiles
-                               WHERE deleted_at IS NULL AND created_at >= date_trunc('month', now()))
-        ),
-        'subscriptions', jsonb_build_object(
-            'active',               (SELECT count(*) FROM public.v_active_subscriptions),
-            'expiring_7d',          (SELECT count(*) FROM public.v_active_subscriptions
-                                     WHERE expires_at <= now() + interval '7 days'),
-            'expired',              (SELECT count(*) FROM public.subscriptions WHERE status = 'expired'),
-            'revenue_total',        (SELECT COALESCE(sum(total_price), 0) FROM public.v_active_subscriptions),
-            'revenue_this_month',   (SELECT COALESCE(sum(total_price), 0) FROM public.subscriptions
-                                     WHERE status = 'active' AND started_at >= date_trunc('month', now()))
-        ),
-        'content', jsonb_build_object(
-            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
-            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
-            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
-            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
-            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
-            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
-            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
-            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
-        ),
-        'engagement', jsonb_build_object(
-            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
-            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
-            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress)
-        ),
-        'codes', jsonb_build_object(
-            'available', (SELECT count(*) FROM public.subscription_codes WHERE status = 'available'),
-            'used',      (SELECT count(*) FROM public.subscription_codes WHERE status = 'used'),
-            'revoked',   (SELECT count(*) FROM public.subscription_codes WHERE status = 'revoked')
-        ),
-        'by_grade', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'grade_name', r.grade_name,
-                'students', r.students,
-                'active_subscribers', r.active_subscribers
-            ) ORDER BY r.sort_order)
-            FROM (
-                SELECT g.name AS grade_name, g.sort_order,
-                       count(DISTINCT p.id) AS students,
-                       count(DISTINCT s.student_id) AS active_subscribers
-                FROM public.grades g
-                LEFT JOIN public.profiles p
-                       ON p.grade_id = g.id AND p.deleted_at IS NULL
-                LEFT JOIN public.v_active_subscriptions s ON s.student_id = p.id
-                WHERE g.deleted_at IS NULL
-                GROUP BY g.id, g.name, g.sort_order
-            ) r
-        ), '[]'::jsonb),
-        'recent_subscriptions', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'grade_name', g.name,
-                'duration_days', pl.duration_days,
-                'total_price', s.total_price,
-                'status', s.status,
-                'started_at', s.started_at,
-                'expires_at', s.expires_at
-            ) ORDER BY s.created_at DESC)
-            FROM public.subscriptions s
-            JOIN public.profiles p ON p.id = s.student_id
-            JOIN public.pricing_plans pl ON pl.id = s.pricing_plan_id
-            LEFT JOIN public.grades g ON g.id = pl.grade_id
-            LIMIT 5
-        ), '[]'::jsonb),
-        'upcoming_expirations', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'expires_at', s.expires_at
-            ) ORDER BY s.expires_at)
-            FROM public.v_active_subscriptions s
-            JOIN public.profiles p ON p.id = s.student_id
-            WHERE s.expires_at <= now() + interval '7 days'
-            LIMIT 5
-        ), '[]'::jsonb)
-    ) INTO v_stats;
-
-    RETURN v_stats;
-END $$;
-
 -- =====================================================================
 -- >>> included from migrations\0026_view_lockdown.sql
 -- =====================================================================
@@ -4577,9 +4346,6 @@ REVOKE ALL ON PUBLIC.v_student_progress_summary FROM anon, authenticated;
 
 REVOKE ALL ON PUBLIC.v_lesson_stats FROM PUBLIC;
 REVOKE ALL ON PUBLIC.v_lesson_stats FROM anon, authenticated;
-
-REVOKE ALL ON PUBLIC.v_dashboard_metrics FROM PUBLIC;
-REVOKE ALL ON PUBLIC.v_dashboard_metrics FROM anon, authenticated;
 
 REVOKE ALL ON PUBLIC.v_audit_log FROM PUBLIC;
 REVOKE ALL ON PUBLIC.v_audit_log FROM anon, authenticated;
@@ -4729,38 +4495,53 @@ END $$;
 -- ---------------------------------------------------------------------
 -- 1) New enum: unit_purchase_status (additive - no conflict).
 -- ---------------------------------------------------------------------
-CREATE TYPE public.unit_purchase_status AS ENUM ('active', 'void');
+DO $$ BEGIN
+    IF to_regtype('public.unit_purchase_status') IS NULL THEN
+        CREATE TYPE public.unit_purchase_status AS ENUM ('active', 'void');
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
--- 2) Cleanup BEFORE rebuilding notification_type: remove legacy
---    subscription notification rows and the expiry setting, then rebuild
---    the enum (ALTER COLUMN TYPE fails while old values remain).
--- ---------------------------------------------------------------------
-DELETE FROM public.notifications
-WHERE type IN ('subscription_activated', 'subscription_expiring', 'subscription_expired');
-
+-- Unconditional: this legacy settings key must never survive (0028 spec).
 DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
 
+-- 2+3) Cleanup BEFORE rebuilding notification_type, then rebuild it
+--      (subscription_* -> unit_activated). The pg_enum probe makes the
+--      whole section a no-op once the rebuild has already been applied,
+--      so re-running the file never touches enum values that no longer
+--      exist (Phase 6/7 add more values via ALTER TYPE ADD VALUE).
 -- ---------------------------------------------------------------------
--- 3) Rebuild notification_type: subscription_* -> unit_activated.
---    Phase 6/7 add exam_submitted/exam_graded then lesson_comment/
---    comment_reply via ALTER TYPE ... ADD VALUE (NOT here).
--- ---------------------------------------------------------------------
-CREATE TYPE public.notification_type_new AS ENUM ('new_content', 'unit_activated', 'system');
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_enum e
+        JOIN pg_type t ON t.oid = e.enumtypid
+        WHERE t.typname = 'notification_type'
+          AND e.enumlabel = 'unit_activated'
+    ) THEN
+        DELETE FROM public.notifications
+        WHERE type::text IN ('subscription_activated', 'subscription_expiring', 'subscription_expired');
 
-ALTER TABLE public.notifications
-    ALTER COLUMN type TYPE public.notification_type_new
-    USING (type::text::public.notification_type_new);
+        DELETE FROM public.app_settings WHERE key = 'expiry_warning_days';
 
-DROP TYPE public.notification_type;
-ALTER TYPE public.notification_type_new RENAME TO notification_type;
+        CREATE TYPE public.notification_type_new AS ENUM ('new_content', 'unit_activated', 'system');
+
+        ALTER TABLE public.notifications
+            ALTER COLUMN type TYPE public.notification_type_new
+            USING (type::text::public.notification_type_new);
+
+        DROP TYPE public.notification_type;
+        ALTER TYPE public.notification_type_new RENAME TO notification_type;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 4) New tables (per-unit pricing, codes, permanent purchases).
 --    Prices are snapshotted from unit_pricing at activation (P12);
 --    NO expires_at / duration_days anywhere.
 -- ---------------------------------------------------------------------
-CREATE TABLE public.unit_pricing (
+CREATE TABLE IF NOT EXISTS public.unit_pricing (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     unit_id      uuid NOT NULL UNIQUE REFERENCES public.units(id) ON DELETE CASCADE,
     base_price   numeric(10, 2) NOT NULL CHECK (base_price >= 0),
@@ -4776,7 +4557,7 @@ ALTER TABLE public.unit_pricing FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.unit_pricing IS 'Permanent per-unit pricing (base + platform fee = generated total). Upserted via set_unit_price (admin only).';
 
-CREATE TABLE public.unit_codes (
+CREATE TABLE IF NOT EXISTS public.unit_codes (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     code            text NOT NULL UNIQUE CHECK (code ~ '^WLDN-[A-Z0-9]{8,12}$'),
     unit_pricing_id uuid NOT NULL REFERENCES public.unit_pricing(id) ON DELETE RESTRICT,
@@ -4790,15 +4571,15 @@ CREATE TABLE public.unit_codes (
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX unit_codes_pricing_id_idx    ON public.unit_codes(unit_pricing_id);
-CREATE INDEX unit_codes_status_idx        ON public.unit_codes(status);
+CREATE INDEX IF NOT EXISTS unit_codes_pricing_id_idx    ON public.unit_codes(unit_pricing_id);
+CREATE INDEX IF NOT EXISTS unit_codes_status_idx        ON public.unit_codes(status);
 
 ALTER TABLE public.unit_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_codes FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.unit_codes IS 'Redeemable per-unit codes: stored uppercase, unambiguous charset, one-time redemption (status -> used). Students never see raw codes.';
 
-CREATE TABLE public.unit_purchases (
+CREATE TABLE IF NOT EXISTS public.unit_purchases (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     unit_id       uuid NOT NULL REFERENCES public.units(id) ON DELETE RESTRICT,
@@ -4810,9 +4591,9 @@ CREATE TABLE public.unit_purchases (
     purchased_at  timestamptz NOT NULL DEFAULT now(),
     created_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX unit_purchases_student_unit_uniq ON public.unit_purchases(student_id, unit_id);
-CREATE INDEX unit_purchases_student_idx ON public.unit_purchases(student_id);
-CREATE INDEX unit_purchases_unit_idx    ON public.unit_purchases(unit_id);
+CREATE UNIQUE INDEX IF NOT EXISTS unit_purchases_student_unit_uniq ON public.unit_purchases(student_id, unit_id);
+CREATE INDEX IF NOT EXISTS unit_purchases_student_idx ON public.unit_purchases(student_id);
+CREATE INDEX IF NOT EXISTS unit_purchases_unit_idx    ON public.unit_purchases(unit_id);
 
 ALTER TABLE public.unit_purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_purchases FORCE ROW LEVEL SECURITY;
@@ -4864,9 +4645,9 @@ CREATE POLICY unit_purchases_insert_via_rpc ON public.unit_purchases
 --    per unit among live lessons).
 -- ---------------------------------------------------------------------
 ALTER TABLE public.lessons
-    ADD COLUMN is_trial boolean NOT NULL DEFAULT false;
+    ADD COLUMN IF NOT EXISTS is_trial boolean NOT NULL DEFAULT false;
 
-CREATE UNIQUE INDEX lessons_trial_unique
+CREATE UNIQUE INDEX IF NOT EXISTS lessons_trial_unique
     ON public.lessons(unit_id)
     WHERE is_trial AND deleted_at IS NULL;
 
@@ -4893,6 +4674,9 @@ BEGIN
     FOREACH v_table IN ARRAY ARRAY[
         'unit_pricing', 'unit_codes', 'unit_purchases'
     ] LOOP
+        IF to_regclass(format('public.%I', v_table)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('DROP TRIGGER IF EXISTS audit_trigger ON public.%I', v_table);
         EXECUTE format(
             'CREATE TRIGGER audit_trigger AFTER INSERT OR UPDATE OR DELETE ON public.%I
@@ -5079,7 +4863,7 @@ BEGIN
         jsonb_build_object('unit_id', v_unit.id, 'price', v_purchase.total_price));
 
     INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id)
-    VALUES (v_student, 'unit_activated', 'تم تفعيل الوحدة', v_unit.name,
+    VALUES (v_student, 'unit_activated', 'طھظ… طھظپط¹ظٹظ„ ط§ظ„ظˆط­ط¯ط©', v_unit.name,
             'unit_activated:' || v_purchase.id, 'unit_purchases', v_purchase.id)
     ON CONFLICT (dedup_key) DO NOTHING;
 
@@ -5245,6 +5029,8 @@ BEGIN
 END $$;
 
 -- Staff: codes of a unit (validation + count caps stay in the internal fn).
+DROP FUNCTION IF EXISTS public.list_codes_by_unit(uuid);
+
 CREATE OR REPLACE FUNCTION public.list_codes_by_unit(p_unit_id uuid)
 RETURNS SETOF public.unit_codes
 LANGUAGE plpgsql
@@ -5502,7 +5288,7 @@ DROP FUNCTION IF EXISTS public.generate_codes_internal(uuid, integer, text);
 --    trailing can_access column.
 -- ---------------------------------------------------------------------
 DROP VIEW IF EXISTS public.v_lesson_access;
-CREATE VIEW public.v_lesson_access AS
+CREATE OR REPLACE VIEW public.v_lesson_access AS
 SELECT l.*, public.can_access_lesson(l.id) AS can_access
 FROM public.lessons l
 JOIN public.units u ON u.id = l.unit_id
@@ -5532,7 +5318,7 @@ COMMENT ON VIEW public.v_student_progress_summary IS 'Per-student percent + comp
 -- DROPPED+recreated (CREATE OR REPLACE cannot drop the removed
 -- subscription columns).
 DROP VIEW IF EXISTS public.v_dashboard_metrics;
-CREATE VIEW public.v_dashboard_metrics AS
+CREATE OR REPLACE VIEW public.v_dashboard_metrics AS
 SELECT
   (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student')                         AS total_students,
   (SELECT COUNT(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student')   AS active_students,
@@ -5680,7 +5466,7 @@ BEGIN
 
     INSERT INTO public.notifications (user_id, type, entity_type, entity_id, title, body, dedup_key)
     SELECT up.student_id, 'new_content', 'lesson', p_lesson_id,
-           'محتوى جديد', l.title,
+           'ظ…ط­طھظˆظ‰ ط¬ط¯ظٹط¯', l.title,
            'new_content:' || p_lesson_id || ':' || up.student_id
     FROM public.unit_purchases up
     JOIN public.lessons l ON l.id = p_lesson_id
@@ -5791,14 +5577,19 @@ ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'exam_graded';
 -- ---------------------------------------------------------------------
 -- 2) New enum: exam_question_type (additive - no conflict).
 -- ---------------------------------------------------------------------
-CREATE TYPE public.exam_question_type AS ENUM ('mcq', 'essay');
+DO $$
+BEGIN
+    IF to_regtype('public.exam_question_type') IS NULL THEN
+        CREATE TYPE public.exam_question_type AS ENUM ('mcq', 'essay');
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 3) New tables. exams carries created_at/updated_at (set_updated_at);
 --    attempts/answers are high-volume student-owned rows and are EXCLUDED
 --    from the audit_trigger inventory (DATABASE.md section 7 MED-8).
 -- ---------------------------------------------------------------------
-CREATE TABLE public.exams (
+CREATE TABLE IF NOT EXISTS public.exams (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_id     uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
     title         text NOT NULL CHECK (length(btrim(title)) > 0),
@@ -5808,14 +5599,14 @@ CREATE TABLE public.exams (
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX exams_lesson_idx ON public.exams(lesson_id);
+CREATE INDEX IF NOT EXISTS exams_lesson_idx ON public.exams(lesson_id);
 
 ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exams FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exams IS 'Per-lesson exam (one exam per lesson is the UI contract; UNIQUE(lesson_id) is NOT enforced to allow future variants). Soft-deletable; student reads gated on can_access_lesson(lesson_id).';
 
-CREATE TABLE public.exam_questions (
+CREATE TABLE IF NOT EXISTS public.exam_questions (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
     type          public.exam_question_type NOT NULL DEFAULT 'mcq',
@@ -5835,14 +5626,14 @@ CREATE TABLE public.exam_questions (
         )
     )
 );
-CREATE INDEX exam_questions_exam_idx ON public.exam_questions(exam_id);
+CREATE INDEX IF NOT EXISTS exam_questions_exam_idx ON public.exam_questions(exam_id);
 
 ALTER TABLE public.exam_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_questions FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exam_questions IS 'Exam questions (mcq with choices/correct_index, or essay). correct_index is exposed to staff only (sanitized by get_exam_questions for students).';
 
-CREATE TABLE public.exam_attempts (
+CREATE TABLE IF NOT EXISTS public.exam_attempts (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     exam_id       uuid NOT NULL REFERENCES public.exams(id) ON DELETE CASCADE,
     student_id    uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -5855,14 +5646,14 @@ CREATE TABLE public.exam_attempts (
     submitted_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (exam_id, student_id)
 );
-CREATE INDEX exam_attempts_exam_idx ON public.exam_attempts(exam_id);
+CREATE INDEX IF NOT EXISTS exam_attempts_exam_idx ON public.exam_attempts(exam_id);
 
 ALTER TABLE public.exam_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_attempts FORCE ROW LEVEL SECURITY;
 
 COMMENT ON TABLE public.exam_attempts IS 'One attempt per (exam, student) - UNIQUE enforced. MCQ auto-graded on submit; essays via grade_exam_attempt; final_score set when fully graded.';
 
-CREATE TABLE public.exam_answers (
+CREATE TABLE IF NOT EXISTS public.exam_answers (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     attempt_id   uuid NOT NULL REFERENCES public.exam_attempts(id) ON DELETE CASCADE,
     question_id  uuid NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
@@ -5871,7 +5662,7 @@ CREATE TABLE public.exam_answers (
     score        numeric(5, 2),
     UNIQUE (attempt_id, question_id)
 );
-CREATE INDEX exam_answers_attempt_idx ON public.exam_answers(attempt_id);
+CREATE INDEX IF NOT EXISTS exam_answers_attempt_idx ON public.exam_answers(attempt_id);
 
 ALTER TABLE public.exam_answers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_answers FORCE ROW LEVEL SECURITY;
@@ -6333,7 +6124,7 @@ ALTER TYPE public.notification_type ADD VALUE IF NOT EXISTS 'comment_reply';
 --    No updated_at column, so set_updated_at is NOT attached; the table
 --    joins the audit_trigger inventory (MED-8).
 -- ---------------------------------------------------------------------
-CREATE TABLE public.lesson_comments (
+CREATE TABLE IF NOT EXISTS public.lesson_comments (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lesson_id  uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
     author_id  uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -6342,8 +6133,8 @@ CREATE TABLE public.lesson_comments (
     status     text NOT NULL DEFAULT 'visible' CHECK (status IN ('visible', 'removed')),
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX lesson_comments_lesson_idx ON public.lesson_comments(lesson_id);
-CREATE INDEX lesson_comments_parent_idx ON public.lesson_comments(parent_id) WHERE parent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS lesson_comments_lesson_idx ON public.lesson_comments(lesson_id);
+CREATE INDEX IF NOT EXISTS lesson_comments_parent_idx ON public.lesson_comments(parent_id) WHERE parent_id IS NOT NULL;
 
 ALTER TABLE public.lesson_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lesson_comments FORCE ROW LEVEL SECURITY;
