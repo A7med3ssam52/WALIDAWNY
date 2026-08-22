@@ -32,7 +32,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const PROFILE_REFRESH_EVENTS = new Set(['INITIAL_SESSION', 'SIGNED_IN', 'USER_UPDATED']);
 
-export const AUTH_BOOTSTRAP_TIMEOUT_MS = { value: 10_000 };
+export const AUTH_BOOTSTRAP_TIMEOUT_MS = { value: 20_000 };
+
+const PROFILE_FETCH_ATTEMPTS = 2;
+const PROFILE_RETRY_DELAY_MS = 1_500;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -69,7 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(null);
         return;
       }
-      const nextProfile = await withTimeout(getProfileById(userId), AUTH_BOOTSTRAP_TIMEOUT_MS.value);
+      let nextProfile: Profile | null = null;
+      let lastError: unknown = new Error('profile_fetch_failed');
+      for (let attempt = 0; attempt < PROFILE_FETCH_ATTEMPTS; attempt += 1) {
+        try {
+          nextProfile = await withTimeout(
+            getProfileById(userId),
+            AUTH_BOOTSTRAP_TIMEOUT_MS.value,
+          );
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < PROFILE_FETCH_ATTEMPTS - 1) {
+            await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY_MS));
+          }
+        }
+      }
+      if (lastError !== null) {
+        throw lastError;
+      }
       setProfile(nextProfile);
       setRole(nextProfile?.role ?? null);
     } catch {

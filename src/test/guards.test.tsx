@@ -86,7 +86,9 @@ describe('route guards', () => {
     const user = userEvent.setup();
     renderApp('/student/dashboard');
 
-    expect(await screen.findByText('تعذر تحميل بيانات الحساب')).toBeInTheDocument();
+    expect(
+      await screen.findByText('تعذر تحميل بيانات الحساب', undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
 
     mockState.singleQueryErrors.profiles = '';
     await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
@@ -102,7 +104,7 @@ describe('route guards', () => {
     const user = userEvent.setup();
     renderApp('/student/dashboard');
 
-    await screen.findByText('تعذر تحميل بيانات الحساب');
+    await screen.findByText('تعذر تحميل بيانات الحساب', undefined, { timeout: 4000 });
     await user.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
 
     await waitFor(() => {
