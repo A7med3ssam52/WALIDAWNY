@@ -293,11 +293,7 @@ export function ReportsPage() {
                 </div>
               </SectionCard>
             </div>
-          ) : (
-            <Card title="ملاحظة عن الفلوس الخارجة" subtitle="المصروفات والتحويلات يديرها الأدمن فقط">
-              <p className="text-sm text-foreground-muted">إيرادك الظاهر هنا هو <strong>صافي نصيبك (base_price)</strong> قبل أي تحويلات. التحويلات الفعلية لحسابك تظهر عند الأدمن ويتم إبلاغك بها.</p>
-            </Card>
-          )}
+          ) : null}
         </>
       )}
       </div>
