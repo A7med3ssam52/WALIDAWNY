@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /student/
+Disallow: /walid/
+Disallow: /admin/
+Disallow: /login
+Disallow: /register
+Sitemap: https://walidawny.com/sitemap.xml

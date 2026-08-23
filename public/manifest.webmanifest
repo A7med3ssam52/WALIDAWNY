@@ -1,9 +1,9 @@
 {
   "name": "وليد عوني",
   "short_name": "وليد عوني",
-  "description": "وليد عونى — متابعة الطلاب والتواصل مع الأستاذ ومتابعة الصفوف الدراسية",
+  "description": "منصة وليد عونى التعليمية المصرية — منهج منظم لطلاب الإعدادي والثانوي، فيديوهات وملازم PDF وسبورات مع تفعيل فوري بكود WLDN",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/?utm_source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],

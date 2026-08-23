@@ -438,6 +438,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // SEO files must never be served from cache — always network (no PWA interference)
+  if (
+    url.pathname === '/sitemap.xml' ||
+    url.pathname === '/robots.txt' ||
+    url.pathname === '/og-image.jpg' ||
+    url.pathname === '/manifest.webmanifest'
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)

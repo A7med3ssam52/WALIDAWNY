@@ -23,7 +23,9 @@ describe('LandingPage', () => {
     });
     renderApp('/');
 
-    expect(await screen.findAllByText('وليد عونى')).toHaveLength(2);
+    // H1 now optimized: "وليد عونى — منصة تعليمية لطلاب إعدادي وثانوي" (SEO) — at least 2 occurrences (brand + H1)
+    expect((await screen.findAllByText(/وليد عونى/)).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText(/منصة تعليمية لطلاب إعدادي وثانوي/)).toBeInTheDocument();
     expect(
       screen.getAllByRole('link', { name: 'تسجيل الدخول' }).every((link) =>
         link.hasAttribute('href') ? link.getAttribute('href') === '/login' : false,
@@ -46,7 +48,7 @@ describe('LandingPage', () => {
     });
     renderApp('/');
 
-    expect(await screen.findAllByText('وليد عونى')).toHaveLength(2);
+    expect((await screen.findAllByText(/وليد عونى/)).length).toBeGreaterThanOrEqual(2);
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'فتح محادثة واتساب' })).not.toBeInTheDocument();
     });

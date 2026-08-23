@@ -15,6 +15,8 @@ export interface VideoPlayerProps {
  * HLS video player. Uses the native HLS support (Safari/Edge) when
  * available; otherwise hls.js (Chromium/Firefox). Falls back to a plain
  * message when neither is available.
+ * Note: hls.js is code-split via manualChunks + lazy StudentLessonPage route,
+ * so Landing bundle never includes it.
  */
 export function VideoPlayer({
   src,

@@ -7,10 +7,12 @@ import { Card } from '../../components/Card';
 import { GuestOnly } from '../../components/guards';
 import { Input } from '../../components/Input';
 import { Select } from '../../components/Select';
+import { SeoHead } from '../../components/SeoHead';
 import { useToast } from '../../components/Toast';
 import { listActiveGrades, type ActiveGrade } from '../../data/rpc';
 import { errorMessage } from '../../lib/errors';
 import { getSupabaseClient } from '../../lib/supabase';
+import { SEO } from '../../lib/seo';
 import {
   PASSWORD_MIN_LENGTH,
   toCanonicalPhone,
@@ -140,6 +142,7 @@ export function RegisterPage() {
   if (needsEmailConfirmation) {
     return (
       <GuestOnly>
+        <SeoHead title={SEO.register.title} description={SEO.register.description} canonicalPath="/register" noIndex />
         <AuthLayout>
           <Card
             title="تم إنشاء حسابك بنجاح"
@@ -170,6 +173,7 @@ export function RegisterPage() {
 
   return (
     <GuestOnly>
+      <SeoHead title={SEO.register.title} description={SEO.register.description} canonicalPath="/register" noIndex />
       <AuthLayout>
         <Card
           title="إنشاء حساب جديد"

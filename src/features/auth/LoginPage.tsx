@@ -5,8 +5,10 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { GuestOnly } from '../../components/guards';
 import { Input } from '../../components/Input';
+import { SeoHead } from '../../components/SeoHead';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../lib/errors';
+import { SEO } from '../../lib/seo';
 import { validateLogin } from '../../lib/validation';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from './AuthContext';
@@ -66,6 +68,7 @@ export function LoginPage() {
 
   return (
     <GuestOnly>
+      <SeoHead title={SEO.login.title} description={SEO.login.description} canonicalPath="/login" noIndex />
       <AuthLayout>
         <Card
           title="تسجيل الدخول"
