@@ -45,9 +45,6 @@ export function AdminNav() {
       <div className="my-2 border-t border-white/8" />
       <p className="px-3 pb-1 text-xs font-medium text-foreground-subtle">إدارة المحتوى</p>
       <NavSection items={contentItems} />
-      <div className="mt-3 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 px-3 py-2 text-xs font-medium text-indigo-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-        المشرف
-      </div>
     </nav>
   );
 }
