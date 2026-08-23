@@ -46,6 +46,7 @@ import type {
 
 const EXAM_ERROR_MESSAGES: Record<string, string> = {
   exam_not_found: 'الاختبار غير موجود',
+  question_not_found: 'السؤال غير موجود',
   attempt_not_found: 'المحاولة غير موجودة',
   already_graded: 'تم تصحيح هذه المحاولة من قبل',
   invalid_scores: 'الدرجات المدخلة غير صالحة',
@@ -391,18 +392,26 @@ export function ExamsPage() {
     if (!deletingExam) {
       return;
     }
+    const examId = deletingExam.exam.id;
     setDeleteExamBusy(true);
     try {
-      await deleteExam(deletingExam.exam.id);
+      await deleteExam(examId);
       showToast('تم حذف الاختبار');
       setDeletingExam(null);
-      if (selectedExamId === deletingExam.exam.id) {
+      setImageUrlsByQuestion((prev) => {
+        const next = { ...prev };
+        delete next[examId];
+        return next;
+      });
+      if (selectedExamId === examId) {
         setSelectedExamId('');
+        setQuestions([]);
+        setAttempts([]);
+        setAnswersByAttempt({});
       }
       await loadExams();
     } catch (err) {
       showToast(examErrorMessage(err), 'error');
-      setDeletingExam(null);
     } finally {
       setDeleteExamBusy(false);
     }
@@ -654,7 +663,6 @@ export function ExamsPage() {
       await loadDetails();
     } catch (err) {
       showToast(examErrorMessage(err), 'error');
-      setDeletingQuestion(null);
     } finally {
       setDeleteQuestionBusy(false);
     }

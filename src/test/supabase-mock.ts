@@ -1371,7 +1371,7 @@ function createMockClient() {
   const applyPhase6Rpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     const uid = currentUserId();
     const role = currentRole(uid);
-    const isStaff = role === 'mr_walid';
+    const isStaff = role === 'mr_walid' || role === 'admin' || role === 'teacher';
     const isStudent = role === 'student';
     if (fn === 'list_exams') {
       const lessonId = String(args?.p_lesson_id ?? '');
@@ -1562,6 +1562,35 @@ function createMockClient() {
         }),
       );
       return { data: attempt, error: null };
+    }
+    if (fn === 'delete_exam') {
+      if (!isStaff) {
+        return error('permission_denied');
+      }
+      const examId = String(args?.p_exam_id ?? '');
+      const exam = state.exams.find((item) => item.id === examId);
+      if (!exam || exam.deleted_at) {
+        return error('exam_not_found');
+      }
+      exam.deleted_at = nowIso();
+      exam.updated_at = nowIso();
+      return { data: null, error: null };
+    }
+    if (fn === 'delete_exam_question') {
+      if (!isStaff) {
+        return error('permission_denied');
+      }
+      const qId = String(args?.p_question_id ?? '');
+      const question = state.examQuestions.find((item) => item.id === qId);
+      if (!question) {
+        return error('question_not_found');
+      }
+      const exam = state.exams.find((item) => item.id === question.exam_id);
+      if (!exam || exam.deleted_at) {
+        return error('exam_not_found');
+      }
+      state.examQuestions = state.examQuestions.filter((item) => item.id !== qId);
+      return { data: null, error: null };
     }
     if (fn === 'list_lesson_comments') {
       if (!uid) {
