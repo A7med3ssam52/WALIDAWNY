@@ -8,6 +8,7 @@ import {
   makeBoard,
   makeLesson,
   makeLessonComment,
+  makePdf,
   makeVideo,
   mockRpcError,
   mockState,
@@ -23,6 +24,7 @@ const THUMB_EF_URL = 'https://test-project.supabase.co/functions/v1/get-video-th
 const TUS_ENDPOINT = 'https://video.bunnycdn.com/tusupload';
 const BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/upload-board';
 const DELETE_BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/delete-board';
+const DELETE_PDF_EF_URL = 'https://test-project.supabase.co/functions/v1/delete-pdf';
 const BOARD_UPLOAD_URL = 'https://storage.test/boards/lesson-1/board-new-1.jpg';
 const BOARD_URL_1 =
   'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-1.jpg?token=b1';
@@ -1428,5 +1430,66 @@ describe('LessonAssetsPage — board section', () => {
     const modalContent = screen.getByTestId('board-preview-modal');
     expect(within(modalContent).getByRole('img')).toHaveAttribute('src', BOARD_URL_1);
     expect(within(modalContent).getByRole('img')).toHaveAttribute('alt', 'سبورة أولى.jpg');
+  });
+});
+
+describe('LessonAssetsPage — pdf deletion', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    resetMockState();
+    setAuthenticatedWalid();
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  it('deletes a ready (finalized) pdf after confirmation and removes it from the list', async () => {
+    seedLesson();
+    mockState.lessonPdfs.push(makePdf({ id: 'pdf-1', is_ready: true }));
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/delete-pdf')) {
+        mockState.lessonPdfs = mockState.lessonPdfs.filter((item) => item.id !== 'pdf-1');
+        return { ok: true, status: 200, json: async () => ({ deleted: true }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-row-pdf-1');
+
+    expect(screen.getByTestId('pdf-delete-pdf-1')).toBeEnabled();
+    fireEvent.click(screen.getByTestId('pdf-delete-pdf-1'));
+    expect(screen.getByRole('dialog', { name: 'تأكيد حذف الملف' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'حذف الملف' }));
+
+    expect(await screen.findByText('تم حذف الملف')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('pdf-row-pdf-1')).not.toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      DELETE_PDF_EF_URL,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ lesson_id: 'lesson-1', pdf_id: 'pdf-1' }),
+      }),
+    );
+  });
+
+  it('keeps the pdf when the confirmation dialog is cancelled', async () => {
+    seedLesson();
+    mockState.lessonPdfs.push(makePdf({ id: 'pdf-2', is_ready: true }));
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-row-pdf-2');
+
+    fireEvent.click(screen.getByTestId('pdf-delete-pdf-2'));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }));
+
+    expect(screen.queryByRole('dialog', { name: 'تأكيد حذف الملف' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('pdf-row-pdf-2')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      DELETE_PDF_EF_URL,
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 });

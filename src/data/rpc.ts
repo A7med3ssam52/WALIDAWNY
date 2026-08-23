@@ -852,6 +852,63 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return data as DashboardStats;
 }
 
+export interface FinancialReportFilters {
+  from?: string | null;
+  to?: string | null;
+  gradeId?: string | null;
+  unitId?: string | null;
+}
+
+export async function getFinancialReports(filters: FinancialReportFilters = {}): Promise<import('../types/database').FinancialReports> {
+  const { data, error } = await getSupabaseClient().rpc('get_financial_reports', {
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+    p_grade_id: filters.gradeId ?? null,
+    p_unit_id: filters.unitId ?? null,
+  });
+  if (error) throw error;
+  return data as import('../types/database').FinancialReports;
+}
+
+export async function addPlatformExpense(input: { amount: number; category: string; description?: string | null; spentAt?: string | null }): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('add_platform_expense', {
+    p_amount: input.amount,
+    p_category: input.category,
+    p_description: input.description ?? null,
+    p_spent_at: input.spentAt ?? null,
+  });
+  if (error) throw error;
+  return (data ?? '') as string;
+}
+
+export async function listPlatformExpenses(filters: { from?: string | null; to?: string | null } = {}): Promise<import('../types/database').PlatformExpense[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_platform_expenses', {
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+  });
+  if (error) throw error;
+  return (data ?? []) as import('../types/database').PlatformExpense[];
+}
+
+export async function addPlatformPayout(input: { amount: number; note?: string | null; paidAt?: string | null }): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('add_platform_payout', {
+    p_amount: input.amount,
+    p_note: input.note ?? null,
+    p_paid_at: input.paidAt ?? null,
+  });
+  if (error) throw error;
+  return (data ?? '') as string;
+}
+
+export async function listPlatformPayouts(filters: { from?: string | null; to?: string | null } = {}): Promise<import('../types/database').PlatformPayout[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_platform_payouts', {
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+  });
+  if (error) throw error;
+  return (data ?? []) as import('../types/database').PlatformPayout[];
+}
+
 export async function listAuditLogs(
   filters: AuditFilters = {},
   pagination: { limit?: number; offset?: number } = {},

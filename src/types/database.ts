@@ -398,6 +398,92 @@ export interface DashboardRecentPurchase {
   purchased_at: string;
 }
 
+export interface FinancialSummary {
+  total_purchases: number;
+  total_base: number;
+  total_platform_fee: number;
+  total_revenue: number;
+  avg_ticket: number;
+  void_purchases: number;
+  expenses_total: number;
+  payouts_total: number;
+  net_platform: number;
+}
+
+export interface FinancialByGradeRow {
+  grade_id: string;
+  grade_name: string;
+  purchases: number;
+  base_revenue: number;
+  platform_revenue: number;
+  total_revenue: number;
+}
+
+export interface FinancialByUnitRow {
+  unit_id: string;
+  unit_name: string;
+  grade_name: string;
+  purchases: number;
+  base_revenue: number;
+  platform_revenue: number;
+  total_revenue: number;
+}
+
+export interface FinancialDailyRow {
+  date: string;
+  purchases: number;
+  base_revenue: number;
+  platform_revenue: number;
+  total_revenue: number;
+}
+
+export interface FinancialCodeStats {
+  available: number;
+  used: number;
+  revoked: number;
+  pending_base: number;
+  pending_total: number;
+}
+
+export interface FinancialRecentPurchase {
+  student_name: string;
+  grade_name: string | null;
+  unit_name: string;
+  base_price: number;
+  platform_fee: number;
+  total_price: number;
+  purchased_at: string;
+}
+
+export interface FinancialReports {
+  filters: { from: string | null; to: string | null; grade_id: string | null; unit_id: string | null };
+  summary: FinancialSummary;
+  by_grade: FinancialByGradeRow[];
+  by_unit: FinancialByUnitRow[];
+  daily: FinancialDailyRow[];
+  code_stats: FinancialCodeStats;
+  recent_purchases: FinancialRecentPurchase[];
+}
+
+export type PlatformExpense = {
+  id: string;
+  amount: number;
+  category: string;
+  description: string | null;
+  spent_at: string;
+  created_at: string;
+  created_by: string | null;
+};
+
+export type PlatformPayout = {
+  id: string;
+  amount: number;
+  note: string | null;
+  paid_at: string;
+  created_at: string;
+  recipient_id: string | null;
+};
+
 export interface DashboardStats {
   students: DashboardStudentsStats;
   purchases: DashboardPurchasesStats;
@@ -695,6 +781,31 @@ export interface Database {
         Returns: void;
       };
       delete_lesson_video: { Args: { p_lesson_id: string; p_video_id: string }; Returns: void };
+      get_financial_reports: {
+        Args: {
+          p_from?: string | null;
+          p_to?: string | null;
+          p_grade_id?: string | null;
+          p_unit_id?: string | null;
+        };
+        Returns: FinancialReports;
+      };
+      add_platform_expense: {
+        Args: { p_amount: number; p_category: string; p_description?: string | null; p_spent_at?: string | null };
+        Returns: string;
+      };
+      list_platform_expenses: {
+        Args: { p_from?: string | null; p_to?: string | null };
+        Returns: PlatformExpense[];
+      };
+      add_platform_payout: {
+        Args: { p_amount: number; p_note?: string | null; p_paid_at?: string | null };
+        Returns: string;
+      };
+      list_platform_payouts: {
+        Args: { p_from?: string | null; p_to?: string | null };
+        Returns: PlatformPayout[];
+      };
     };
   };
 }

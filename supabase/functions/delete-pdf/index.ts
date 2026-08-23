@@ -4,24 +4,24 @@
 // model). POST, JWT-verified (config.toml: [functions.delete-pdf]
 // verify_jwt = true).
 //
-// Deletes a NON-ready lesson_pdfs row (ghost row) together with its
-// Storage object, so a failed PDF upload (PUT or finalize failure)
-// can be cleaned from the staff UI instead of accumulating forever:
+// Deletes a lesson_pdfs row (pending ghost row OR finalized/ready PDF)
+// together with its Storage object, so staff can clean failed uploads
+// and remove outdated course material from the staff UI (0043 extended
+// deletion to ready rows):
 //   1. validates the request (lesson_id + pdf_id UUIDs),
 //   2. checks the caller role over the caller-token client
 //      (STAFF_ROLES: admin / mr_walid / teacher),
-//   3. reads the row with id + lesson_id + deleted_at IS NULL — when
+//   3. reads the row with id + lesson_id + deleted_at IS NULL → when
 //      absent -> 404 pdf_not_found (the pre-check for UX),
-//   4. refuses ready rows (pdf_not_pending) — finalized PDFs are never
-//      deletable through this function,
-//   5. removes the Storage object best-effort
-//      (client.storage.from('pdfs').remove([storage_path])) — an
+//   4. removes the Storage object best-effort
+//      (client.storage.from('pdfs').remove([storage_path])) → an
 //      object without a row is orphaned storage; a removal failure
 //      must not fail the operation,
-//   6. hard-deletes the row through the staff-guarded SECURITY DEFINER
-//      RPC public.delete_pdf_upload_record (migrations/0037) —
-//      authoritative backstop, audited,
-//   7. returns { deleted: true, pdf_id }.
+//   5. hard-deletes the row through the staff-guarded SECURITY DEFINER
+//      RPC public.delete_pdf_upload_record (migrations/0037+0043) →
+//      authoritative backstop, audited ('pdf.upload_cancelled' for
+//      non-ready rows, 'pdf.deleted' for ready ones),
+//   6. returns { deleted: true, pdf_id }.
 //
 // Actor plumbing: request-scoped client with the anon key in the key slot
 // and the caller's JWT in Authorization — never a
@@ -34,7 +34,6 @@
 //   invalid_json              -> 400
 //   validation_error          -> 422 (bad lesson_id / pdf_id)
 //   pdf_not_found             -> 404
-//   pdf_not_pending           -> 409 (row already finalized)
 //   wrong_lesson              -> 422 (wrapper backstop)
 //   permission_denied         -> 403 (wrapper guard)
 //   function_error            -> 502 (any other wrapper failure; raw
@@ -209,11 +208,11 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   const { lesson_id: lessonId, pdf_id: pdfId } = parsed.body;
 
   // --- 4) The row must exist, belong to the lesson and not be soft-deleted.
-  // Pre-check over the caller token; the 0037 wrapper re-validates
+  // Pre-check over the caller token; the 0037/0043 wrapper re-validates
   // atomically (authoritative). ---
   const { data: pdf, error: pdfError } = await client
     .from('lesson_pdfs')
-    .select('id,lesson_id,is_ready,deleted_at,storage_path')
+    .select('id,lesson_id,deleted_at,storage_path')
     .eq('id', pdfId)
     .eq('lesson_id', lessonId)
     .is('deleted_at', null)
@@ -228,18 +227,11 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   const row = pdf as {
     id: string;
     lesson_id: string;
-    is_ready: boolean;
     deleted_at: string | null;
     storage_path: string;
   } | null;
   if (!row) {
     return jsonResponse({ error: { code: 'pdf_not_found', message: 'PDF row not found.' } }, 404);
-  }
-  if (row.is_ready) {
-    return jsonResponse(
-      { error: { code: 'pdf_not_pending', message: 'PDF is already finalized.' } },
-      409,
-    );
   }
 
   // --- 5) Storage object removed best-effort (an object without a row
@@ -269,12 +261,6 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
       return jsonResponse(
         { error: { code: 'wrong_lesson', message: 'PDF belongs to another lesson.' } },
         422,
-      );
-    }
-    if (rpcError.code === 'pdf_not_pending') {
-      return jsonResponse(
-        { error: { code: 'pdf_not_pending', message: 'PDF is already finalized.' } },
-        409,
       );
     }
     return jsonResponse(

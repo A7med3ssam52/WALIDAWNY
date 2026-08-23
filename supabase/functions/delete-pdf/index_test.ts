@@ -196,7 +196,7 @@ Deno.test('delete-pdf: unknown row -> 404 pdf_not_found (no storage, no RPC)', a
   assertEqual(storageCalls.length, 0, 'no storage removal for an unknown row');
 });
 
-Deno.test('delete-pdf: ready row -> 409 pdf_not_pending (no RPC)', async () => {
+Deno.test('delete-pdf: ready (finalized) row is deletable like pending rows', async () => {
   const { dep, rpcCalls, storageCalls } = deps(
     deepMerge(staffCfg(), {
       tables: {
@@ -215,11 +215,11 @@ Deno.test('delete-pdf: ready row -> 409 pdf_not_pending (no RPC)', async () => {
     }),
   );
   const res = await handle(deletePost(), dep);
-  await expectStatus(res, 409);
+  await expectStatus(res, 200);
   const body = await res.json();
-  assertEqual(body.error.code, 'pdf_not_pending');
-  assertEqual(rpcCalls.length, 0, 'ready rows are never deleted');
-  assertEqual(storageCalls.length, 0, 'no storage removal for a ready row');
+  assertEqual(body.deleted, true);
+  assertEqual(rpcCalls.length, 1, 'ready rows go through the wrapper');
+  assertEqual(storageCalls.length, 1, 'the storage object of a ready row is removed');
 });
 
 Deno.test('delete-pdf: success removes storage object and releases the row', async () => {
@@ -300,16 +300,30 @@ Deno.test('delete-pdf: wrapper wrong_lesson -> 422', async () => {
   assertEqual(body.error.code, 'wrong_lesson');
 });
 
-Deno.test('delete-pdf: wrapper pdf_not_pending -> 409', async () => {
-  const { dep } = deps(
+Deno.test('delete-pdf: soft-deleted row -> 404 pdf_not_found (no storage, no RPC)', async () => {
+  const { dep, rpcCalls, storageCalls } = deps(
     deepMerge(staffCfg(), {
-      rpc: { delete_pdf_upload_record: { error: { code: 'pdf_not_pending', message: 'finalized' } } },
+      tables: {
+        lesson_pdfs: {
+          rows: [
+            {
+              id: PDF_ID,
+              lesson_id: LESSON_ID,
+              is_ready: true,
+              deleted_at: '2026-01-02T00:00:00.000Z',
+              storage_path: STORAGE_PATH,
+            },
+          ],
+        },
+      },
     }),
   );
   const res = await handle(deletePost(), dep);
-  await expectStatus(res, 409);
+  await expectStatus(res, 404);
   const body = await res.json();
-  assertEqual(body.error.code, 'pdf_not_pending');
+  assertEqual(body.error.code, 'pdf_not_found');
+  assertEqual(rpcCalls.length, 0, 'soft-deleted rows are never deleted again');
+  assertEqual(storageCalls.length, 0);
 });
 
 Deno.test('delete-pdf: generic RPC failure -> 502 function_error (no raw message leak)', async () => {

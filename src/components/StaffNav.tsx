@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const items = [
   { to: '/walid/dashboard', label: 'الرئيسية' },
+  { to: '/walid/reports', label: 'التقارير' },
   { to: '/walid/students', label: 'الطلاب' },
   { to: '/walid/grades', label: 'الصفوف' },
   { to: '/walid/curriculum', label: 'المنهج' },

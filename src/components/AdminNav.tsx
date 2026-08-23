@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const adminItems = [
   { to: '/admin/dashboard', label: 'الرئيسية' },
+  { to: '/admin/reports', label: 'التقارير المالية' },
   { to: '/admin/audit', label: 'سجل النشاطات' },
   { to: '/admin/roles', label: 'الأدوار والصلاحيات' },
 ];

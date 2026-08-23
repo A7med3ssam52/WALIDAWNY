@@ -30,6 +30,9 @@ interface MockState {
   examAnswers: AnyRecord[];
   lessonComments: AnyRecord[];
   dashboardStats: AnyRecord;
+  financialReports: AnyRecord;
+  platformExpenses: AnyRecord[];
+  platformPayouts: AnyRecord[];
   auditLogs: AnyRecord[];
   rpcResults: Record<string, unknown>;
   rpcErrors: Record<string, string>;
@@ -84,6 +87,9 @@ const state: MockState = {
   examAnswers: [],
   lessonComments: [],
   dashboardStats: makeDashboardStats(),
+  financialReports: makeFinancialReports(),
+  platformExpenses: [],
+  platformPayouts: [],
   auditLogs: [],
   rpcResults: {},
   rpcErrors: {},
@@ -341,6 +347,19 @@ export function makeDashboardStats(overrides: Partial<AnyRecord> = {}): AnyRecor
   };
 }
 
+export function makeFinancialReports(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  return {
+    filters: { from: null, to: null, grade_id: null, unit_id: null },
+    summary: { total_purchases: 0, total_base: 0, total_platform_fee: 0, total_revenue: 0, avg_ticket: 0, void_purchases: 0, expenses_total: 0, payouts_total: 0, net_platform: 0 },
+    by_grade: [],
+    by_unit: [],
+    daily: [],
+    code_stats: { available: 0, used: 0, revoked: 0, pending_base: 0, pending_total: 0 },
+    recent_purchases: [],
+    ...overrides,
+  };
+}
+
 export function makeExam(overrides: Partial<AnyRecord> = {}): AnyRecord {
   return {
     id: 'exam-1',
@@ -465,6 +484,18 @@ export function setAuthenticatedTeacher(overrides: Partial<AnyRecord> = {}) {
       email: 'teacher@example.com',
       full_name: 'الأستاذ أحمد',
       role: 'teacher',
+      ...overrides,
+    }),
+  );
+}
+
+export function setAuthenticatedAdmin(overrides: Partial<AnyRecord> = {}) {
+  return setAuthenticatedUser(
+    makeProfile({
+      id: 'user-admin-1',
+      email: 'admin@example.com',
+      full_name: 'الأدمن',
+      role: 'admin',
       ...overrides,
     }),
   );
@@ -1019,6 +1050,19 @@ function createMockClient() {
       pdf.is_ready = true;
       pdf.is_primary = true;
       pdf.updated_at = nowIso();
+      return { data: null, error: null };
+    }
+    if (fn === 'delete_pdf_upload_record') {
+      const pdf = state.lessonPdfs.find(
+        (item) => item.id === args?.p_pdf_id && item.deleted_at === null,
+      );
+      if (!pdf) {
+        return error('pdf_not_found');
+      }
+      if (pdf.lesson_id !== args?.p_lesson_id) {
+        return error('wrong_lesson');
+      }
+      state.lessonPdfs = state.lessonPdfs.filter((item) => item.id !== pdf.id);
       return { data: null, error: null };
     }
     return null;
@@ -1814,6 +1858,25 @@ function createMockClient() {
     if (fn === 'get_dashboard_stats') {
       return { data: state.dashboardStats, error: null };
     }
+    if (fn === 'get_financial_reports') {
+      return { data: state.financialReports, error: null };
+    }
+    if (fn === 'list_platform_expenses') {
+      return { data: state.platformExpenses, error: null };
+    }
+    if (fn === 'list_platform_payouts') {
+      return { data: state.platformPayouts, error: null };
+    }
+    if (fn === 'add_platform_expense') {
+      const row = { id: `exp-${++state.idSeq}`, amount: Number(args?.p_amount ?? 0), category: String(args?.p_category ?? ''), description: (args?.p_description as string | null) ?? null, spent_at: (args?.p_spent_at as string | null) ?? nowIso(), created_at: nowIso(), created_by: (currentUserId() ?? null) };
+      state.platformExpenses.push(row);
+      return { data: row.id, error: null };
+    }
+    if (fn === 'add_platform_payout') {
+      const row = { id: `payout-${++state.idSeq}`, amount: Number(args?.p_amount ?? 0), note: (args?.p_note as string | null) ?? null, paid_at: (args?.p_paid_at as string | null) ?? nowIso(), created_at: nowIso(), recipient_id: null };
+      state.platformPayouts.push(row);
+      return { data: row.id, error: null };
+    }
     if (fn === 'list_audit_logs') {
       const from = (args?.p_from as string | null) ?? null;
       const to = (args?.p_to as string | null) ?? null;
@@ -1904,6 +1967,9 @@ export function resetMockState() {
   state.examAnswers = [];
   state.lessonComments = [];
   state.dashboardStats = makeDashboardStats();
+  state.financialReports = makeFinancialReports();
+  state.platformExpenses = [];
+  state.platformPayouts = [];
   state.auditLogs = [];
   state.rpcResults = {};
   state.rpcErrors = {};

@@ -371,6 +371,7 @@ export function LessonAssetsPage() {
   const [cancellingVideoId, setCancellingVideoId] = useState<string | null>(null);
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
+  const [deletePdf, setDeletePdf] = useState<LessonPdf | null>(null);
 
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -497,6 +498,7 @@ export function LessonAssetsPage() {
     if (!lessonId) {
       return;
     }
+    setDeletePdf(null);
     setDeletingPdfId(pdf.id);
     try {
       await deletePdfUpload(lessonId, pdf.id);
@@ -1458,17 +1460,16 @@ export function LessonAssetsPage() {
                     ) : (
                       <Badge variant="warning">قيد الرفع</Badge>
                     )}
-                    {!pdf.is_ready ? (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => void handleDeletePdf(pdf)}
-                        disabled={deletingPdfId === pdf.id}
-                      >
-                        {deletingPdfId === pdf.id ? 'جاري الحذف...' : 'حذف'}
-                      </Button>
-                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                      data-testid={`pdf-delete-${pdf.id}`}
+                      onClick={() => setDeletePdf(pdf)}
+                      disabled={deletingPdfId === pdf.id}
+                    >
+                      {deletingPdfId === pdf.id ? 'جاري الحذف...' : 'حذف'}
+                    </Button>
                   </div>
                 </li>
               ))}
@@ -1561,6 +1562,26 @@ export function LessonAssetsPage() {
       >
         {deleteBoard ? (
           <p className="mt-3 text-xs text-foreground-subtle">{deleteBoard.original_name}</p>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={deletePdf !== null}
+        title="تأكيد حذف الملف"
+        description="سيتم حذف ملف PDF نهائيًا من الدرس ولن يتمكن الطلاب من فتحه. هل تريد المتابعة؟"
+        confirmLabel="حذف الملف"
+        cancelLabel="إلغاء"
+        danger
+        loading={deletingPdfId !== null}
+        onConfirm={() => {
+          if (deletePdf) {
+            void handleDeletePdf(deletePdf);
+          }
+        }}
+        onCancel={() => setDeletePdf(null)}
+      >
+        {deletePdf ? (
+          <p className="mt-3 text-xs text-foreground-subtle">{deletePdf.original_name}</p>
         ) : null}
       </Modal>
     </LayoutShell>
