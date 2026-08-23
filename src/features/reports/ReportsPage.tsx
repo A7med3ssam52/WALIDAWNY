@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowUpRight, BadgeCheck, Banknote, CreditCard, Layers, TrendingUp, Wallet, WalletMinimal } from 'lucide-react';
+import { ArrowUpRight, BadgeCheck, Banknote, Layers, TrendingUp, Wallet, WalletMinimal } from 'lucide-react';
 
 import { AdminNav } from '../../components/AdminNav';
 import { LayoutShell } from '../../components/LayoutShell';
@@ -171,7 +171,7 @@ export function ReportsPage() {
               <StatCard title="إيراد المنصة" value={formatPrice(reports.summary.total_platform_fee)} icon={<Banknote className="h-5 w-5" />} variant="info" />
               <StatCard title="صافي ربح المنصة" value={formatPrice(reports.summary.net_platform)} icon={<TrendingUp className="h-5 w-5" />} variant={reports.summary.net_platform >=0 ? 'success':'warning'} />
               <StatCard title="عدد المبيعات" value={String(reports.summary.total_purchases)} icon={<BadgeCheck className="h-5 w-5" />} />
-              <StatCard title="متوسط التذكرة" value={formatPrice(reports.summary.avg_ticket)} icon={<CreditCard className="h-5 w-5" />} />
+              <StatCard title="إجمالي رسوم المنصة" value={formatPrice(reports.summary.total_platform_fee)} icon={<Banknote className="h-5 w-5" />} variant="info" />
               <StatCard title="إجمالي المصروفات" value={formatPrice(reports.summary.expenses_total)} icon={<WalletMinimal className="h-5 w-5" />} variant="warning" />
               <StatCard title="تحويلات لمستر وليد" value={formatPrice(reports.summary.payouts_total)} icon={<ArrowUpRight className="h-5 w-5" />} variant="warning" />
             </div>
@@ -179,7 +179,7 @@ export function ReportsPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <StatCard title="إجمالي مبيعاتي" value={String(reports.summary.total_purchases)} icon={<BadgeCheck className="h-5 w-5" />} variant="success" />
               <StatCard title="إجمالي إيرادي" value={formatPrice(reports.summary.total_base)} icon={<Wallet className="h-5 w-5" />} variant="success" />
-              <StatCard title="متوسط سعر الوحدة" value={formatPrice(reports.summary.avg_ticket)} icon={<CreditCard className="h-5 w-5" />} />
+              <StatCard title="إجمالي رسوم المنصة" value={formatPrice(reports.summary.total_platform_fee)} icon={<Banknote className="h-5 w-5" />} variant="info" />
               <StatCard title="إيراد متوقع (أكواد متاحة)" value={formatPrice(reports.code_stats.pending_base)} icon={<Layers className="h-5 w-5" />} variant="info" />
             </div>
           )}
