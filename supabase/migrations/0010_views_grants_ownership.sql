@@ -80,6 +80,13 @@ COMMENT ON VIEW public.v_audit_log IS 'Audit rows with actor display info (admin
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
 
+-- Auth engine (GoTrue) triggers on auth.users — supabase_auth_admin must execute these
+DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='supabase_auth_admin') THEN
+  GRANT EXECUTE ON FUNCTION public.handle_new_user() TO supabase_auth_admin;
+  GRANT EXECUTE ON FUNCTION public.block_email_change() TO supabase_auth_admin;
+  GRANT EXECUTE ON FUNCTION public.block_sign_in_for_inactive_accounts() TO supabase_auth_admin;
+END IF; END $$;
+
 -- Client-callable allowlist (SECURITY.md section 8.2):
 GRANT EXECUTE ON FUNCTION public.update_own_profile(text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_student_profile(uuid, text, text, text, text) TO authenticated;
@@ -131,10 +138,9 @@ GRANT EXECUTE ON FUNCTION public.is_mr_walid() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_student() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.can_access_lesson(uuid) TO authenticated;
 
--- Everything else stays REVOKEd: generate_codes_internal, set_video_status,
--- expire_subscriptions, recheck_video_states, notify_new_content,
--- audit_log, handle_new_user, block_email_change,
--- block_sign_in_for_inactive_accounts, set_updated_at,
+-- Everything else stays REVOKEd (except auth triggers granted to supabase_auth_admin above):
+-- generate_codes_internal, set_video_status, expire_subscriptions,
+-- recheck_video_states, notify_new_content, audit_log, set_updated_at,
 -- clear_primary_on_soft_delete, revoke_sessions_if_possible,
 -- get_current_role.
 -- NOTE: is_admin / is_mr_walid / is_student / can_access_lesson are

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- 01_schema.sql — schema & constraint assertions
--- Covers IMPLEMENTATION-PLAN.md section 6.1: 19 tables (18 + lesson_comments
--- from 0030 + lesson_boards from 0036), 8 enums, columns, CHECK / UNIQUE /
+-- Covers IMPLEMENTATION-PLAN.md section 6.1: 21 tables (18 + lesson_comments
+-- from 0030 + lesson_boards from 0036 + 2 financial from 0043), 8 enums, columns, CHECK / UNIQUE /
 -- partial-unique / FK rules, RLS enabled + FORCEd, 5 views (SECURITY
 -- INVOKER), trigger inventory, storage buckets, B1 ownership, B2
 -- notification grants.
@@ -10,17 +10,17 @@
 -- enum must NOT exist after 0028.
 -- =====================================================================
 
--- --- 19 application tables exist -------------------------------------
+-- --- 21 application tables exist -------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 19 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 21 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relname IN ('profiles','grades','units','lessons',
                          'lesson_videos','lesson_pdfs','progress','notifications',
                          'audit_logs','app_settings',
                          'unit_pricing','unit_codes','unit_purchases',
                          'exams','exam_questions','exam_attempts','exam_answers',
-                         'lesson_comments','lesson_boards')),
-    'all 19 application tables exist (18 + lesson_comments + lesson_boards)');
+                         'lesson_comments','lesson_boards','platform_expenses','platform_payouts')),
+    'all 21 application tables exist (18 + lesson_comments + lesson_boards + 2 financial ledgers 0043)');
 
 -- --- the four legacy subscription tables are GONE ---------------------
 SELECT tests.assert(
@@ -95,13 +95,13 @@ SELECT tests.assert(
     (SELECT to_regtype('public.subscription_status') IS NULL),
     'subscription_status enum does NOT exist (0028 step 13)');
 
--- --- RLS enabled + FORCEd on all 19 tables ----------------------------
+-- --- RLS enabled + FORCEd on all 21 tables ----------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 19
+    (SELECT count(*) = 21
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relrowsecurity AND c.relforcerowsecurity),
-    'RLS enabled AND forced on all 19 tables');
+    'RLS enabled AND forced on all 21 tables');
 
 -- --- expected columns present ----------------------------------------
 SELECT tests.assert(
@@ -387,10 +387,10 @@ SELECT tests.assert(
     'set_updated_at on the 12 documented tables (0028 list + exams 0029 + lesson_boards 0036)');
 
 SELECT tests.assert(
-    (SELECT count(*) = 13 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 15 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'audit_trigger'
-       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments','lesson_boards')),
-    'audit_trigger on the exact 13-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030 + lesson_boards 0036)');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments','lesson_boards','platform_expenses','platform_payouts')),
+    'audit_trigger on the exact 15-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030 + lesson_boards 0036 + 0043 financial)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid

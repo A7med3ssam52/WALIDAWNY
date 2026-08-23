@@ -4,11 +4,12 @@
 -- Verifies the MED-6 allowlist exactly: anon -> ONLY get_public_settings
 -- + list_active_grades (0027 registration picker) + get_public_unit_prices
 -- (0028 landing page) + get_platform_fee (0031 public read); authenticated
--- -> the 73 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
+-- -> the 78 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
 -- 5 new exam RPCs (0029) + the 3 new comment RPCs (0030) + the pricing
 -- RPCs (0031) + the 4 new board RPCs (0036) + the 2 new unit publish/hide
 -- RPCs (0038) + the 2 new multi-video RPCs add_youtube_video /
--- delete_lesson_video (0042) + the 5 RLS policy helpers;
+-- delete_lesson_video (0042) + the 5 financial RPCs (0043) + the 5 RLS
+-- policy helpers;
 -- every internal/system function stays non-executable (0028 REVOKEs
 -- create_unit_codes_internal - the staff wrapper is SECURITY DEFINER).
 -- Also verifies binding B2 (notifications DML revoked from clients) and
@@ -89,13 +90,13 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_
     'anon: youtube_video_id_from_url NOT executable (0042 internal helper)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (73 functions)
+-- authenticated: the full client allowlist (78 functions = 73 + 5 financial from 0043)
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 73 FROM pg_proc
+    (SELECT count(*) = 78 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 73 executable public functions');
+    'authenticated: exactly 78 executable public functions');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -170,6 +171,11 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.publish_unit
 SELECT tests.assert(has_function_privilege('authenticated', 'public.hide_unit(uuid)', 'EXECUTE'), 'g: hide_unit (0038)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.add_youtube_video(uuid, text, text)', 'EXECUTE'), 'g: add_youtube_video (0042)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_lesson_video(uuid, uuid)', 'EXECUTE'), 'g: delete_lesson_video (0042)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.add_platform_expense(numeric, text, text, timestamptz)', 'EXECUTE'), 'g: add_platform_expense (0043)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.list_platform_expenses(timestamptz, timestamptz)', 'EXECUTE'), 'g: list_platform_expenses (0043)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.add_platform_payout(numeric, text, timestamptz)', 'EXECUTE'), 'g: add_platform_payout (0043)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.list_platform_payouts(timestamptz, timestamptz)', 'EXECUTE'), 'g: list_platform_payouts (0043)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_financial_reports(timestamptz, timestamptz, uuid, uuid)', 'EXECUTE'), 'g: get_financial_reports (0043)');
 
 -- ---------------------------------------------------------------------
 -- authenticated: internal/system functions stay locked down
