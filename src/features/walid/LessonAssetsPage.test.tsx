@@ -1118,6 +1118,133 @@ describe('LessonAssetsPage — board section', () => {
     ).toBeInTheDocument();
   });
 
+  it('proactively refreshes an about-to-expire session before calling the upload EF', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({
+        id: 'board-new-1',
+        lesson_id: 'lesson-1',
+        original_name: 'board.png',
+        is_ready: false,
+      }),
+    );
+    const currentSession = mockState.auth.session;
+    expect(currentSession).not.toBeNull();
+    mockState.auth.session = {
+      ...currentSession!,
+      expires_at: Math.floor(Date.now() / 1000) - 10,
+    };
+    const uploadCalls: Array<Record<string, unknown>> = [];
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-board')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            uploadUrl: BOARD_UPLOAD_URL,
+            board_id: 'board-new-1',
+            storage_path: 'lesson-1/board-new-1.jpg',
+          }),
+        };
+      }
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (target === BOARD_UPLOAD_URL) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-upload-input');
+
+    const imageFile = new File(['fake-png-bytes'], 'board.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [imageFile] },
+    });
+    fireEvent.click(screen.getByTestId('board-upload-button'));
+
+    expect(await screen.findByText('تم رفع الصورة بنجاح')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        BOARD_EF_URL,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringMatching(/^Bearer /),
+          }),
+        }),
+      );
+    });
+    for (const call of fetchMock.mock.calls) {
+      if (String(call[0]).includes('/functions/v1/upload-board')) {
+        uploadCalls.push(call[1] as Record<string, unknown>);
+      }
+    }
+    expect(uploadCalls).toHaveLength(1);
+  });
+
+  it('retries once through refreshSession when the gateway rejects the token with a shaped 401', async () => {
+    seedLesson();
+    mockState.lessonBoards.push(
+      makeBoard({
+        id: 'board-new-1',
+        lesson_id: 'lesson-1',
+        original_name: 'board.png',
+        is_ready: false,
+      }),
+    );
+    let uploadAttempts = 0;
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-board')) {
+        uploadAttempts += 1;
+        if (uploadAttempts === 1) {
+          return {
+            ok: false,
+            status: 401,
+            json: async () => ({ code: 'UNAUTHORIZED_JWT_EXPIRED', message: 'JWT expired' }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            uploadUrl: BOARD_UPLOAD_URL,
+            board_id: 'board-new-1',
+            storage_path: 'lesson-1/board-new-1.jpg',
+          }),
+        };
+      }
+      if (target.includes('/functions/v1/get-board-signed-urls')) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('board-upload-input');
+
+    const imageFile = new File(['fake-png-bytes'], 'board.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('board-upload-input'), {
+      target: { files: [imageFile] },
+    });
+    fireEvent.click(screen.getByTestId('board-upload-button'));
+
+    expect(await screen.findByText('تم رفع الصورة بنجاح')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(uploadAttempts).toBe(2);
+    });
+    const boardUploadCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes('/functions/v1/upload-board'),
+    );
+    expect(boardUploadCalls).toHaveLength(2);
+    expect(boardUploadCalls[1][1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer refreshed-test-access-token' }),
+      }),
+    );
+  });
+
   it('deletes a board after confirmation and removes it from the list', async () => {
     seedLesson();
     mockState.lessonBoards.push(

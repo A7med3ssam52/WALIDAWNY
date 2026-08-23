@@ -37,6 +37,8 @@ interface MockState {
   singleQueryErrors: Record<string, string>;
   queryGates: Record<string, Promise<void>>;
   authGates: { getSession?: Promise<void>; getUser?: Promise<void> };
+  refreshSessionError: string | null;
+  refreshedAccessToken: string | null;
   signUpCreatesSession: boolean;
   signUpError: string | null;
   signInError: string | null;
@@ -89,6 +91,8 @@ const state: MockState = {
   singleQueryErrors: {},
   queryGates: {},
   authGates: {},
+  refreshSessionError: null,
+  refreshedAccessToken: null,
   signUpCreatesSession: true,
   signUpError: null,
   signInError: null,
@@ -1697,6 +1701,22 @@ function createMockClient() {
       }
       return { data: { session: state.auth.session }, error: null };
     }),
+    refreshSession: vi.fn(async () => {
+      state.authCalls.push({ method: 'refreshSession', params: null });
+      if (state.refreshSessionError) {
+        return { data: { session: null, user: null }, error: { message: state.refreshSessionError } };
+      }
+      const session = state.auth.session;
+      if (session) {
+        const refreshed = {
+          ...session,
+          access_token: state.refreshedAccessToken ?? `refreshed-${session.access_token}`,
+        };
+        state.auth.session = refreshed;
+        return { data: { session: refreshed, user: session.user }, error: null };
+      }
+      return { data: { session: null, user: null }, error: { message: 'no_session' } };
+    }),
     getUser: vi.fn(async () => {
       const gate = state.authGates.getUser;
       if (gate) {
@@ -1891,6 +1911,8 @@ export function resetMockState() {
   state.singleQueryErrors = {};
   state.queryGates = {};
   state.authGates = {};
+  state.refreshSessionError = null;
+  state.refreshedAccessToken = null;
   state.signUpCreatesSession = true;
   state.signUpError = null;
   state.signInError = null;

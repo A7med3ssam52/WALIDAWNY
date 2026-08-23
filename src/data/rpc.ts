@@ -34,6 +34,9 @@ import type {
   VideoUploadSession,
 } from '../types/database';
 
+/** Refresh tokens this many seconds before server-side expiry (gateway verify_jwt rejects expired JWTs). */
+const TOKEN_REFRESH_MARGIN_SEC = 30;
+
 export interface OwnProfileInput {
   fullName: string;
   phone: string;
@@ -1123,27 +1126,66 @@ async function functionErrorFromResponse(response: Response): Promise<Error> {
   return codeError('function_error');
 }
 
+/** Refresh the session when it is missing or about to expire; returns a usable token (possibly unchanged). */
+async function ensureFreshAccessToken(): Promise<string> {
+  const auth = getSupabaseClient().auth;
+  let token = '';
+  let expiresAtSec = 0;
+  try {
+    const { data } = await auth.getSession();
+    token = data.session?.access_token ?? '';
+    expiresAtSec = data.session?.expires_at ?? 0;
+  } catch {
+    return '';
+  }
+  const fresh = token && expiresAtSec > Math.floor(Date.now() / 1000) + TOKEN_REFRESH_MARGIN_SEC;
+  if (fresh) {
+    return token;
+  }
+  try {
+    const { data: refreshed } = await auth.refreshSession();
+    return refreshed.session?.access_token || token;
+  } catch {
+    return token;
+  }
+}
+
 export async function invokeFunction<T = unknown>(
   name: string,
   options: { method?: string; body?: unknown; query?: Record<string, string> } = {},
 ): Promise<T> {
-  const { data } = await getSupabaseClient().auth.getSession();
-  const token = data.session?.access_token ?? '';
   const query = options.query ? `?${new URLSearchParams(options.query).toString()}` : '';
   const url = `${supabaseUrl}/functions/v1/${name}${query}`;
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: options.method ?? 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: supabasePublishableKey,
-        ...(options.method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
-      },
-      body: options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
-    });
-  } catch {
-    throw codeError('network_error');
+
+  const send = async (token: string): Promise<Response> => {
+    try {
+      return await fetch(url, {
+        method: options.method ?? 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: supabasePublishableKey,
+          ...(options.method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: options.method === 'GET' ? undefined : JSON.stringify(options.body ?? {}),
+      });
+    } catch {
+      throw codeError('network_error');
+    }
+  };
+
+  let response = await send(await ensureFreshAccessToken());
+  if (response.status === 401) {
+    // The gateway may reject a token that supabase-js still considers valid
+    // (server-side expiry, rotated signing keys). Refresh once and retry.
+    try {
+      const { data } = await getSupabaseClient().auth.refreshSession();
+      const retryToken = data.session?.access_token;
+      if (retryToken) {
+        response = await send(retryToken);
+      }
+    } catch {
+      // keep the original 401 response
+    }
   }
   if (!response.ok) {
     throw await functionErrorFromResponse(response);
