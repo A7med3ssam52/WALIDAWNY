@@ -27,6 +27,7 @@ import {
 } from '../../components/Table';
 import { getDashboardStats } from '../../data/rpc';
 import { formatDateTime, formatPrice } from '../../lib/format';
+import { useAuth } from '../auth/AuthContext';
 import type { DashboardStats } from '../../types/database';
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
@@ -55,6 +56,8 @@ function TableSkeleton({ rows = 3 }: { rows?: number }) {
 }
 
 export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState(false);
 
@@ -114,12 +117,14 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
               icon={<Wallet className="h-5 w-5" />}
               variant="success"
             />
-            <StatCard
-              title="إجمالي إيرادات المنصة"
-              value={formatPrice(stats.purchases.platform_fee_total)}
-              icon={<Wallet className="h-5 w-5" />}
-              variant="success"
-            />
+            {isAdmin ? (
+              <StatCard
+                title="إجمالي إيرادات المنصة"
+                value={formatPrice(stats.purchases.platform_fee_total)}
+                icon={<Wallet className="h-5 w-5" />}
+                variant="success"
+              />
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

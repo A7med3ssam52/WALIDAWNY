@@ -6,6 +6,7 @@ import {
   makeDashboardStats,
   mockState,
   resetMockState,
+  setAuthenticatedAdmin,
   setAuthenticatedWalid,
 } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
@@ -59,10 +60,20 @@ describe('WalidDashboardPage', () => {
     // Staff revenue excludes platform fees
     expect(screen.getByText('إيرادات مستر وليد')).toBeInTheDocument();
     expect(screen.getByText('3500 ج.م')).toBeInTheDocument();
-    // Platform revenue shows fees only
-    expect(screen.getByText('إجمالي إيرادات المنصة')).toBeInTheDocument();
-    expect(screen.getByText('10500 ج.م')).toBeInTheDocument();
+    // Platform revenue is admin-only, hidden from mr_walid
+    expect(screen.queryByText('إجمالي إيرادات المنصة')).not.toBeInTheDocument();
+    expect(screen.queryByText('10500 ج.م')).not.toBeInTheDocument();
     expect(getRpcCalls().some((call) => call.fn === 'get_dashboard_stats')).toBe(true);
+  });
+
+  it('shows platform revenue only to admin', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.dashboardStats = seededStats;
+    renderApp('/admin/dashboard');
+
+    expect(await screen.findByText('إجمالي إيرادات المنصة')).toBeInTheDocument();
+    expect(screen.getByText('10500 ج.م')).toBeInTheDocument();
   });
 
   it('renders the content cards', async () => {

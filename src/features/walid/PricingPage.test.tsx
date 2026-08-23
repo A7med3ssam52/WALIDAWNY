@@ -27,7 +27,7 @@ describe('PricingPage', () => {
     resetMockState();
   });
 
-  it('shows mr_walid the price table with edit controls and the fee card', async () => {
+  it('shows mr_walid the price table with edit controls and hides the fee card (admin only)', async () => {
     setAuthenticatedWalid();
     seedUnit();
     renderApp('/walid/pricing');
@@ -37,22 +37,17 @@ describe('PricingPage', () => {
     expect(await screen.findByText('350 ج.م')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'تعديل' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'حفظ السعر' })).toBeInTheDocument();
-    expect(await screen.findByText('رسوم المنصة الثابتة')).toBeInTheDocument();
+    expect(screen.queryByText('رسوم المنصة الثابتة')).not.toBeInTheDocument();
   });
 
-  it('lets mr_walid save the fixed platform fee', async () => {
+  it('hides platform fee editing from mr_walid (only admin can set fee)', async () => {
     setAuthenticatedWalid();
     seedUnit();
-    const user = userEvent.setup();
     renderApp('/walid/pricing');
 
-    await user.clear(await screen.findByLabelText('الرسوم الثابتة (ج.م)'));
-    await user.type(screen.getByLabelText('الرسوم الثابتة (ج.م)'), '150');
-    await user.click(screen.getByRole('button', { name: 'حفظ رسوم المنصة' }));
-
-    await waitFor(() => {
-      expect(expectRpcCall('set_platform_fee')).toEqual({ p_fee: 150 });
-    });
+    expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
+    expect(screen.queryByLabelText('الرسوم الثابتة (ج.م)')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'حفظ رسوم المنصة' })).not.toBeInTheDocument();
   });
 
   it('shows the total auto-calculated from base price + fixed platform fee', async () => {

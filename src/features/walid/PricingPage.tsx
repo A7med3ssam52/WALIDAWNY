@@ -63,7 +63,7 @@ const EMPTY_FORM: PriceFormState = {
 export function PricingPage() {
   const { role } = useAuth();
   const { showToast } = useToast();
-  const canSetPlatformFee = role === 'admin' || role === 'mr_walid';
+  const canSetPlatformFee = role === 'admin';
   const [pricing, setPricing] = useState<UnitPricingWithUnit[] | null>(null);
   const [platformFee, setPlatformFeeValue] = useState<number | null>(null);
   const [grades, setGrades] = useState<Grade[]>([]);
