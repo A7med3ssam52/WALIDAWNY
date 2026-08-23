@@ -1391,6 +1391,8 @@ export interface CreateExamQuestionInput {
   correctIndex?: number | null;
   maxScore?: number;
   sortOrder?: number;
+  promptImagePath?: string | null;
+  choiceImagePaths?: (string | null)[] | null;
 }
 
 export async function createExamQuestion(input: CreateExamQuestionInput): Promise<string> {
@@ -1404,6 +1406,8 @@ export async function createExamQuestion(input: CreateExamQuestionInput): Promis
       correct_index: input.type === 'mcq' ? (input.correctIndex ?? null) : null,
       max_score: input.maxScore ?? 1,
       sort_order: input.sortOrder ?? 0,
+      prompt_image_path: input.promptImagePath ?? null,
+      choice_image_paths: input.choiceImagePaths ?? null,
     })
     .select('id')
     .single();
@@ -1421,6 +1425,8 @@ export interface UpdateExamQuestionInput {
   correctIndex?: number | null;
   maxScore?: number | null;
   sortOrder?: number | null;
+  promptImagePath?: string | null;
+  choiceImagePaths?: (string | null)[] | null;
 }
 
 export async function updateExamQuestion(input: UpdateExamQuestionInput): Promise<void> {
@@ -1443,6 +1449,12 @@ export async function updateExamQuestion(input: UpdateExamQuestionInput): Promis
   if (input.sortOrder !== undefined) {
     payload.sort_order = input.sortOrder;
   }
+  if (input.promptImagePath !== undefined) {
+    payload.prompt_image_path = input.promptImagePath;
+  }
+  if (input.choiceImagePaths !== undefined) {
+    payload.choice_image_paths = input.choiceImagePaths;
+  }
   const { error } = await getSupabaseClient()
     .from('exam_questions')
     .update(payload as Partial<ExamQuestion>)
@@ -1450,6 +1462,72 @@ export async function updateExamQuestion(input: UpdateExamQuestionInput): Promis
   if (error) {
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------
+// Exam image helpers (Phase 12)
+// ---------------------------------------------------------------------
+export interface ExamImageUploadSession {
+  uploadUrl: string;
+  storage_path: string;
+  exam_id: string;
+}
+
+export async function uploadExamImage(input: {
+  examId: string;
+  fileName: string;
+  fileSize?: number;
+}): Promise<ExamImageUploadSession> {
+  return invokeFunction<ExamImageUploadSession>('upload-exam-image', {
+    method: 'POST',
+    body: {
+      exam_id: input.examId,
+      file_name: input.fileName,
+      ...(input.fileSize !== undefined ? { file_size: input.fileSize } : {}),
+    },
+  });
+}
+
+function examImageContentType(file: File): string {
+  const dot = file.name.lastIndexOf('.');
+  const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  return file.type || 'application/octet-stream';
+}
+
+export async function uploadExamImageBytes(uploadUrl: string, file: File): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': examImageContentType(file) },
+      body: file,
+    });
+  } catch {
+    throw codeError('network_error');
+  }
+  if (!response.ok) {
+    throw codeError(response.status >= 500 || response.status === 429 ? 'internal_error' : 'exam_image_upload_failed');
+  }
+}
+
+export type ExamQuestionImageUrls = {
+  question_id: string;
+  prompt_image_url: string | null;
+  choice_image_urls: (string | null)[] | null;
+};
+
+export async function getExamImageSignedUrls(examId: string): Promise<ExamQuestionImageUrls[]> {
+  const res = await invokeFunction<{ exam_id: string; images: ExamQuestionImageUrls[] }>(
+    'get-exam-image-signed-urls',
+    {
+      method: 'POST',
+      body: { exam_id: examId },
+    },
+  );
+  return Array.isArray(res.images) ? res.images : [];
 }
 
 export async function deleteExamQuestion(questionId: string): Promise<void> {

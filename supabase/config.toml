@@ -41,6 +41,16 @@ verify_jwt = true
 [functions.get-board-signed-urls]
 verify_jwt = true
 
+[functions.upload-exam-image]
+verify_jwt = true
+
+[functions.get-exam-image-signed-urls]
+verify_jwt = true
+
 [storage.buckets.boards]
 public = false
 file_size_limit = "10MiB"
+
+[storage.buckets.exam-images]
+public = false
+file_size_limit = "5MiB"

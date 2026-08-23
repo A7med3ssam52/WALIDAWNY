@@ -249,6 +249,19 @@ export type ExamQuestion = {
   correct_index: number | null;
   max_score: number;
   sort_order: number;
+  prompt_image_path: string | null;
+  choice_image_paths: (string | null)[] | null;
+};
+
+export type ExamQuestionImageUrls = {
+  question_id: string;
+  prompt_image_url: string | null;
+  choice_image_urls: (string | null)[] | null;
+};
+
+export type ExamImageSignedUrlsResponse = {
+  exam_id: string;
+  images: ExamQuestionImageUrls[];
 };
 
 export type ExamAttemptStatus = 'submitted' | 'graded';

@@ -384,6 +384,8 @@ export function makeExamQuestion(overrides: Partial<AnyRecord> = {}): AnyRecord 
     correct_index: 0,
     max_score: 1,
     sort_order: 1,
+    prompt_image_path: null,
+    choice_image_paths: null,
     ...overrides,
   };
 }

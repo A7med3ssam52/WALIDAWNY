@@ -17,6 +17,7 @@ import {
   createExamQuestion,
   deleteExam,
   deleteExamQuestion,
+  getExamImageSignedUrls,
   getExamQuestions,
   getProfileName,
   getRpcErrorCode,
@@ -29,6 +30,8 @@ import {
   listUnitsForGrade,
   updateExam,
   updateExamQuestion,
+  uploadExamImage,
+  uploadExamImageBytes,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
 import type {
@@ -78,6 +81,38 @@ type PendingGrade = { attempt: ExamAttempt } | null;
 
 const EMPTY_CHOICES = ['', '', '', ''];
 
+const EXAM_IMAGE_MAX_SIZE = 5 * 1024 * 1024;
+const EXAM_IMAGE_ERROR_MESSAGES: Record<string, string> = {
+  file_too_large: 'حجم الصورة يتجاوز الحد المسموح (5 ميجابايت)',
+  invalid_file_name: 'صيغة الصورة غير مدعومة (JPG/PNG/WebP فقط)',
+  exam_not_found: 'الاختبار غير موجود',
+  exam_deleted: 'الاختبار محذوف',
+  upload_url_failed: 'فشل إنشاء رابط الرفع',
+  exam_image_upload_failed: 'فشل رفع الصورة',
+  network_error: 'تعذر الاتصال بالخادم',
+  internal_error: 'حدث خطأ في الخادم',
+};
+
+function examImageErrorMessage(error: unknown): string {
+  const code = getRpcErrorCode(error);
+  if (code && EXAM_IMAGE_ERROR_MESSAGES[code]) return EXAM_IMAGE_ERROR_MESSAGES[code];
+  return 'تعذر رفع الصورة. حاول مرة أخرى';
+}
+
+async function uploadImageFile(examId: string, file: File): Promise<string> {
+  const session = await uploadExamImage({ examId, fileName: file.name, fileSize: file.size });
+  await uploadExamImageBytes(session.uploadUrl, file);
+  return session.storage_path;
+}
+
+function isValidExamImage(file: File): string | null {
+  const extOk = /\.(jpe?g|png|webp)$/i.test(file.name);
+  const typeOk = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+  if (!extOk || !typeOk) return 'يجب اختيار صورة بصيغة JPG أو PNG أو WebP فقط';
+  if (file.size > EXAM_IMAGE_MAX_SIZE) return 'حجم الصورة يتجاوز الحد المسموح (5 ميجابايت)';
+  return null;
+}
+
 export function ExamsPage() {
   const { showToast } = useToast();
   const [grades, setGrades] = useState<Grade[] | null>(null);
@@ -124,6 +159,13 @@ export function ExamsPage() {
   const [questionOrder, setQuestionOrder] = useState('0');
   const [questionCreateError, setQuestionCreateError] = useState<string | null>(null);
   const [questionCreateBusy, setQuestionCreateBusy] = useState(false);
+  const [questionPromptImageFile, setQuestionPromptImageFile] = useState<File | null>(null);
+  const [questionChoiceImageFiles, setQuestionChoiceImageFiles] = useState<(File | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
 
   const [editingQuestion, setEditingQuestion] = useState<PendingQuestionEdit>(null);
   const [editQuestionType, setEditQuestionType] = useState<'mcq' | 'essay'>('mcq');
@@ -134,6 +176,23 @@ export function ExamsPage() {
   const [editQuestionOrder, setEditQuestionOrder] = useState('0');
   const [editQuestionError, setEditQuestionError] = useState<string | null>(null);
   const [editQuestionBusy, setEditQuestionBusy] = useState(false);
+  const [editQuestionPromptImageFile, setEditQuestionPromptImageFile] = useState<File | null>(null);
+  const [editQuestionPromptImagePath, setEditQuestionPromptImagePath] = useState<string | null>(null);
+  const [editQuestionChoiceImageFiles, setEditQuestionChoiceImageFiles] = useState<(File | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [editQuestionChoiceImagePaths, setEditQuestionChoiceImagePaths] = useState<(string | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [imageUrlsByQuestion, setImageUrlsByQuestion] = useState<
+    Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }>
+  >({});
 
   const [deletingQuestion, setDeletingQuestion] = useState<PendingQuestionDelete>(null);
   const [deleteQuestionBusy, setDeleteQuestionBusy] = useState(false);
@@ -230,6 +289,21 @@ export function ExamsPage() {
       ]);
       setQuestions(questionRows);
       setAttempts(attemptRows);
+      // fetch signed URLs for question images (best-effort, never breaks the page)
+      try {
+        if (questionRows.some((q) => q.prompt_image_path || (q.choice_image_paths && q.choice_image_paths.some(Boolean)))) {
+          const signed = await getExamImageSignedUrls(selectedExamId);
+          const map: Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }> = {};
+          for (const img of signed) {
+            map[img.question_id] = { promptUrl: img.prompt_image_url, choiceUrls: img.choice_image_urls };
+          }
+          setImageUrlsByQuestion(map);
+        } else {
+          setImageUrlsByQuestion({});
+        }
+      } catch {
+        setImageUrlsByQuestion({});
+      }
       const [answerGroups, nameRows] = await Promise.all([
         Promise.all(attemptRows.map((attempt) => listAttemptAnswers(attempt.id))),
         Promise.all(attemptRows.map((attempt) => getProfileName(attempt.student_id))),
@@ -388,8 +462,53 @@ export function ExamsPage() {
       setQuestionCreateError(validationError);
       return;
     }
+    if (questionPromptImageFile) {
+      const imageError = isValidExamImage(questionPromptImageFile);
+      if (imageError) {
+        setQuestionCreateError(imageError);
+        return;
+      }
+    }
+    if (questionType === 'mcq') {
+      for (let i = 0; i < questionChoiceImageFiles.length; i += 1) {
+        const file = questionChoiceImageFiles[i];
+        if (file) {
+          const imageError = isValidExamImage(file);
+          if (imageError) {
+            setQuestionCreateError(`صورة الخيار ${CHOICE_LABELS[i]}: ${imageError}`);
+            return;
+          }
+        }
+      }
+    }
     setQuestionCreateBusy(true);
     try {
+      let promptImagePath: string | null = null;
+      if (questionPromptImageFile) {
+        try {
+          promptImagePath = await uploadImageFile(selectedExamId, questionPromptImageFile);
+        } catch (e) {
+          setQuestionCreateError(examImageErrorMessage(e));
+          return;
+        }
+      }
+      let choiceImagePaths: (string | null)[] | null = null;
+      if (questionType === 'mcq') {
+        choiceImagePaths = [null, null, null, null];
+        for (let i = 0; i < 4; i += 1) {
+          const file = questionChoiceImageFiles[i];
+          if (file) {
+            try {
+              choiceImagePaths[i] = await uploadImageFile(selectedExamId, file);
+            } catch (e) {
+              setQuestionCreateError(examImageErrorMessage(e));
+              return;
+            }
+          }
+        }
+        // only keep paths for non-empty choices? keep array length 4 for simplicity, but trim to choices length
+        if (choiceImagePaths.every((p) => p === null)) choiceImagePaths = null;
+      }
       await createExamQuestion({
         examId: selectedExamId,
         type: questionType,
@@ -398,11 +517,15 @@ export function ExamsPage() {
         correctIndex: questionType === 'mcq' ? Number(questionCorrectIndex) : null,
         maxScore: Number(questionMaxScore) || 0,
         sortOrder: Number(questionOrder) || 0,
+        promptImagePath: promptImagePath,
+        choiceImagePaths: choiceImagePaths,
       });
       setQuestionPrompt('');
       setQuestionChoices(EMPTY_CHOICES);
       setQuestionCorrectIndex('0');
       setQuestionMaxScore('1');
+      setQuestionPromptImageFile(null);
+      setQuestionChoiceImageFiles([null, null, null, null]);
       showToast('تم إضافة السؤال بنجاح');
       await loadDetails();
     } catch (err) {
@@ -422,6 +545,13 @@ export function ExamsPage() {
     setEditQuestionCorrectIndex(String(question.correct_index ?? 0));
     setEditQuestionMaxScore(String(question.max_score));
     setEditQuestionOrder(String(question.sort_order));
+    setEditQuestionPromptImageFile(null);
+    setEditQuestionPromptImagePath(question.prompt_image_path ?? null);
+    const existingChoicePaths = (question.choice_image_paths ?? []) as (string | null)[];
+    setEditQuestionChoiceImagePaths(
+      [...existingChoicePaths, null, null, null, null].slice(0, 4) as (string | null)[],
+    );
+    setEditQuestionChoiceImageFiles([null, null, null, null]);
     setEditQuestionError(null);
   };
 
@@ -429,9 +559,67 @@ export function ExamsPage() {
     if (!editingQuestion) {
       return;
     }
+    if (editQuestionPromptImageFile) {
+      const imageError = isValidExamImage(editQuestionPromptImageFile);
+      if (imageError) {
+        setEditQuestionError(imageError);
+        return;
+      }
+    }
+    if (editQuestionType === 'mcq') {
+      for (let i = 0; i < editQuestionChoiceImageFiles.length; i += 1) {
+        const file = editQuestionChoiceImageFiles[i];
+        if (file) {
+          const imageError = isValidExamImage(file);
+          if (imageError) {
+            setEditQuestionError(`صورة الخيار ${CHOICE_LABELS[i]}: ${imageError}`);
+            return;
+          }
+        }
+      }
+    }
     setEditQuestionBusy(true);
     setEditQuestionError(null);
     try {
+      let promptImagePath: string | null | undefined = undefined;
+      if (editQuestionPromptImageFile) {
+        try {
+          promptImagePath = await uploadImageFile(editingQuestion.question.exam_id, editQuestionPromptImageFile);
+        } catch (e) {
+          setEditQuestionError(examImageErrorMessage(e));
+          setEditQuestionBusy(false);
+          return;
+        }
+      } else if (editQuestionPromptImagePath === null && editingQuestion.question.prompt_image_path) {
+        // user removed existing image
+        promptImagePath = null;
+      }
+      let choiceImagePaths: (string | null)[] | null | undefined = undefined;
+      if (editQuestionType === 'mcq') {
+        const nextPaths: (string | null)[] = [null, null, null, null];
+        let hasAny = false;
+        for (let i = 0; i < 4; i += 1) {
+          const file = editQuestionChoiceImageFiles[i];
+          if (file) {
+            try {
+              nextPaths[i] = await uploadImageFile(editingQuestion.question.exam_id, file);
+              hasAny = true;
+            } catch (e) {
+              setEditQuestionError(examImageErrorMessage(e));
+              setEditQuestionBusy(false);
+              return;
+            }
+          } else if (editQuestionChoiceImagePaths[i]) {
+            nextPaths[i] = editQuestionChoiceImagePaths[i];
+            hasAny = true;
+          }
+        }
+        if (hasAny) choiceImagePaths = nextPaths;
+        else if (editingQuestion.question.choice_image_paths) choiceImagePaths = null;
+      } else {
+        // essay -> clear choice images if existed
+        if (editingQuestion.question.choice_image_paths) choiceImagePaths = null;
+      }
       await updateExamQuestion({
         questionId: editingQuestion.question.id,
         type: editQuestionType,
@@ -441,6 +629,8 @@ export function ExamsPage() {
         correctIndex: editQuestionType === 'mcq' ? Number(editQuestionCorrectIndex) : null,
         maxScore: Number(editQuestionMaxScore) || 0,
         sortOrder: Number(editQuestionOrder) || 0,
+        ...(promptImagePath !== undefined ? { promptImagePath } : {}),
+        ...(choiceImagePaths !== undefined ? { choiceImagePaths } : {}),
       });
       showToast('تم تحديث السؤال بنجاح');
       setEditingQuestion(null);
@@ -772,18 +962,49 @@ export function ExamsPage() {
                       />
                     </div>
                   </div>
+                  <div className="mt-3">
+                    <label htmlFor="question-prompt-image" className="text-sm font-medium text-secondary-foreground">
+                      صورة السؤال (اختياري - JPG/PNG/WebP ≤5MB)
+                    </label>
+                    <input
+                      id="question-prompt-image"
+                      name="question-prompt-image"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(event) => setQuestionPromptImageFile(event.target.files?.[0] ?? null)}
+                      className="mt-1 block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground"
+                    />
+                    {questionPromptImageFile ? (
+                      <p className="mt-1 text-xs text-foreground-subtle">تم اختيار: {questionPromptImageFile.name}</p>
+                    ) : null}
+                  </div>
                   {questionType === 'mcq' ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       {questionChoices.map((choice, index) => (
-                        <Input
-                          key={index}
-                          label={`الخيار ${CHOICE_LABELS[index]}`}
-                          name={`question-choice-${index}`}
-                          value={choice}
-                          onChange={(event) =>
-                            handleChoiceChange(index, event.target.value, setQuestionChoices)
-                          }
-                        />
+                        <div key={index} className="flex flex-col gap-1">
+                          <Input
+                            label={`الخيار ${CHOICE_LABELS[index]}`}
+                            name={`question-choice-${index}`}
+                            value={choice}
+                            onChange={(event) =>
+                              handleChoiceChange(index, event.target.value, setQuestionChoices)
+                            }
+                          />
+                          <input
+                            id={`question-choice-image-${index}`}
+                            name={`question-choice-image-${index}`}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              setQuestionChoiceImageFiles((prev) => prev.map((f, i) => (i === index ? file : f)));
+                            }}
+                            className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+                          />
+                          {questionChoiceImageFiles[index] ? (
+                            <span className="text-xs text-foreground-subtle truncate">{questionChoiceImageFiles[index]?.name}</span>
+                          ) : null}
+                        </div>
                       ))}
                       <Select
                         label="الإجابة الصحيحة"
@@ -846,12 +1067,32 @@ export function ExamsPage() {
                             <p className="mt-1.5 text-sm font-medium text-foreground">
                               {index + 1}. {question.prompt}
                             </p>
+                            {imageUrlsByQuestion[question.id]?.promptUrl ? (
+                              <img
+                                src={imageUrlsByQuestion[question.id].promptUrl!}
+                                alt={`صورة السؤال ${index + 1}`}
+                                loading="lazy"
+                                data-testid={`question-prompt-image-${question.id}`}
+                                className="mt-2 max-h-48 w-full max-w-sm rounded-lg border border-white/10 object-contain"
+                              />
+                            ) : null}
                             {question.type === 'mcq' ? (
                               <ul className="mt-1.5 flex flex-wrap gap-2 text-xs text-foreground-muted">
                                 {(question.choices ?? []).map((choice, choiceIndex) => (
-                                  <li key={choiceIndex}>
-                                    {CHOICE_LABELS[choiceIndex]}) {choice}
-                                    {question.correct_index === choiceIndex ? ' ✓' : ''}
+                                  <li key={choiceIndex} className="flex flex-col items-start gap-1">
+                                    <span>
+                                      {CHOICE_LABELS[choiceIndex]}) {choice}
+                                      {question.correct_index === choiceIndex ? ' ✓' : ''}
+                                    </span>
+                                    {imageUrlsByQuestion[question.id]?.choiceUrls?.[choiceIndex] ? (
+                                      <img
+                                        src={imageUrlsByQuestion[question.id].choiceUrls![choiceIndex]!}
+                                        alt={`صورة الخيار ${CHOICE_LABELS[choiceIndex]}`}
+                                        loading="lazy"
+                                        data-testid={`question-choice-image-${question.id}-${choiceIndex}`}
+                                        className="h-20 w-20 rounded-md border border-white/10 object-cover"
+                                      />
+                                    ) : null}
                                   </li>
                                 ))}
                               </ul>
@@ -1067,18 +1308,95 @@ export function ExamsPage() {
             error={editQuestionError ?? undefined}
             onChange={(event) => setEditQuestionPrompt(event.target.value)}
           />
+          <div className="flex flex-col gap-1">
+            <label htmlFor="edit-question-prompt-image" className="text-sm font-medium text-secondary-foreground">
+              صورة السؤال (اختياري)
+            </label>
+            {editQuestionPromptImagePath ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-foreground-subtle truncate">صورة موجودة</span>
+                {imageUrlsByQuestion[editingQuestion!.question.id]?.promptUrl ? (
+                  <img
+                    src={imageUrlsByQuestion[editingQuestion!.question.id]!.promptUrl!}
+                    alt="صورة السؤال الحالية"
+                    className="h-12 w-12 rounded object-cover border border-white/10"
+                  />
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditQuestionPromptImagePath(null);
+                    setEditQuestionPromptImageFile(null);
+                  }}
+                  className="text-error"
+                >
+                  إزالة
+                </Button>
+              </div>
+            ) : null}
+            <input
+              id="edit-question-prompt-image"
+              name="edit-question-prompt-image"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => setEditQuestionPromptImageFile(event.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+            />
+            {editQuestionPromptImageFile ? (
+              <span className="text-xs text-foreground-subtle">{editQuestionPromptImageFile.name}</span>
+            ) : null}
+          </div>
           {editQuestionType === 'mcq' ? (
             <>
               {editQuestionChoices.map((choice, index) => (
-                <Input
-                  key={index}
-                  label={`الخيار ${CHOICE_LABELS[index]}`}
-                  name={`edit-question-choice-${index}`}
-                  value={choice}
-                  onChange={(event) =>
-                    handleChoiceChange(index, event.target.value, setEditQuestionChoices)
-                  }
-                />
+                <div key={index} className="flex flex-col gap-1">
+                  <Input
+                    label={`الخيار ${CHOICE_LABELS[index]}`}
+                    name={`edit-question-choice-${index}`}
+                    value={choice}
+                    onChange={(event) =>
+                      handleChoiceChange(index, event.target.value, setEditQuestionChoices)
+                    }
+                  />
+                  {editQuestionChoiceImagePaths[index] ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-foreground-subtle">صورة موجودة</span>
+                      {imageUrlsByQuestion[editingQuestion!.question.id]?.choiceUrls?.[index] ? (
+                        <img
+                          src={imageUrlsByQuestion[editingQuestion!.question.id]!.choiceUrls![index]!}
+                          alt={`صورة الخيار ${CHOICE_LABELS[index]}`}
+                          className="h-10 w-10 rounded object-cover border border-white/10"
+                        />
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditQuestionChoiceImagePaths((prev) => prev.map((p, i) => (i === index ? null : p)));
+                          setEditQuestionChoiceImageFiles((prev) => prev.map((f, i) => (i === index ? null : f)));
+                        }}
+                        className="text-error"
+                      >
+                        إزالة
+                      </Button>
+                    </div>
+                  ) : null}
+                  <input
+                    id={`edit-question-choice-image-${index}`}
+                    name={`edit-question-choice-image-${index}`}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      setEditQuestionChoiceImageFiles((prev) => prev.map((f, i) => (i === index ? file : f)));
+                    }}
+                    className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+                  />
+                  {editQuestionChoiceImageFiles[index] ? (
+                    <span className="text-xs text-foreground-subtle">{editQuestionChoiceImageFiles[index]?.name}</span>
+                  ) : null}
+                </div>
               ))}
               <Select
                 label="الإجابة الصحيحة"

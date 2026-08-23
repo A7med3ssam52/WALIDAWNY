@@ -9,6 +9,7 @@ import { ErrorState } from '../../components/ErrorState';
 import { Skeleton } from '../../components/Skeleton';
 import { useToast } from '../../components/Toast';
 import {
+  getExamImageSignedUrls,
   getExamQuestions,
   getMyExamAttempt,
   getRpcErrorCode,
@@ -57,6 +58,9 @@ export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) 
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [imageUrlsByExam, setImageUrlsByExam] = useState<
+    Record<string, Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }>>
+  >({});
 
   const load = useCallback(async () => {
     setLoadError(false);
@@ -73,6 +77,26 @@ export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) 
       setAttempts(
         Object.fromEntries(examRows.map((exam, index) => [exam.id, attemptRows[index]])),
       );
+      // fetch image signed URLs per exam (best-effort)
+      const imageMaps: Record<string, Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }>> = {};
+      await Promise.all(
+        examRows.map(async (exam, idx) => {
+          const qs = questionGroups[idx] ?? [];
+          const hasImages = qs.some((q) => q.prompt_image_path || (q.choice_image_paths && (q.choice_image_paths as unknown[]).some(Boolean)));
+          if (!hasImages) return;
+          try {
+            const signed = await getExamImageSignedUrls(exam.id);
+            const map: Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }> = {};
+            for (const img of signed) {
+              map[img.question_id] = { promptUrl: img.prompt_image_url, choiceUrls: img.choice_image_urls };
+            }
+            imageMaps[exam.id] = map;
+          } catch {
+            // ignore image fetch errors
+          }
+        }),
+      );
+      setImageUrlsByExam(imageMaps);
     } catch {
       setLoadError(true);
     }
@@ -183,61 +207,84 @@ export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) 
                   <Badge variant="neutral">درجة النجاح: {exam.passing_score}</Badge>
                   <Badge variant="neutral">{questions.length} سؤال</Badge>
                 </div>
-                {questions.map((question, questionIndex) => (
-                  <div
-                    key={question.id}
-                    className="rounded-xl border border-white/10 bg-white/4 p-4"
-                    data-testid={`exam-question-${question.id}`}
-                  >
-                    <p className="font-medium text-foreground">
-                      {questionIndex + 1}. {question.prompt}
-                    </p>
-                    {question.type === 'mcq' ? (
-                      <div className="mt-3 flex flex-col gap-2">
-                        {(question.choices ?? []).map((choice, choiceIndex) => {
-                          const choiceId = `choice-${question.id}-${choiceIndex}`;
-                          return (
-                            <label
-                              key={choiceId}
-                              htmlFor={choiceId}
-                              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
-                                answers[question.id] === choiceIndex
-                                  ? 'border-primary/50 bg-primary/10 text-foreground'
-                                  : 'border-white/10 bg-white/4 text-foreground-muted hover:border-white/20 hover:text-foreground'
-                              }`}
-                            >
-                              <input
-                                id={choiceId}
-                                type="radio"
-                                name={`question-${question.id}`}
-                                checked={answers[question.id] === choiceIndex}
-                                onChange={() =>
-                                  setAnswers((prev) => ({ ...prev, [question.id]: choiceIndex }))
-                                }
-                                className="h-4 w-4 accent-[var(--color-primary)]"
-                              />
-                              {choice}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <textarea
-                        aria-label={`إجابة السؤال ${questionIndex + 1}`}
-                        value={essayTexts[question.id] ?? ''}
-                        onChange={(event) =>
-                          setEssayTexts((prev) => ({
-                            ...prev,
-                            [question.id]: event.target.value,
-                          }))
-                        }
-                        rows={3}
-                        className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        placeholder="اكتب إجابتك هنا..."
-                      />
-                    )}
-                  </div>
-                ))}
+                {questions.map((question, questionIndex) => {
+                  const promptUrl = imageUrlsByExam[exam.id]?.[question.id]?.promptUrl ?? null;
+                  const choiceUrls = imageUrlsByExam[exam.id]?.[question.id]?.choiceUrls ?? null;
+                  return (
+                    <div
+                      key={question.id}
+                      className="rounded-xl border border-white/10 bg-white/4 p-4"
+                      data-testid={`exam-question-${question.id}`}
+                    >
+                      <p className="font-medium text-foreground">
+                        {questionIndex + 1}. {question.prompt}
+                      </p>
+                      {promptUrl ? (
+                        <img
+                          src={promptUrl}
+                          alt={`صورة السؤال ${questionIndex + 1}`}
+                          loading="lazy"
+                          data-testid={`exam-question-prompt-image-${question.id}`}
+                          className="mt-3 max-h-64 w-full max-w-md rounded-lg border border-white/10 object-contain"
+                        />
+                      ) : null}
+                      {question.type === 'mcq' ? (
+                        <div className="mt-3 flex flex-col gap-2">
+                          {(question.choices ?? []).map((choice, choiceIndex) => {
+                            const choiceId = `choice-${question.id}-${choiceIndex}`;
+                            const choiceUrl = choiceUrls?.[choiceIndex] ?? null;
+                            return (
+                              <label
+                                key={choiceId}
+                                htmlFor={choiceId}
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                                  answers[question.id] === choiceIndex
+                                    ? 'border-primary/50 bg-primary/10 text-foreground'
+                                    : 'border-white/10 bg-white/4 text-foreground-muted hover:border-white/20 hover:text-foreground'
+                                }`}
+                              >
+                                <input
+                                  id={choiceId}
+                                  type="radio"
+                                  name={`question-${question.id}`}
+                                  checked={answers[question.id] === choiceIndex}
+                                  onChange={() =>
+                                    setAnswers((prev) => ({ ...prev, [question.id]: choiceIndex }))
+                                  }
+                                  className="h-4 w-4 accent-[var(--color-primary)]"
+                                />
+                                <span className="flex-1">{choice}</span>
+                                {choiceUrl ? (
+                                  <img
+                                    src={choiceUrl}
+                                    alt={`صورة الخيار ${choiceIndex + 1}`}
+                                    loading="lazy"
+                                    data-testid={`exam-choice-image-${question.id}-${choiceIndex}`}
+                                    className="h-16 w-16 shrink-0 rounded-md border border-white/10 object-cover"
+                                  />
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <textarea
+                          aria-label={`إجابة السؤال ${questionIndex + 1}`}
+                          value={essayTexts[question.id] ?? ''}
+                          onChange={(event) =>
+                            setEssayTexts((prev) => ({
+                              ...prev,
+                              [question.id]: event.target.value,
+                            }))
+                          }
+                          rows={3}
+                          className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          placeholder="اكتب إجابتك هنا..."
+                        />
+                      )}
+                    </div>
+                  );
+                })}
                 {submitError ? (
                   <p role="alert" className="text-sm font-medium text-error">
                     {submitError}
