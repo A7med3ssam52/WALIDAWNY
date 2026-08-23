@@ -775,6 +775,8 @@ export interface Database {
       list_exams: { Args: { p_lesson_id: string }; Returns: Exam[] };
       get_exam_questions: { Args: { p_exam_id: string }; Returns: ExamQuestion[] };
       get_my_exam_attempt: { Args: { p_exam_id: string }; Returns: ExamAttempt[] };
+      delete_exam: { Args: { p_exam_id: string }; Returns: void };
+      delete_exam_question: { Args: { p_question_id: string }; Returns: void };
       submit_exam_attempt: {
         Args: { p_exam_id: string; p_answers: unknown };
         Returns: ExamAttempt;

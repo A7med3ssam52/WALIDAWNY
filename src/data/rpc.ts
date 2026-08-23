@@ -1374,10 +1374,7 @@ export async function updateExam(input: UpdateExamInput): Promise<void> {
 }
 
 export async function deleteExam(examId: string): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .from('exams')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', examId);
+  const { error } = await getSupabaseClient().rpc('delete_exam', { p_exam_id: examId });
   if (error) {
     throw error;
   }
@@ -1531,7 +1528,9 @@ export async function getExamImageSignedUrls(examId: string): Promise<ExamQuesti
 }
 
 export async function deleteExamQuestion(questionId: string): Promise<void> {
-  const { error } = await getSupabaseClient().from('exam_questions').delete().eq('id', questionId);
+  const { error } = await getSupabaseClient().rpc('delete_exam_question', {
+    p_question_id: questionId,
+  });
   if (error) {
     throw error;
   }
