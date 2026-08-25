@@ -283,6 +283,7 @@ export function StudentCurriculumPage() {
               const expanded = isExpanded(unit.id);
 
               if (!isPurchased) {
+                const trialLessons = unitLessons.filter((lesson) => lesson.is_trial);
                 return (
                   <GridCard key={unit.id}>
                     <LockedUnitCard
@@ -295,6 +296,37 @@ export function StudentCurriculumPage() {
                       redeemBusy={redeemByUnit[unit.id]?.busy ?? false}
                       redeemError={redeemByUnit[unit.id]?.error ?? null}
                     />
+                    {trialLessons.length > 0 ? (
+                      <div className="mt-4 border-t border-white/5 pt-4">
+                        <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <PlayCircle className="h-4 w-4 text-primary" aria-hidden="true" />
+                          درس مجاني متاح بدون تفعيل
+                        </p>
+                        <ul className="divide-y divide-border-muted overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+                          {trialLessons.map((lesson) => {
+                            const progress = progressByLesson.get(lesson.id);
+                            return (
+                              <li key={lesson.id}>
+                                <Link
+                                  to={`/student/lessons/${lesson.id}`}
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  data-testid={`curriculum-lesson-${lesson.id}`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                                      <PlayCircle className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-sm text-foreground truncate">{lesson.title}</span>
+                                    <Badge variant="info">مجاني</Badge>
+                                  </div>
+                                  <LessonProgressBadge progress={progress} />
+                                </Link>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
                   </GridCard>
                 );
               }
@@ -357,6 +389,9 @@ export function StudentCurriculumPage() {
                                     <PlayCircle className="h-4 w-4" />
                                   </div>
                                   <span className="text-sm text-foreground truncate">{lesson.title}</span>
+                                  {lesson.is_trial ? (
+                                    <Badge variant="info">مجاني</Badge>
+                                  ) : null}
                                 </div>
                                 <LessonProgressBadge progress={progress} />
                               </Link>

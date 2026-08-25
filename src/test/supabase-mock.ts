@@ -1155,7 +1155,8 @@ function createMockClient() {
       return {
         data: {
           has_access: purchased || isTrial,
-          is_trial: isTrial && !purchased,
+          has_purchase: purchased,
+          is_trial: isTrial,
           unit_id: lesson.unit_id,
           unit_name: unit?.name ?? '',
           price: pricing?.total_price ?? null,
