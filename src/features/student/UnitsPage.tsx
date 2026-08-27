@@ -366,6 +366,104 @@ export function UnitsPage() {
                 </p>
               </div>
 
+              <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                <h4 className="flex items-center gap-2 font-display text-sm font-bold text-foreground">
+                  <Receipt className="h-4 w-4 text-primary" />
+                  طريقة الحصول على كود التفعيل
+                </h4>
+                <p className="mt-2 text-sm leading-6 text-foreground-muted">
+                  للاستلام الفوري للكود، حوّل قيمة الوحدة بإحدى الطريقتين التاليتين، ثم أرسل صورة
+                  الإيصال للمستر على واتساب ليُرسل لك كود التفعيل{' '}
+                  <span className="font-mono font-semibold text-foreground">WLDN-XXXX</span> مباشرة.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
+                      <Wallet className="h-3.5 w-3.5" />
+                      تحويل على المحفظة
+                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span dir="ltr" className="font-mono text-base font-bold tracking-wider text-foreground">
+                        {WALLET_NUMBER}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await copyText(WALLET_NUMBER);
+                          if (ok) {
+                            setWalletCopied(true);
+                            showToast('تم نسخ رقم المحفظة');
+                            window.setTimeout(() => setWalletCopied(false), 2000);
+                          }
+                        }}
+                        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/12 bg-white/5 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                      >
+                        {walletCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {walletCopied ? 'تم النسخ' : 'نسخ'}
+                      </button>
+                    </div>
+                    <a
+                      href={`tel:${WALLET_NUMBER}`}
+                      dir="ltr"
+                      className="text-xs font-medium text-primary-strong hover:underline"
+                    >
+                      {WALLET_NUMBER}
+                    </a>
+                  </div>
+                  <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
+                      <CreditCard className="h-3.5 w-3.5" />
+                      تحويل عبر إنستاباي
+                    </span>
+                    <a
+                      href={INSTAPAY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      dir="ltr"
+                      className="inline-flex items-center gap-1.5 break-all text-sm font-medium text-primary-strong hover:underline"
+                    >
+                      <span>ipn.eg/S/walidawny888/instapay/6a8lU0</span>
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    </a>
+                    <a
+                      href={INSTAPAY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-fit items-center gap-1 rounded-md border border-white/12 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      فتح رابط إنستاباي
+                    </a>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex items-center gap-2 text-sm font-medium text-emerald-100">
+                    <Send className="h-4 w-4 shrink-0" />
+                    بعد التحويل، أرسل الإيصال على واتساب ليصلك الكود
+                  </p>
+                  <a
+                    href={buildWhatsAppLink(WHATSAPP_RECEIPT_NUMBER, WHATSAPP_RECEIPT_MESSAGE)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0"
+                  >
+                    <Button
+                      size="sm"
+                      icon={<WhatsAppIcon className="h-4 w-4" />}
+                      className="whitespace-nowrap bg-emerald-500 text-white hover:bg-emerald-400"
+                    >
+                      إرسال الإيصال على واتساب
+                    </Button>
+                  </a>
+                </div>
+                <p className="mt-3 text-xs text-foreground-subtle">
+                  رقم واتساب المستر لاستلام الكود:{' '}
+                  <span dir="ltr" className="font-mono font-semibold text-foreground">
+                    {WHATSAPP_RECEIPT_NUMBER}
+                  </span>
+                </p>
+              </div>
+
               <RedeemCodeForm
                 onSubmit={(code) => handleRedeem(code)}
                 busy={redeemBusy}
