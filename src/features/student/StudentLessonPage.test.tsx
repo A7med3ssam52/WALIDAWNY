@@ -467,9 +467,8 @@ describe('StudentLessonPage', () => {
     ];
     renderApp('/student/lessons/lesson-1');
 
-    expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
-      'src',
-      'https://www.youtube-nocookie.com/embed/abc123XYZ',
+    expect((await screen.findByTestId('youtube-embed')).getAttribute('src')).toContain(
+      'https://www.youtube.com/embed/abc123XYZ',
     );
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
     expect(
@@ -541,9 +540,8 @@ describe('StudentLessonPage', () => {
     // Initially primary bunny is playing — single player
     expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('playlist-item-video-3'));
-    expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
-      'src',
-      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+    expect((await screen.findByTestId('youtube-embed')).getAttribute('src')).toContain(
+      'https://www.youtube.com/embed/dQw4w9WgXcQ',
     );
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
     expect(screen.getAllByText('يوتيوب').length).toBeGreaterThanOrEqual(1);

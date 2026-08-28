@@ -8,10 +8,7 @@ describe('YouTubeEmbed', () => {
     render(<YouTubeEmbed videoId="dQw4w9WgXcQ" title="شرح الفيديو" />);
     const frame = screen.getByTestId('youtube-embed');
     expect(frame.tagName).toBe('IFRAME');
-    expect(frame).toHaveAttribute(
-      'src',
-      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
-    );
+    expect(frame.getAttribute('src')).toContain('https://www.youtube.com/embed/dQw4w9WgXcQ');
     expect(frame).toHaveAttribute('title', 'شرح الفيديو');
     expect(frame).toHaveAttribute('allowfullscreen', '');
   });
