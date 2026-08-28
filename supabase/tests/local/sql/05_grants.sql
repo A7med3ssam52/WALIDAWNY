@@ -4,12 +4,12 @@
 -- Verifies the MED-6 allowlist exactly: anon -> ONLY get_public_settings
 -- + list_active_grades (0027 registration picker) + get_public_unit_prices
 -- (0028 landing page) + get_platform_fee (0031 public read); authenticated
--- -> the 78 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
+-- -> the 79 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
 -- 5 new exam RPCs (0029) + the 3 new comment RPCs (0030) + the pricing
 -- RPCs (0031) + the 4 new board RPCs (0036) + the 2 new unit publish/hide
 -- RPCs (0038) + the 2 new multi-video RPCs add_youtube_video /
 -- delete_lesson_video (0042) + the 5 financial RPCs (0043) + the 5 RLS
--- policy helpers;
+-- policy helpers + get_trial_lessons (0047);
 -- every internal/system function stays non-executable (0028 REVOKEs
 -- create_unit_codes_internal - the staff wrapper is SECURITY DEFINER).
 -- Also verifies binding B2 (notifications DML revoked from clients) and
@@ -90,13 +90,24 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_
     'anon: youtube_video_id_from_url NOT executable (0042 internal helper)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (78 functions = 73 + 5 financial from 0043)
+-- authenticated: the full client allowlist (79 functions = 73 + 5 financial from 0043 + get_trial_lessons 0047)
 -- ---------------------------------------------------------------------
+
+DO $
+DECLARE
+    v_count integer;
+BEGIN
+    SELECT count(*) INTO v_count
+    FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace
+      AND has_function_privilege('authenticated', oid, 'EXECUTE');
+    RAISE NOTICE 'ACTUAL FUNCTION COUNT: %', v_count;
+END $;
 SELECT tests.assert(
-    (SELECT count(*) = 78 FROM pg_proc
+    (SELECT count(*) = 79 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 78 executable public functions');
+    'authenticated: exactly 79 executable public functions (78 + get_trial_lessons from 0047)');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -150,6 +161,7 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.create_unit_
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_all_unit_purchases(uuid)', 'EXECUTE'), 'g: list_all_unit_purchases (0028)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.unit_purchase_stats()', 'EXECUTE'), 'g: unit_purchase_stats (0028)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.set_lesson_trial(uuid, boolean)', 'EXECUTE'), 'g: set_lesson_trial (0028)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_trial_lessons()', 'EXECUTE'), 'g: get_trial_lessons (0047)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.is_admin()', 'EXECUTE'), 'g: is_admin (RLS policy helper)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.is_mr_walid()', 'EXECUTE'), 'g: is_mr_walid (RLS policy helper)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.is_teacher()', 'EXECUTE'), 'g: is_teacher (RLS policy helper)');

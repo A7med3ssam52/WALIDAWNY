@@ -260,10 +260,10 @@ SELECT tests.assert(
     'lesson_pdfs partial unique: one primary per lesson');
 
 SELECT tests.assert(
-    (SELECT count(*) = 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'lessons'
+    (SELECT count(*) = 0 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'lessons'
      AND indexdef LIKE '%UNIQUE%' AND indexdef LIKE '%unit_id%'
      AND indexdef LIKE '%WHERE%is_trial%deleted_at IS NULL%'),
-    'lessons partial unique: at most one trial lesson per unit (0028)');
+    'lessons: NO partial unique on is_trial — multiple trial lessons per unit are allowed (0047)');
 
 -- --- FK ON DELETE behaviors ------------------------------------------
 SELECT tests.assert(

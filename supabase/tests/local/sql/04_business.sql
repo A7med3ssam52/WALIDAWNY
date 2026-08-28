@@ -581,8 +581,8 @@ SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000006';
 SET LOCAL ROLE student;
 SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000001'),
     'access: F without grade = false');
-SELECT tests.assert(NOT public.can_access_lesson('40000000-0000-0000-0000-000000000009'),
-    'access: F trial l9 still false (no grade)');
+SELECT tests.assert(public.can_access_lesson('40000000-0000-0000-0000-000000000009'),
+    'access: F trial l9 TRUE without grade (0047 multi-trial)');
 RESET ROLE;
 RESET "app.current_user_id";
 SET LOCAL ROLE anon;
@@ -1078,11 +1078,11 @@ SET LOCAL ROLE authenticated;
 SELECT tests.expect_rows(
     'SELECT public.create_lesson(''30000000-0000-0000-0000-00000000000c'', ''Trial L1'', NULL, 1, true)',
     1, 'staff: teacher creates a trial lesson');
-SELECT tests.expect_error(
-    'SELECT public.create_lesson(''30000000-0000-0000-0000-00000000000c'', ''Trial L2'', NULL, 2, true)',
-    '23505', 'duplicate key value violates unique constraint "lessons_trial_unique"');
 SELECT tests.expect_rows(
-    'SELECT public.update_lesson((SELECT id FROM public.lessons WHERE unit_id = ''30000000-0000-0000-0000-00000000000c'' AND is_trial), NULL, NULL, NULL, false)',
+    'SELECT public.create_lesson(''30000000-0000-0000-0000-00000000000c'', ''Trial L2'', NULL, 2, true)',
+    1, 'staff: teacher creates trial lesson 2 in same unit (multi allowed)');
+SELECT tests.expect_rows(
+    'SELECT public.update_lesson((SELECT id FROM public.lessons WHERE unit_id = ''30000000-0000-0000-0000-00000000000c'' AND is_trial LIMIT 1), NULL, NULL, NULL, false)',
     1, 'staff: teacher can un-set the trial flag');
 SELECT tests.expect_rows(
     'SELECT public.update_lesson((SELECT id FROM public.lessons WHERE unit_id = ''30000000-0000-0000-0000-00000000000c'' AND NOT is_trial), NULL, NULL, NULL, true)',
