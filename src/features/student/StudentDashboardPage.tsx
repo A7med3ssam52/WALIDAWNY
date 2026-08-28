@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, KeyRound, PackageOpen, User, TrendingUp } from 'lucide-react';
+import { Bell, KeyRound, PackageOpen, User, TrendingUp, Headset, GraduationCap, MessageCircle, Clock } from 'lucide-react';
 
 import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
@@ -9,6 +9,7 @@ import { StatCard } from '../../components/StatCard';
 import { GridCard } from '../../components/GridCard';
 import { PageHeader } from '../../components/PageHeader';
 import { StudentNav } from '../../components/StudentNav';
+import { TechnicalSupportFab } from '../../components/TechnicalSupportFab';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import {
   getMyUnitPurchases,
@@ -130,6 +131,83 @@ export function StudentDashboardPage() {
           icon={<TrendingUp className="h-5 w-5" />}
         />
 
+        {/* === قسم الدعم البارز — فني + أكاديمي === */}
+        <section
+          aria-label="مركز الدعم"
+          className="grid gap-4 md:grid-cols-2"
+          data-testid="support-section"
+        >
+          <div className="glass-card conic-ring spotlight-card relative overflow-hidden p-5 sm:p-6">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-[0_8px_20px_-8px_rgba(99,102,241,0.6)]">
+                <Headset className="h-6 w-6" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-display text-base font-bold text-foreground">الدعم الفني</h3>
+                <p className="mt-1 text-sm leading-6 text-foreground-muted">
+                  مشاكل تسجيل الدخول، تفعيل الكود، الدفع، أو تشغيل الفيديو — نرد خلال دقائق في ساعات العمل
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
+                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>يومياً 10ص – 10م</span>
+                  <span className="h-1 w-1 rounded-full bg-white/20" aria-hidden="true" />
+                  <span>رد سريع</span>
+                </div>
+              </div>
+            </div>
+            <a
+              href={buildWhatsAppLink(
+                '01226771154',
+                'مرحبا، أواجه مشكلة تقنية في المنصة (تسجيل الدخول / تفعيل الكود / الدفع / الفيديو). حسابي: ' + (profile?.full_name ?? user?.email ?? ''),
+              )}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="support-technical-link"
+              className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white sm:w-auto"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+              تواصل واتساب — دعم فني
+            </a>
+          </div>
+
+          <div className="glass-card relative overflow-hidden border-amber-500/20 p-5 sm:p-6">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_8px_20px_-8px_rgba(245,158,11,0.5)]">
+                <GraduationCap className="h-6 w-6" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-display text-base font-bold text-foreground">الدعم الأكاديمي</h3>
+                <p className="mt-1 text-sm leading-6 text-foreground-muted">
+                  أسئلة عن الشرح، المنهج، الواجبات والامتحانات — المدرس يرد عليك مباشرة
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
+                  <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>رد خلال ساعات</span>
+                  <span className="h-1 w-1 rounded-full bg-white/20" aria-hidden="true" />
+                  <span>متابعة يومية</span>
+                </div>
+              </div>
+            </div>
+            {settings?.whatsapp_number ? (
+              <a
+                href={buildWhatsAppLink(
+                  settings.whatsapp_number,
+                  'مرحبا أستاذ وليد، لدي سؤال أكاديمي عن المنهج. حسابي: ' + (profile?.full_name ?? user?.email ?? '') + ' — ',
+                )}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="support-academic-link"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm font-bold text-amber-100 transition-colors hover:bg-amber-500/15 sm:w-auto"
+              >
+                <WhatsAppIcon className="h-4 w-4" />
+                تواصل واتساب — دعم أكاديمي
+              </a>
+            ) : (
+              <p className="mt-4 text-xs text-foreground-subtle">رقم الدعم غير متاح حالياً</p>
+            )}
+          </div>
+        </section>
+
         {isLoading ? (
           <StatsSkeleton />
         ) : (
@@ -199,7 +277,7 @@ export function StudentDashboardPage() {
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="font-display text-lg font-bold text-foreground">
                   وحدات صفك
-                  <span className="ml-2 text-sm font-normal text-foreground-muted">
+                  <span className="ms-2 text-sm font-normal text-foreground-muted">
                     ({gradeUnits.length})
                   </span>
                 </h2>
@@ -414,6 +492,7 @@ export function StudentDashboardPage() {
           </GridCard>
         ) : null}
       </div>
+      <TechnicalSupportFab />
     </LayoutShell>
   );
 }
