@@ -821,6 +821,19 @@ export interface Database {
         Args: { p_from?: string | null; p_to?: string | null };
         Returns: PlatformPayout[];
       };
+      get_trial_lessons: {
+        Args: never;
+        Returns: {
+          lesson_id: string;
+          lesson_title: string;
+          lesson_description: string | null;
+          lesson_sort_order: number;
+          unit_id: string;
+          unit_name: string;
+          grade_id: string;
+          grade_name: string;
+        }[];
+      };
     };
   };
 }

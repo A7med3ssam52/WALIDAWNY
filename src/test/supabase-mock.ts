@@ -1140,6 +1140,51 @@ function createMockClient() {
         .sort((a, b) => String(b.purchased_at).localeCompare(String(a.purchased_at)));
       return { data: rows, error: null };
     }
+    if (fn === 'get_trial_lessons') {
+      if (!uid) {
+        return { data: [], error: null };
+      }
+      const profile = state.profiles.find((p) => p.id === uid);
+      const isActiveProfile = Boolean(profile && profile.status === 'active' && !profile.deleted_at);
+      if (!isActiveProfile) {
+        return { data: [], error: null };
+      }
+      const rows = state.lessons
+        .filter((lesson) => lesson.is_trial === true && lesson.status === 'published' && !lesson.deleted_at)
+        .filter((lesson) => {
+          const unit = state.units.find((u) => u.id === lesson.unit_id);
+          if (!unit || unit.status !== 'published' || unit.deleted_at) return false;
+          const grade = state.grades.find((g) => g.id === unit.grade_id);
+          if (!grade || !grade.is_active || grade.deleted_at) return false;
+          return true;
+        })
+        .map((lesson) => {
+          const unit = state.units.find((u) => u.id === lesson.unit_id)!;
+          const grade = state.grades.find((g) => g.id === unit.grade_id)!;
+          return {
+            lesson_id: lesson.id,
+            lesson_title: lesson.title,
+            lesson_description: lesson.description ?? null,
+            lesson_sort_order: lesson.sort_order,
+            unit_id: unit.id,
+            unit_name: unit.name,
+            grade_id: grade.id,
+            grade_name: grade.name,
+          };
+        })
+        .sort((a, b) => {
+          const ga = state.grades.find((g) => g.id === a.grade_id);
+          const gb = state.grades.find((g) => g.id === b.grade_id);
+          const ua = state.units.find((u) => u.id === a.unit_id);
+          const ub = state.units.find((u) => u.id === b.unit_id);
+          const gSort = Number(ga?.sort_order ?? 0) - Number(gb?.sort_order ?? 0);
+          if (gSort !== 0) return gSort;
+          const uSort = Number(ua?.sort_order ?? 0) - Number(ub?.sort_order ?? 0);
+          if (uSort !== 0) return uSort;
+          return Number(a.lesson_sort_order ?? 0) - Number(b.lesson_sort_order ?? 0);
+        });
+      return { data: rows, error: null };
+    }
     if (fn === 'get_my_lesson_access') {
       const lessonId = String(args?.p_lesson_id ?? '');
       const lesson = state.lessons.find((item) => item.id === lessonId);
@@ -1147,14 +1192,25 @@ function createMockClient() {
         return error('lesson_not_found');
       }
       const unit = state.units.find((item) => item.id === lesson.unit_id);
+      const grade = unit ? state.grades.find((g) => g.id === unit.grade_id) : null;
+      const profile = state.profiles.find((p) => p.id === uid);
       const pricing = state.unitPricing.find((item) => item.unit_id === lesson.unit_id);
       const isTrial = lesson.is_trial === true;
       const purchased = state.unitPurchases.some(
-        (item) => item.student_id === uid && item.unit_id === lesson.unit_id,
+        (item) => item.student_id === uid && item.unit_id === lesson.unit_id && item.status === 'active',
       );
+      const lessonPublished = lesson.status === 'published' && !lesson.deleted_at;
+      const unitPublished = Boolean(unit && unit.status === 'published' && !unit.deleted_at);
+      const gradeActive = Boolean(grade && grade.is_active && !grade.deleted_at);
+      const profileActive = Boolean(profile && profile.status === 'active' && !profile.deleted_at);
+      const gradeMatches = !profile?.grade_id || !unit || unit.grade_id === profile.grade_id;
+      const isTrialEligible = isTrial && lessonPublished && unitPublished && gradeActive && profileActive;
+      const isPurchasedEligible =
+        purchased && lessonPublished && unitPublished && gradeActive && profileActive && gradeMatches;
+      const hasAccess = isTrialEligible || isPurchasedEligible;
       return {
         data: {
-          has_access: purchased || isTrial,
+          has_access: hasAccess,
           has_purchase: purchased,
           is_trial: isTrial,
           unit_id: lesson.unit_id,
@@ -1359,14 +1415,22 @@ function createMockClient() {
 
   const studentHasLessonAccess = (uid: string, lessonId: string): boolean => {
     const lesson = state.lessons.find((item) => item.id === lessonId);
-    if (!lesson) {
-      return false;
-    }
+    if (!lesson) return false;
+    const unit = state.units.find((u) => u.id === lesson.unit_id);
+    const grade = unit ? state.grades.find((g) => g.id === unit.grade_id) : null;
+    const profile = state.profiles.find((p) => p.id === uid);
     const isTrial = lesson.is_trial === true;
     const purchased = state.unitPurchases.some(
-      (item) => item.student_id === uid && item.unit_id === lesson.unit_id,
+      (item) => item.student_id === uid && item.unit_id === lesson.unit_id && item.status === 'active',
     );
-    return purchased || isTrial;
+    const lessonPublished = lesson.status === 'published' && !lesson.deleted_at;
+    const unitPublished = Boolean(unit && unit.status === 'published' && !unit.deleted_at);
+    const gradeActive = Boolean(grade && grade.is_active && !grade.deleted_at);
+    const profileActive = Boolean(profile && profile.status === 'active' && !profile.deleted_at);
+    const gradeMatches = !profile?.grade_id || !unit || unit.grade_id === profile.grade_id;
+    const isTrialEligible = isTrial && lessonPublished && unitPublished && gradeActive && profileActive;
+    const isPurchasedEligible = purchased && lessonPublished && unitPublished && gradeActive && profileActive && gradeMatches;
+    return isTrialEligible || isPurchasedEligible;
   };
 
   const applyPhase6Rpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {

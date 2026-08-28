@@ -1020,6 +1020,23 @@ export async function getMyLessonAccess(lessonId: string): Promise<LessonAccessI
   return (data ?? {}) as LessonAccessInfo;
 }
 
+export interface TrialLessonRow {
+  lesson_id: string;
+  lesson_title: string;
+  lesson_description: string | null;
+  lesson_sort_order: number;
+  unit_id: string;
+  unit_name: string;
+  grade_id: string;
+  grade_name: string;
+}
+
+export async function getTrialLessons(): Promise<TrialLessonRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_trial_lessons');
+  if (error) throw error;
+  return (data ?? []) as TrialLessonRow[];
+}
+
 export async function getPublicUnitPrices(): Promise<PublicUnitPrice[]> {
   const { data, error } = await getSupabaseClient().rpc('get_public_unit_prices');
   if (error) {

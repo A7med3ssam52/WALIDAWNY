@@ -17,11 +17,13 @@ import {
   getMyUnitPurchases,
   getPublicSettings,
   getPublicUnitPrices,
+  getTrialLessons,
   listLessonsForUnit,
   listMyProgress,
   listUnitsForGrade,
   redeemUnitCode,
 } from '../../data/rpc';
+import type { TrialLessonRow } from '../../data/rpc';
 import { cn } from '../../lib/cn';
 import type {
   Grade,
@@ -82,6 +84,7 @@ export function StudentCurriculumPage() {
   const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [progressByLesson, setProgressByLesson] = useState<Map<string, Progress>>(new Map());
+  const [trialLessons, setTrialLessons] = useState<TrialLessonRow[]>([]);
   const [error, setError] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState<Set<string>>(new Set());
   const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
@@ -90,18 +93,26 @@ export function StudentCurriculumPage() {
     if (!profile?.grade_id) {
       setGrade(null);
       setUnits([]);
+      try {
+        const [trials, progressRows] = await Promise.all([getTrialLessons(), listMyProgress()]);
+        setTrialLessons(trials);
+        setProgressByLesson(new Map(progressRows.map((row) => [row.lesson_id, row])));
+      } catch {
+        setTrialLessons([]);
+      }
       return;
     }
     setError(false);
     try {
       const gradeRow = await getGradeById(profile.grade_id);
-      const [allUnits, progressRows, purchasesResult, pricesResult, settingsResult] =
+      const [allUnits, progressRows, purchasesResult, pricesResult, settingsResult, trialRows] =
         await Promise.all([
           listUnitsForGrade(profile.grade_id as string),
           listMyProgress(),
           getMyUnitPurchases(),
           getPublicUnitPrices(),
           getPublicSettings(),
+          getTrialLessons(),
         ]);
       const publishedUnits = allUnits
         .filter((unit) => unit.status === 'published')
@@ -120,6 +131,7 @@ export function StudentCurriculumPage() {
       setPurchases(purchasesResult);
       setPrices(pricesResult);
       setSettings(settingsResult);
+      setTrialLessons(trialRows);
     } catch {
       setError(true);
     }
@@ -179,6 +191,15 @@ export function StudentCurriculumPage() {
   }
 
   if (grade === null) {
+    const groupedForNull = trialLessons.reduce((acc, cur) => {
+      const gradeKey = cur.grade_name || 'غير مصنف';
+      const unitKey = cur.unit_name || 'وحدة غير معروفة';
+      if (!acc.has(gradeKey)) acc.set(gradeKey, new Map<string, TrialLessonRow[]>());
+      const unitMap = acc.get(gradeKey)!;
+      if (!unitMap.has(unitKey)) unitMap.set(unitKey, []);
+      unitMap.get(unitKey)!.push(cur);
+      return acc;
+    }, new Map<string, Map<string, TrialLessonRow[]>>());
     return (
       <LayoutShell title="المنهج الدراسي" variant="sidebar" nav={<StudentNav />}>
         <div className="flex flex-col gap-6">
@@ -190,6 +211,60 @@ export function StudentCurriculumPage() {
               description="تواصل مع الأستاذ لتحديد الصف الدراسي الخاص بك ثم حاول مرة أخرى."
             />
           </GridCard>
+          {trialLessons.length > 0 && (
+            <GridCard data-testid="trial-lessons-section">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                  <PlayCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-base font-bold text-foreground">دروس مجانية للجميع</h3>
+                  <p className="text-xs text-foreground-muted">متاحة بدون تفعيل — من جميع الصفوف</p>
+                </div>
+                <Badge variant="info" className="ms-auto">مجاني</Badge>
+              </div>
+              <div className="space-y-4">
+                {[...groupedForNull.entries()].map(([gradeName, unitMap]) => (
+                  <div key={gradeName} className="space-y-3">
+                    <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <GraduationCap className="h-4 w-4 text-primary" aria-hidden="true" />
+                      {gradeName}
+                    </p>
+                    {[...unitMap.entries()].map(([unitName, lessons]) => (
+                      <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                        <div className="px-3 py-2 bg-white/[0.03] border-b border-white/5">
+                          <p className="text-sm font-medium text-foreground">{unitName}</p>
+                        </div>
+                        <ul className="divide-y divide-border-muted">
+                          {lessons
+                            .slice()
+                            .sort((a, b) => a.lesson_sort_order - b.lesson_sort_order)
+                            .map((lesson) => (
+                              <li key={lesson.lesson_id}>
+                                <Link
+                                  to={`/student/lessons/${lesson.lesson_id}`}
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  data-testid={`trial-lesson-${lesson.lesson_id}`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                                      <PlayCircle className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-sm text-foreground truncate">{lesson.lesson_title}</span>
+                                    <Badge variant="info">مجاني</Badge>
+                                  </div>
+                                  <LessonProgressBadge progress={progressByLesson.get(lesson.lesson_id)} />
+                                </Link>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </GridCard>
+          )}
         </div>
       </LayoutShell>
     );
@@ -204,6 +279,19 @@ export function StudentCurriculumPage() {
   const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
   const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
+
+  // trial: deduplicate lessons already present in own-grade units, keep published filter (RPC already does)
+  const existingLessonIds = new Set(units.flatMap((u) => u.lessons.map((l) => l.id)));
+  const filteredTrials = trialLessons.filter((t) => !existingLessonIds.has(t.lesson_id));
+  const groupedTrials = filteredTrials.reduce((acc, cur) => {
+    const gradeKey = cur.grade_name || 'غير مصنف';
+    const unitKey = cur.unit_name || 'وحدة غير معروفة';
+    if (!acc.has(gradeKey)) acc.set(gradeKey, new Map<string, TrialLessonRow[]>());
+    const unitMap = acc.get(gradeKey)!;
+    if (!unitMap.has(unitKey)) unitMap.set(unitKey, []);
+    unitMap.get(unitKey)!.push(cur);
+    return acc;
+  }, new Map<string, Map<string, TrialLessonRow[]>>());
 
   const toggleUnit = (unitId: string) => {
     setExpandedUnits((prev) => {
@@ -263,6 +351,65 @@ export function StudentCurriculumPage() {
             </div>
           </div>
         </GridCard>
+
+        {/* Trial lessons: free for all grades (cross-grade), grouped by grade/unit */}
+        {filteredTrials.length > 0 && (
+          <GridCard data-testid="trial-lessons-section">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                <PlayCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-base font-bold text-foreground">دروس مجانية للجميع</h3>
+                <p className="text-xs text-foreground-muted">متاحة بدون تفعيل — من جميع الصفوف</p>
+              </div>
+              <Badge variant="info" className="ms-auto">مجاني</Badge>
+            </div>
+            <div className="space-y-4">
+              {[...groupedTrials.entries()].map(([gradeName, unitMap]) => (
+                <div key={gradeName} className="space-y-3">
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <GraduationCap className="h-4 w-4 text-primary" aria-hidden="true" />
+                    {gradeName}
+                  </p>
+                  {[...unitMap.entries()].map(([unitName, lessons]) => (
+                    <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                      <div className="px-3 py-2 bg-white/[0.03] border-b border-white/5">
+                        <p className="text-sm font-medium text-foreground">{unitName}</p>
+                      </div>
+                      <ul className="divide-y divide-border-muted">
+                        {lessons
+                          .slice()
+                          .sort((a, b) => a.lesson_sort_order - b.lesson_sort_order)
+                          .map((lesson) => {
+                            const progress = progressByLesson.get(lesson.lesson_id);
+                            return (
+                              <li key={lesson.lesson_id}>
+                                <Link
+                                  to={`/student/lessons/${lesson.lesson_id}`}
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  data-testid={`trial-lesson-${lesson.lesson_id}`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+                                      <PlayCircle className="h-4 w-4" />
+                                    </div>
+                                    <span className="text-sm text-foreground truncate">{lesson.lesson_title}</span>
+                                    <Badge variant="info">مجاني</Badge>
+                                  </div>
+                                  <LessonProgressBadge progress={progress} />
+                                </Link>
+                              </li>
+                            );
+                          })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </GridCard>
+        )}
 
         {units.length === 0 ? (
           <GridCard className="text-center py-12">
