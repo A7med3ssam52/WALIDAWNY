@@ -494,7 +494,16 @@ describe('StudentLessonPage', () => {
 
     expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
     expect(screen.getByText('فيديوهات الدرس')).toBeInTheDocument();
+    // Playlist is a dropdown — extra videos hidden until opened (course style)
+    expect(screen.queryByText('فيديو إضافي')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('extra-video-list')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
+    expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
     expect(screen.getByText('فيديو إضافي')).toBeInTheDocument();
+    // Each extra video is itself a dropdown — player loads only after expanding the item
+    expect(screen.queryByTestId('extra-video-content-video-2')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
+    expect(await screen.findByTestId('extra-video-content-video-2')).toBeInTheDocument();
     expect(await screen.findAllByTestId('lesson-video')).toHaveLength(2);
     await waitFor(() => {
       expect(
@@ -522,11 +531,17 @@ describe('StudentLessonPage', () => {
     );
     renderApp('/student/lessons/lesson-1');
 
+    expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
+    // Extra videos are inside a course-style dropdown
+    expect(screen.queryByText('شرح يوتيوب')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
+    expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
+    expect(screen.getByText('شرح يوتيوب')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('extra-video-toggle-video-3'));
     expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
       'src',
       'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
     );
-    expect(screen.getByText('شرح يوتيوب')).toBeInTheDocument();
     expect(screen.getByText('يوتيوب')).toBeInTheDocument();
   });
 
@@ -538,6 +553,10 @@ describe('StudentLessonPage', () => {
     );
     renderApp('/student/lessons/lesson-1');
 
+    expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
+    expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
     expect(
       await screen.findByText('تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.'),
     ).toBeInTheDocument();
@@ -553,6 +572,8 @@ describe('StudentLessonPage', () => {
     );
     renderApp('/student/lessons/lesson-1');
 
+    fireEvent.click(await screen.findByTestId('lesson-playlist-toggle'));
+    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
     expect(await screen.findByText('الفيديو قيد التجهيز')).toBeInTheDocument();
     expect(screen.getByTestId('lesson-video')).toBeInTheDocument();
   });
