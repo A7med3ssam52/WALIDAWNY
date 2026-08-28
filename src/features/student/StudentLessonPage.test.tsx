@@ -493,18 +493,18 @@ describe('StudentLessonPage', () => {
     renderApp('/student/lessons/lesson-1');
 
     expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
-    expect(screen.getByText('فيديوهات الدرس')).toBeInTheDocument();
-    // Playlist is a dropdown — extra videos hidden until opened (course style)
+    expect(screen.getByText('محتوى الدرس')).toBeInTheDocument();
+    // Course-style dropdown — playlist hidden until opened
     expect(screen.queryByText('فيديو إضافي')).not.toBeInTheDocument();
     expect(screen.queryByTestId('extra-video-list')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
     expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
     expect(screen.getByText('فيديو إضافي')).toBeInTheDocument();
-    // Each extra video is itself a dropdown — player loads only after expanding the item
-    expect(screen.queryByTestId('extra-video-content-video-2')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
-    expect(await screen.findByTestId('extra-video-content-video-2')).toBeInTheDocument();
-    expect(await screen.findAllByTestId('lesson-video')).toHaveLength(2);
+    // Active video is primary initially — single player visible
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    expect(screen.getAllByTestId('lesson-video')).toHaveLength(1);
+    // Selecting the extra video switches the main player (course-style)
+    fireEvent.click(screen.getByTestId('playlist-item-video-2'));
     await waitFor(() => {
       expect(
         fetchMock.mock.calls.some(([url]) => String(url).includes('video_id=video-2')),
@@ -513,6 +513,7 @@ describe('StudentLessonPage', () => {
     await waitFor(() => {
       expect(hlsMock.sources).toContain(EXTRA_PLAYBACK_URL);
     });
+    expect(screen.getByTestId('playlist-item-video-2')).toHaveAttribute('aria-current', 'true');
   });
 
   it('renders extra youtube videos with YouTubeEmbed', async () => {
@@ -537,12 +538,16 @@ describe('StudentLessonPage', () => {
     fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
     expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
     expect(screen.getByText('شرح يوتيوب')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('extra-video-toggle-video-3'));
+    // Initially primary bunny is playing — single player
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('playlist-item-video-3'));
     expect(await screen.findByTestId('youtube-embed')).toHaveAttribute(
       'src',
       'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
     );
-    expect(screen.getByText('يوتيوب')).toBeInTheDocument();
+    expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
+    expect(screen.getAllByText('يوتيوب').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('playlist-item-video-3')).toHaveTextContent('يوتيوب');
   });
 
   it('shows an inline error for a failed extra video while the primary keeps playing', async () => {
@@ -556,11 +561,14 @@ describe('StudentLessonPage', () => {
     expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
     expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
+    // Select the failing video — main player shows inline error (course-style single player)
+    fireEvent.click(screen.getByTestId('playlist-item-video-2'));
     expect(
       await screen.findByText('تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.'),
     ).toBeInTheDocument();
-    expect(screen.getByTestId('lesson-video')).toBeInTheDocument();
+    // Can switch back to primary and it still plays
+    fireEvent.click(screen.getByTestId('playlist-item-video-1'));
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
     expect(screen.queryByText('تعذر تحميل الدرس')).not.toBeInTheDocument();
   });
 
@@ -573,9 +581,12 @@ describe('StudentLessonPage', () => {
     renderApp('/student/lessons/lesson-1');
 
     fireEvent.click(await screen.findByTestId('lesson-playlist-toggle'));
-    fireEvent.click(screen.getByTestId('extra-video-toggle-video-2'));
-    expect(await screen.findByText('الفيديو قيد التجهيز')).toBeInTheDocument();
-    expect(screen.getByTestId('lesson-video')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('playlist-item-video-2'));
+    expect(await screen.findByTestId('video-not-ready')).toBeInTheDocument();
+    expect(screen.getByText(/الفيديو قيد التجهيز/)).toBeInTheDocument();
+    // Switch back to primary — primary still playable
+    fireEvent.click(screen.getByTestId('playlist-item-video-1'));
+    expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
   });
 
   it('hides the extra videos card when no extra videos exist', async () => {
@@ -585,7 +596,7 @@ describe('StudentLessonPage', () => {
 
     expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
     expect(screen.queryByTestId('lesson-extra-videos')).not.toBeInTheDocument();
-    expect(screen.queryByText('فيديوهات الدرس')).not.toBeInTheDocument();
+    expect(screen.queryByText('محتوى الدرس')).not.toBeInTheDocument();
   });
 
   it('shows an empty state when the lesson does not exist', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ChevronDown,
@@ -91,138 +91,6 @@ function YoutubeIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function ExtraBunnyVideoAccordionContent({ lessonId, video }: { lessonId: string; video: LessonVideo }) {
-  const [playback, setPlayback] = useState<PlaybackResponse | null>(null);
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    getPlaybackUrl(lessonId, video.id)
-      .then((value) => {
-        if (active) {
-          setPlayback(value);
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setPlaybackError(errorCode(error) ?? 'playback_failed');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [lessonId, video.id]);
-
-  if (playback) {
-    return <VideoPlayer src={playback.playback_url} />;
-  }
-  if (playbackError === 'video_not_ready') {
-    return (
-      <div className="glass-card rounded-xl p-4">
-        <p className="text-sm text-foreground-muted">الفيديو قيد التجهيز</p>
-      </div>
-    );
-  }
-  if (playbackError) {
-    return (
-      <div className="glass-card rounded-xl p-4">
-        <p className="text-sm text-foreground-muted">تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="glass-card flex justify-center rounded-xl p-8">
-      <Spinner />
-    </div>
-  );
-}
-
-function ExtraVideoAccordionItem({
-  lessonId,
-  video,
-  index,
-}: {
-  lessonId: string;
-  video: LessonVideo;
-  index: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const isYoutube = video.source === 'youtube' && Boolean(video.youtube_video_id);
-
-  return (
-    <div
-      className={`group overflow-hidden rounded-xl border transition-all duration-200 ${
-        open
-          ? 'border-primary/30 bg-white/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.12)]'
-          : 'border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        data-testid={`extra-video-toggle-${video.id}`}
-        className="flex w-full items-center justify-between gap-3 px-3 py-3 text-right transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-4"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-bold tabular-nums ${
-              isYoutube
-                ? 'border-red-500/20 bg-red-500/15 text-red-300'
-                : 'border-primary/20 bg-primary/15 text-primary'
-            }`}
-          >
-            {String(index).padStart(2, '0')}
-          </span>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="truncate text-sm font-semibold leading-5 text-foreground">
-              {video.title ?? 'فيديو الدرس'}
-            </p>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-foreground-muted">
-              {isYoutube ? (
-                <YoutubeIcon className="h-3.5 w-3.5 shrink-0 text-red-300" />
-              ) : (
-                <Play className="h-3 w-3 shrink-0 fill-current text-primary" />
-              )}
-              <span>{isYoutube ? 'يوتيوب' : 'Bunny'} · درس {index}</span>
-              <span className="hidden sm:inline">· اضغط للمشاهدة</span>
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge
-            variant={isYoutube ? 'info' : 'neutral'}
-            className="hidden text-[11px] sm:inline-flex"
-          >
-            {isYoutube ? 'يوتيوب' : 'Bunny'}
-          </Badge>
-          <span
-            className={`flex h-7 w-7 items-center justify-center rounded-full border bg-white/5 text-foreground-muted transition-all duration-200 ${
-              open
-                ? 'rotate-180 border-primary/20 bg-primary/15 text-primary'
-                : 'border-white/10 group-hover:bg-white/10'
-            }`}
-          >
-            <ChevronDown className="h-3.5 w-3.5" />
-          </span>
-        </div>
-      </button>
-      {open ? (
-        <div
-          className="border-t border-white/10 bg-black/20 p-3 sm:p-3.5"
-          data-testid={`extra-video-content-${video.id}`}
-        >
-          {isYoutube && video.youtube_video_id ? (
-            <YouTubeEmbed videoId={video.youtube_video_id} title={video.title ?? 'فيديو الدرس'} />
-          ) : (
-            <ExtraBunnyVideoAccordionContent lessonId={lessonId} video={video} />
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function LessonPageSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-hidden="true">
@@ -267,10 +135,38 @@ export function StudentLessonPage() {
   const [activeTab, setActiveTab] = useState<LessonTab | null>(null);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const lastSaveRef = useRef(0);
   const savingRef = useRef(false);
   const lastPositionRef = useRef(0);
   const requestIdRef = useRef(0);
+
+  const allVideos = useMemo<LessonVideo[]>(() => {
+    const list: LessonVideo[] = [];
+    if (primaryVideo) list.push(primaryVideo);
+    list.push(...extraVideos);
+    return list;
+  }, [primaryVideo, extraVideos]);
+
+  const activeVideo = useMemo<LessonVideo | null>(() => {
+    if (allVideos.length === 0) return null;
+    if (activeVideoId) {
+      const found = allVideos.find((v) => v.id === activeVideoId);
+      if (found) return found;
+    }
+    return allVideos[0] ?? null;
+  }, [allVideos, activeVideoId]);
+
+  // Keep activeVideoId in sync when videos load
+  useEffect(() => {
+    if (allVideos.length === 0) {
+      setActiveVideoId(null);
+      return;
+    }
+    if (!activeVideoId || !allVideos.some((v) => v.id === activeVideoId)) {
+      setActiveVideoId(allVideos[0].id);
+    }
+  }, [allVideos, activeVideoId]);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
@@ -292,6 +188,7 @@ export function StudentLessonPage() {
     setActiveTab(null);
     setPdfPreviewOpen(false);
     setIsPlaylistOpen(false);
+    setActiveVideoId(null);
     try {
       const [lessonRow, settingsRow] = await Promise.all([
         getLessonById(lessonId),
@@ -361,11 +258,18 @@ export function StudentLessonPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!lesson || !primaryVideo || primaryVideo.source === 'youtube') {
+    if (!lesson || !activeVideo || activeVideo.source === 'youtube') {
+      // For youtube we don't need playback fetch; clear stale state
+      if (activeVideo?.source === 'youtube') {
+        setPlayback(null);
+        setPlaybackError(null);
+      }
       return;
     }
     let active = true;
-    getPlaybackUrl(lesson.id, primaryVideo.id)
+    setPlayback(null);
+    setPlaybackError(null);
+    getPlaybackUrl(lesson.id, activeVideo.id)
       .then((value) => {
         if (active) {
           setPlayback(value);
@@ -379,7 +283,7 @@ export function StudentLessonPage() {
     return () => {
       active = false;
     };
-  }, [lesson, primaryVideo]);
+  }, [lesson, activeVideo]);
 
   useEffect(() => {
     if (!lesson || !primaryPdf) {
@@ -693,108 +597,197 @@ export function StudentLessonPage() {
           <p className="text-sm text-foreground-muted">{lesson.description}</p>
         ) : null}
 
-        {primaryVideo ? (
-          primaryVideo.source === 'youtube' && primaryVideo.youtube_video_id ? (
-            <YouTubeEmbed
-              videoId={primaryVideo.youtube_video_id}
-              title={primaryVideo.title ?? 'فيديو الدرس'}
-            />
-          ) : playback && progressLoaded ? (
-            <VideoPlayer
-              src={playback.playback_url}
-              initialPosition={progress?.position_seconds ?? 0}
-              onProgress={handleProgress}
-              onComplete={handleComplete}
-            />
-          ) : playbackError === 'access_denied' ? (
-            <div className="glass-card glass-tile-warning rounded-lg border p-4">
-              <p className="text-sm font-medium text-amber-300">هذا الدرس غير متاح حاليًا</p>
-              <p className="mt-1 text-sm text-amber-200">
-                قد لا تكون الوحدة مفعّلة بعد. فعّل الوحدة من صفحة وحداتي للمتابعة.
-              </p>
-              <Link
-                to="/student/units"
-                className="mt-3 inline-block rounded-lg border border-warning/40 bg-white/5 px-4 py-2.5 text-sm font-semibold text-warning transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
-                data-testid="units-link"
-              >
-                الانتقال إلى وحداتي
-              </Link>
-            </div>
-          ) : playbackError === 'video_not_ready' ? (
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-foreground-muted">
-                الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.
-              </p>
-            </div>
-          ) : playbackError ? (
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-foreground-muted">
-                تعذر تحميل الفيديو. حاول مرة أخرى لاحقًا.
-              </p>
-            </div>
-          ) : (
-            <div className="glass-card flex justify-center rounded-2xl p-8">
-              <Spinner />
-            </div>
-          )
-        ) : null}
-
-        {extraVideos.length > 0 ? (
-          <div className="glass-card overflow-hidden p-0" data-testid="lesson-extra-videos">
-            <button
-              type="button"
-              onClick={() => setIsPlaylistOpen((value) => !value)}
-              aria-expanded={isPlaylistOpen}
-              data-testid="lesson-playlist-toggle"
-              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-right transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset sm:px-5"
-            >
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
-                  <ListVideo className="h-5 w-5" />
-                </span>
-                <div className="text-right">
-                  <h3 className="font-display text-sm font-bold leading-5 text-foreground sm:text-[15px]">
-                    فيديوهات الدرس
-                  </h3>
-                  <p className="mt-0.5 text-xs leading-4 text-foreground-muted">
-                    {extraVideos.length} فيديو إضافي · {isPlaylistOpen ? 'اضغط للإخفاء' : 'اضغط للعرض'} — شكل كورس
+        {/* === Course-style single player + playlist dropdown === */}
+        {allVideos.length > 0 && activeVideo ? (
+          <div className="flex flex-col gap-3">
+            {/* Main player: shows the currently selected video */}
+            <div data-testid="active-video-player">
+              {activeVideo.source === 'youtube' && activeVideo.youtube_video_id ? (
+                <YouTubeEmbed
+                  videoId={activeVideo.youtube_video_id}
+                  title={activeVideo.title ?? 'فيديو الدرس'}
+                />
+              ) : playback && progressLoaded ? (
+                <VideoPlayer
+                  key={activeVideo.id}
+                  src={playback.playback_url}
+                  initialPosition={progress?.position_seconds ?? 0}
+                  onProgress={handleProgress}
+                  onComplete={handleComplete}
+                />
+              ) : playbackError === 'access_denied' ? (
+                <div className="glass-card glass-tile-warning rounded-lg border p-4">
+                  <p className="text-sm font-medium text-amber-300">هذا الدرس غير متاح حاليًا</p>
+                  <p className="mt-1 text-sm text-amber-200">
+                    قد لا تكون الوحدة مفعّلة بعد. فعّل الوحدة من صفحة وحداتي للمتابعة.
+                  </p>
+                  <Link
+                    to="/student/units"
+                    className="mt-3 inline-block rounded-lg border border-warning/40 bg-white/5 px-4 py-2.5 text-sm font-semibold text-warning transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                    data-testid="units-link"
+                  >
+                    الانتقال إلى وحداتي
+                  </Link>
+                </div>
+              ) : playbackError === 'video_not_ready' ? (
+                <div className="glass-card rounded-2xl p-4" data-testid="video-not-ready">
+                  <p className="text-sm text-foreground-muted">
+                    الفيديو قيد التجهيز، حاول مرة أخرى لاحقًا.
                   </p>
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant="info" className="hidden sm:inline-flex">
-                  {extraVideos.length} فيديو
-                </Badge>
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full border bg-white/5 text-foreground-muted transition-transform duration-200 ${isPlaylistOpen ? 'rotate-180 border-primary/20 bg-primary/15 text-primary' : 'border-white/10'}`}
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </span>
-              </div>
-            </button>
+              ) : playbackError ? (
+                <div className="glass-card rounded-2xl p-4" data-testid="video-error">
+                  <p className="text-sm text-foreground-muted">
+                    تعذر تحميل الفيديو. حاول مرة أخرى لاحقاً.
+                  </p>
+                </div>
+              ) : (
+                <div className="glass-card flex justify-center rounded-2xl p-8">
+                  <Spinner />
+                </div>
+              )}
+            </div>
 
-            {isPlaylistOpen ? (
+            {/* Pill showing which video is playing */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                الآن يعرض: {activeVideo.title ?? 'فيديو الدرس'}
+              </span>
+              {activeVideo.source === 'youtube' && activeVideo.youtube_video_id ? (
+                <Badge variant="info" className="text-[11px]">
+                  يوتيوب
+                </Badge>
+              ) : (
+                <Badge variant="neutral" className="text-[11px]">
+                  Bunny
+                </Badge>
+              )}
+            </div>
+
+            {/* Playlist dropdown — visible only when there is more than one video */}
+            {allVideos.length > 1 ? (
               <div
-                className="border-t border-white/10 bg-white/[0.02] p-2 sm:p-3"
-                data-testid="extra-video-list"
+                className="glass-card overflow-hidden p-0 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+                data-testid="lesson-extra-videos"
               >
-                <ol className="flex flex-col gap-2">
-                  {extraVideos.map((video, idx) => (
-                    <li key={video.id}>
-                      <ExtraVideoAccordionItem
-                        lessonId={lesson.id}
-                        video={video}
-                        index={idx + (primaryVideo ? 2 : 1)}
-                      />
-                    </li>
-                  ))}
-                </ol>
+                <button
+                  type="button"
+                  onClick={() => setIsPlaylistOpen((value) => !value)}
+                  aria-expanded={isPlaylistOpen}
+                  data-testid="lesson-playlist-toggle"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-4 text-right transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset sm:px-5"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
+                      <ListVideo className="h-5 w-5" />
+                    </span>
+                    <div className="text-right">
+                      <h3 className="font-display text-sm font-bold leading-5 text-foreground sm:text-[15px]">
+                        محتوى الدرس
+                      </h3>
+                      <p className="mt-0.5 text-xs leading-4 text-foreground-muted">
+                        {allVideos.length} فيديو · {isPlaylistOpen ? 'اضغط للإخفاء' : 'اختر فيديو للمشاهدة'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant="info" className="hidden sm:inline-flex">
+                      {allVideos.length} فيديو
+                    </Badge>
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full border bg-white/5 text-foreground-muted transition-transform duration-200 ${isPlaylistOpen ? 'rotate-180 border-primary/20 bg-primary/15 text-primary' : 'border-white/10'}`}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </span>
+                  </div>
+                </button>
+
+                {isPlaylistOpen ? (
+                  <div
+                    className="border-t border-white/10 bg-white/[0.02] p-2 sm:p-3"
+                    data-testid="extra-video-list"
+                  >
+                    <ol className="flex flex-col gap-2">
+                      {allVideos.map((video, idx) => {
+                        const isActive = video.id === activeVideo.id;
+                        const isYoutube = video.source === 'youtube' && Boolean(video.youtube_video_id);
+                        const num = String(idx + 1).padStart(2, '0');
+                        return (
+                          <li key={video.id}>
+                            <button
+                              type="button"
+                              onClick={() => setActiveVideoId(video.id)}
+                              aria-current={isActive ? 'true' : undefined}
+                              data-testid={`playlist-item-${video.id}`}
+                              // keep legacy ids for backwards compat where possible
+                              data-legacy-testid={`extra-video-toggle-${video.id}`}
+                              className={`group flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-right transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-4 ${
+                                isActive
+                                  ? 'border-primary/30 bg-primary/[0.08] shadow-[0_4px_16px_rgba(16,185,129,0.15)]'
+                                  : 'border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'
+                              }`}
+                            >
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <span
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-bold tabular-nums transition-colors ${
+                                    isActive
+                                      ? 'border-primary/30 bg-primary text-white shadow-sm'
+                                      : isYoutube
+                                        ? 'border-red-500/20 bg-red-500/15 text-red-300'
+                                        : 'border-primary/20 bg-primary/15 text-primary'
+                                  }`}
+                                >
+                                  {isActive ? <Play className="h-3.5 w-3.5 fill-current" /> : num}
+                                </span>
+                                <div className="min-w-0 flex-1 text-right">
+                                  <p
+                                    className={`truncate text-sm font-semibold leading-5 ${isActive ? 'text-foreground' : 'text-foreground'}`}
+                                  >
+                                    {video.title ?? 'فيديو الدرس'}
+                                  </p>
+                                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-foreground-muted">
+                                    {isYoutube ? (
+                                      <YoutubeIcon className="h-3.5 w-3.5 shrink-0 text-red-300" />
+                                    ) : (
+                                      <Play className="h-3 w-3 shrink-0 fill-current text-primary" />
+                                    )}
+                                    <span>{isYoutube ? 'يوتيوب' : 'Bunny'} · درس {idx + 1}</span>
+                                    {isActive ? (
+                                      <span className="inline-flex items-center gap-1 font-medium text-primary">
+                                        · قيد التشغيل
+                                      </span>
+                                    ) : (
+                                      <span className="hidden sm:inline">· اضغط للمشاهدة</span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <Badge
+                                  variant={isYoutube ? 'info' : isActive ? 'success' : 'neutral'}
+                                  className="hidden text-[11px] sm:inline-flex"
+                                >
+                                  {isYoutube ? 'يوتيوب' : isActive ? 'يعرض الآن' : 'Bunny'}
+                                </Badge>
+                                <span
+                                  className={`hidden h-2 w-2 shrink-0 rounded-full sm:inline-block ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-white/20'}`}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
         ) : null}
 
-        {!primaryVideo && !primaryPdf ? (
+        {!primaryVideo && extraVideos.length === 0 && !primaryPdf ? (
           <div className="glass-card rounded-2xl p-4">
             <p className="text-sm text-foreground-muted">لم يتم إضافة محتوى لهذا الدرس بعد.</p>
           </div>
