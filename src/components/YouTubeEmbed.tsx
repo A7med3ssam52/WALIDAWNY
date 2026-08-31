@@ -23,8 +23,8 @@ export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
       />
       {/* Transparent overlays to block clicks on YouTube title/logo that would open youtube.com */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="pointer-events-auto absolute left-0 right-0 top-0 h-14" aria-hidden="true" />
-        <div className="pointer-events-auto absolute bottom-0 right-0 h-12 w-24" aria-hidden="true" />
+        <div className="pointer-events-auto absolute inset-x-0 top-0 h-14" aria-hidden="true" />
+        <div className="pointer-events-auto absolute bottom-0 end-0 h-12 w-24" aria-hidden="true" />
       </div>
     </div>
   );

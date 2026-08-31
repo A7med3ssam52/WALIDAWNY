@@ -186,7 +186,7 @@ export function UnitsPage() {
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h2 className="font-display text-lg font-bold text-foreground">
                   وحداتي المشتراة
-                  <span className="ml-2 text-sm font-normal text-foreground-muted">({purchasedUnits.length})</span>
+                  <span className="ms-2 text-sm font-normal text-foreground-muted">({purchasedUnits.length})</span>
                 </h2>
                 <Link
                   to="/student/curriculum"
@@ -232,7 +232,7 @@ export function UnitsPage() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h2 className="font-display text-lg font-bold text-foreground">
                     وحدات متاحة للتفعيل
-                    <span className="ml-2 text-sm font-normal text-foreground-muted">({lockedUnits.length})</span>
+                    <span className="ms-2 text-sm font-normal text-foreground-muted">({lockedUnits.length})</span>
                   </h2>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

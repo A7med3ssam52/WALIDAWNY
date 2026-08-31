@@ -267,6 +267,14 @@
     direction: rtl;
   }
 
+  :root {
+    direction: rtl;
+  }
+
+  #root {
+    direction: rtl;
+  }
+
   /* Ensure logical RTL: isolate bidi for numeric blocks stays correct */
   [dir='ltr'] {
     direction: ltr;

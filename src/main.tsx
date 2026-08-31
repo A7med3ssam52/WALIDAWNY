@@ -6,6 +6,20 @@ import { ErrorBoundary } from './app/ErrorBoundary';
 import { registerServiceWorker } from './lib/pwa';
 import './index.css';
 
+// Enforce RTL globally — ensures document is always ar/rtl even if Helmet fails or cache restores LTR
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = 'ar';
+  document.documentElement.dir = 'rtl';
+  // body may not exist yet during module eval in some SSR contexts; guard
+  if (document.body) {
+    document.body.dir = 'rtl';
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.dir = 'rtl';
+    });
+  }
+}
+
 registerServiceWorker();
 
 // Web Vitals — send to GA4 if configured, otherwise console (P-07)
