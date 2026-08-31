@@ -115,6 +115,7 @@ export function StudentLessonPage() {
   const [primaryPdf, setPrimaryPdf] = useState<LessonPdf | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [progressLoaded, setProgressLoaded] = useState(false);
+  const [contentLoading, setContentLoading] = useState(true);
   const [playback, setPlayback] = useState<PlaybackResponse | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [pdfAccess, setPdfAccess] = useState<PdfAccessResponse | null>(null);
@@ -171,6 +172,7 @@ export function StudentLessonPage() {
     setPrimaryPdf(null);
     setProgress(null);
     setProgressLoaded(false);
+    setContentLoading(true);
     setPlayback(null);
     setPlaybackError(null);
     setPdfAccess(null);
@@ -192,6 +194,9 @@ export function StudentLessonPage() {
       setSettings(settingsRow);
       if (!lessonRow) {
         setLesson(null);
+        if (requestIdRef.current === requestId) {
+          setContentLoading(false);
+        }
         return;
       }
       setLesson(lessonRow);
@@ -201,6 +206,9 @@ export function StudentLessonPage() {
       }
       setAccess(accessResult);
       if (!accessResult.has_access) {
+        if (requestIdRef.current === requestId) {
+          setContentLoading(false);
+        }
         return;
       }
       // Boards are best-effort: a failed fetch never breaks the lesson page.
@@ -238,9 +246,13 @@ export function StudentLessonPage() {
       setPrimaryPdf(pdfs.find((pdf) => pdf.is_primary && pdf.is_ready) ?? null);
       setProgress(progressRow);
       setProgressLoaded(true);
+      if (requestIdRef.current === requestId) {
+        setContentLoading(false);
+      }
     } catch {
       if (requestIdRef.current === requestId) {
         setLoadError(true);
+        setContentLoading(false);
       }
     }
   }, [lessonId]);
@@ -259,23 +271,45 @@ export function StudentLessonPage() {
       return;
     }
     let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     setPlayback(null);
     setPlaybackError(null);
-    getPlaybackUrl(lesson.id, activeVideo.id)
-      .then((value) => {
-        if (active) {
-          setPlayback(value);
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setPlaybackError(errorCode(error) ?? 'playback_failed');
-        }
-      });
+    const fetchWithRetry = (isRetry: boolean) => {
+      getPlaybackUrl(lesson.id, activeVideo.id)
+        .then((value) => {
+          if (active) {
+            setPlayback(value);
+            setPlaybackError(null);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          const code = errorCode(error) ?? 'playback_failed';
+          // When the authoritative gate says has_access=true but the
+          // Edge Function still returns access_denied, it's likely a
+          // transient propagation / token lag. Don't flash the
+          // "not subscribed" card — keep a neutral spinner and retry
+          // once, then fall back to a generic retry UI.
+          if (code === 'access_denied' && access?.has_access === true) {
+            if (!isRetry) {
+              setPlaybackError('access_checking');
+              retryTimer = setTimeout(() => {
+                if (active) fetchWithRetry(true);
+              }, 350);
+              return;
+            }
+            setPlaybackError('access_denied');
+            return;
+          }
+          setPlaybackError(code);
+        });
+    };
+    fetchWithRetry(false);
     return () => {
       active = false;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [lesson, activeVideo]);
+  }, [lesson, activeVideo, access]);
 
   useEffect(() => {
     if (!lesson || !primaryPdf) {
@@ -604,7 +638,11 @@ export function StudentLessonPage() {
         ) : null}
 
         {/* === Course-style single player + playlist dropdown === */}
-        {allVideos.length > 0 && activeVideo ? (
+        {contentLoading ? (
+          <div className="glass-card flex justify-center rounded-2xl p-8" data-testid="lesson-video-loading">
+            <Spinner />
+          </div>
+        ) : allVideos.length > 0 && activeVideo ? (
           <div className="flex flex-col gap-3">
             {/* Main player: shows the currently selected video */}
             <div data-testid="active-video-player">
@@ -621,6 +659,14 @@ export function StudentLessonPage() {
                   onProgress={handleProgress}
                   onComplete={handleComplete}
                 />
+              ) : playbackError === 'access_checking' ? (
+                <div
+                  className="glass-card flex flex-col items-center gap-3 rounded-2xl p-8"
+                  data-testid="video-access-checking"
+                >
+                  <Spinner />
+                  <p className="text-sm text-foreground-muted">جاري تأكيد الاشتراك...</p>
+                </div>
               ) : playbackError === 'access_denied' ? (
                 <div className="glass-card glass-tile-warning rounded-lg border p-4">
                   <p className="text-sm font-medium text-amber-300">هذا الدرس غير متاح حاليًا</p>
@@ -776,7 +822,7 @@ export function StudentLessonPage() {
           </div>
         ) : null}
 
-        {!primaryVideo && extraVideos.length === 0 && !primaryPdf ? (
+        {!contentLoading && !primaryVideo && extraVideos.length === 0 && !primaryPdf ? (
           <div className="glass-card rounded-2xl p-4">
             <p className="text-sm text-foreground-muted">لم يتم إضافة محتوى لهذا الدرس بعد.</p>
           </div>
