@@ -23,9 +23,9 @@ describe('LandingPage', () => {
     });
     renderApp('/');
 
-    // H1 now optimized: "وليد عونى — منصة تعليمية لطلاب إعدادي وثانوي" (SEO) — at least 2 occurrences (brand + H1)
-    expect((await screen.findAllByText(/وليد عونى/)).length).toBeGreaterThanOrEqual(2);
-    expect(await screen.findByText(/منصة تعليمية لطلاب إعدادي وثانوي/)).toBeInTheDocument();
+    // H1 now: "منصة وليد عوني لطلاب ثانوية عامة"
+    expect((await screen.findAllByText(/وليد عون/)).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByRole('heading', { name: /منصة وليد عوني لطلاب ثانوية عامة/ })).toBeInTheDocument();
     expect(
       screen.getAllByRole('link', { name: 'تسجيل الدخول' }).every((link) =>
         link.hasAttribute('href') ? link.getAttribute('href') === '/login' : false,

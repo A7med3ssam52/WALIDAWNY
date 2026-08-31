@@ -131,7 +131,6 @@ export function LandingPage() {
     };
   }, [menuOpen]);
 
-  const platformName = settings?.platform_name ?? 'وليد عونى';
   const whatsappNumber = settings?.whatsapp_number;
   const whatsappHref =
     settings !== null && whatsappNumber ? buildWhatsAppLink(whatsappNumber, settings.whatsapp_default_message) : null;
@@ -267,7 +266,7 @@ export function LandingPage() {
             </span>
 
             <h1 className="rise mx-auto mt-5 max-w-3xl font-display text-[2.6rem] font-extrabold leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl [animation-delay:80ms]">
-              <span className="text-gradient text-glow">{platformName} — منصة تعليمية لطلاب إعدادي وثانوي</span>
+              <span className="text-gradient text-glow">منصة وليد عوني لطلاب ثانوية عامة</span>
             </h1>
             <p className="rise mx-auto mt-4 max-w-xl text-base text-foreground-muted sm:text-lg [animation-delay:160ms]">
               متابعة الصفوف الدراسية والتواصل مع الأستاذ في مكان واحد — وحدات مدى الحياة بكود WLDN، ملازم PDF وسبورات تفاعلية
@@ -397,11 +396,11 @@ export function LandingPage() {
             <div className="glass-card p-6 sm:p-8">
               <h2 id="learn-heading" className="font-display text-xl font-bold text-foreground sm:text-2xl">ماذا ستتعلم في منصة وليد عونى؟</h2>
               <p className="mt-3 text-sm leading-7 text-foreground-muted">
-                منصة وليد عونى التعليمية المصرية تغطي <strong className="text-foreground">منهج تالتة إعدادي</strong> و<strong className="text-foreground">تانية إعدادي</strong> و<strong className="text-foreground">أولى إعدادي</strong> و<strong className="text-foreground">أولى ثانوي</strong> بشكل منظم — كل صف مقسم إلى وحدات مدى الحياة تُفتح مرة واحدة بكود تفعيل <strong className="text-foreground">WLDN-XXXX</strong> بدون اشتراك شهري. ستجد <strong className="text-foreground">شرح مبسط</strong> لكل درس عبر فيديوهات مصورة عالية الجودة، مع <strong className="text-foreground">ملازم PDF</strong> تلخيصية و<strong className="text-foreground">سبورات</strong> تفاعلية ترسم الفكرة أمامك خطوة بخطوة. تابع تقدمك لحظياً في لوحة الطالب، وأعد مشاهدة أي درس بلا حدود. سواء تبحث عن <strong className="text-foreground">شرح منهج تالتة إعدادي ترم أول</strong> أو مراجعة تانية إعدادي أو تأسيس أولى ثانوي، ستجد منهج منظم، أسعار واضحة، ودعم واتساب مباشر يجيبك خلال دقائق.
+                منصة وليد عوني لطلاب ثانوية عامة تغطي <strong className="text-foreground">منهج الصف الثالث الثانوي</strong> و<strong className="text-foreground">الصف الثاني الثانوي</strong> و<strong className="text-foreground">الصف الأول الثانوي</strong> بشكل منظم — كل صف مقسم إلى وحدات مدى الحياة تُفتح مرة واحدة بكود تفعيل <strong className="text-foreground">WLDN-XXXX</strong> بدون اشتراك شهري. ستجد <strong className="text-foreground">شرح مبسط</strong> لكل درس عبر فيديوهات مصورة عالية الجودة، مع <strong className="text-foreground">ملازم PDF</strong> تلخيصية و<strong className="text-foreground">سبورات</strong> تفاعلية ترسم الفكرة أمامك خطوة بخطوة. تابع تقدمك لحظياً في لوحة الطالب، وأعد مشاهدة أي درس بلا حدود. سواء تبحث عن <strong className="text-foreground">شرح منهج تالتة ثانوي</strong> أو مراجعة تانية ثانوي أو تأسيس أولى ثانوي، ستجد منهج منظم، أسعار واضحة، ودعم واتساب مباشر يجيبك خلال دقائق.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Link to="/subjects/third-prep" className="text-xs font-bold text-indigo-300 hover:text-indigo-200">تالتة إعدادي ←</Link>
-                <Link to="/subjects/second-prep" className="text-xs font-bold text-indigo-300 hover:text-indigo-200">تانية إعدادي ←</Link>
+                <Link to="/subjects/third-secondary" className="text-xs font-bold text-indigo-300 hover:text-indigo-200">تالتة ثانوي ←</Link>
+                <Link to="/subjects/second-secondary" className="text-xs font-bold text-indigo-300 hover:text-indigo-200">تانية ثانوي ←</Link>
                 <Link to="/subjects/first-secondary" className="text-xs font-bold text-indigo-300 hover:text-indigo-200">أولى ثانوي ←</Link>
                 <Link to="/subjects" className="text-xs font-bold text-foreground-muted hover:text-foreground">كل الصفوف ←</Link>
               </div>
