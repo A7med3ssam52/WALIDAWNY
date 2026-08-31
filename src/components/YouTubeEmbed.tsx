@@ -4,30 +4,28 @@ interface YouTubeEmbedProps {
 }
 
 export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
-  // Root-cause fix: use plain youtube.com embed without origin param (most compatible)
-  // and rely on permissive CSP frame-src * to eliminate any blocking.
-  const src = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+  const src = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&iv_load_policy=3`;
   return (
-    <div className="relative">
+    <div
+      className="relative aspect-video w-full overflow-hidden rounded-lg border border-white/15 bg-black"
+      onContextMenu={(event) => event.preventDefault()}
+      data-testid="youtube-embed-wrapper"
+    >
       <iframe
         src={src}
-        title={title ?? 'فيديو يوتيوب'}
+        title={title ?? 'فيديو الدرس'}
         allowFullScreen
         loading="lazy"
-        className="aspect-video w-full rounded-lg border border-white/15 bg-white/5"
+        className="aspect-video w-full rounded-lg border-0 bg-black"
         data-testid="youtube-embed"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={(e) => console.error('YouTube embed failed for', videoId, e)}
       />
-      <a
-        href={`https://www.youtube.com/watch?v=${videoId}`}
-        target="_blank"
-        rel="noreferrer"
-        className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black/90"
-      >
-        فتح على يوتيوب
-      </a>
+      {/* Transparent overlays to block clicks on YouTube title/logo that would open youtube.com */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-auto absolute left-0 right-0 top-0 h-14" aria-hidden="true" />
+        <div className="pointer-events-auto absolute bottom-0 right-0 h-12 w-24" aria-hidden="true" />
+      </div>
     </div>
   );
 }

@@ -43,12 +43,12 @@ export function UnitCard({
         <div className="flex shrink-0 items-center gap-2">
           {isPurchased ? (
             <Badge variant="success" className="text-xs">
-              <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
+              <CheckCircle2 className="h-3 w-3 me-1" aria-hidden="true" />
               مملوكة
             </Badge>
           ) : isLocked ? (
             <Badge variant="warning" outline className="text-xs">
-              <Lock className="h-3 w-3 mr-1" aria-hidden="true" />
+              <Lock className="h-3 w-3 me-1" aria-hidden="true" />
               مقفولة
             </Badge>
           ) : (

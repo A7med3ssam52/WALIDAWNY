@@ -90,6 +90,9 @@ export function StudentCurriculumPage() {
   const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
 
   const load = useCallback(async () => {
+    // Legacy students may have grade_id = null. We still show cross-grade
+    // trial lessons via getTrialLessons() (SECURITY DEFINER, no grade filter)
+    // so free content is never hidden behind a missing grade assignment.
     if (!profile?.grade_id) {
       setGrade(null);
       setUnits([]);
@@ -430,6 +433,10 @@ export function StudentCurriculumPage() {
               const expanded = isExpanded(unit.id);
 
               if (!isPurchased) {
+                // Trial lessons must remain accessible even inside a locked unit
+                // and even when the student has zero unit_purchases. Filtering
+                // is by is_trial only — never by has_purchase — so a free
+                // lesson opens via can_access_lesson even cross-grade.
                 const trialLessons = unitLessons.filter((lesson) => lesson.is_trial);
                 return (
                   <GridCard key={unit.id}>

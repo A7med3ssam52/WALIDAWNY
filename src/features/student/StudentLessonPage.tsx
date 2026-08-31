@@ -83,14 +83,6 @@ function errorCode(error: unknown): string | null {
   return null;
 }
 
-function YoutubeIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M23 12c0-1.6-.1-2.9-.3-3.9-.2-1-.6-1.8-1.2-2.4-.6-.6-1.4-1-2.4-1.2C18 4.1 12 4.1 12 4.1s-6 0-7.1.4c-1 .2-1.8.6-2.4 1.2-.6.6-1 1.4-1.2 2.4C1.1 9.1 1 10.4 1 12s.1 2.9.3 3.9c.2 1 .6 1.8 1.2 2.4.6.6 1.4 1 2.4 1.2 1.1.4 7.1.4 7.1.4s6 0 7.1-.4c1-.2 1.8-.6 2.4-1.2.6-.6 1-1.4 1.2-2.4.2-1 .3-2.3.3-3.9ZM10.2 15.8v-7.6L15.8 12l-5.6 3.8Z" />
-    </svg>
-  );
-}
-
 function LessonPageSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-hidden="true">
@@ -416,7 +408,21 @@ export function StudentLessonPage() {
     );
   }
 
-  const hasAccess = access?.has_access === true;
+  // Access is still loading — show skeleton instead of flashing the lock screen.
+  // This is especially important for trial lessons (is_trial): has_access will be
+  // true after the DB fix via can_access_lesson even without a purchase, but
+  // we must not render the lock state while the getMyLessonAccess RPC is in flight.
+  if (access === null) {
+    return (
+      <LayoutShell title={lesson.title} variant="sidebar" nav={<StudentNav />}>
+        <LessonPageSkeleton />
+      </LayoutShell>
+    );
+  }
+
+  // Authoritative gate: uses has_access (trial-aware via can_access_lesson),
+  // never has_purchase. has_access already short-circuits true for is_trial.
+  const hasAccess = access.has_access === true;
 
   if (!hasAccess) {
     return (
@@ -648,21 +654,11 @@ export function StudentLessonPage() {
               )}
             </div>
 
-            {/* Pill showing which video is playing */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 الآن يعرض: {activeVideo.title ?? 'فيديو الدرس'}
               </span>
-              {activeVideo.source === 'youtube' && activeVideo.youtube_video_id ? (
-                <Badge variant="info" className="text-[11px]">
-                  يوتيوب
-                </Badge>
-              ) : (
-                <Badge variant="neutral" className="text-[11px]">
-                  Bunny
-                </Badge>
-              )}
             </div>
 
             {/* Playlist dropdown — visible only when there is more than one video */}
@@ -676,13 +672,13 @@ export function StudentLessonPage() {
                   onClick={() => setIsPlaylistOpen((value) => !value)}
                   aria-expanded={isPlaylistOpen}
                   data-testid="lesson-playlist-toggle"
-                  className="flex w-full items-center justify-between gap-3 px-4 py-4 text-right transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset sm:px-5"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-4 text-start transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset sm:px-5"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
                       <ListVideo className="h-5 w-5" />
                     </span>
-                    <div className="text-right">
+                    <div className="text-start">
                       <h3 className="font-display text-sm font-bold leading-5 text-foreground sm:text-[15px]">
                         محتوى الدرس
                       </h3>
@@ -711,7 +707,6 @@ export function StudentLessonPage() {
                     <ol className="flex flex-col gap-2">
                       {allVideos.map((video, idx) => {
                         const isActive = video.id === activeVideo.id;
-                        const isYoutube = video.source === 'youtube' && Boolean(video.youtube_video_id);
                         const num = String(idx + 1).padStart(2, '0');
                         return (
                           <li key={video.id}>
@@ -722,7 +717,7 @@ export function StudentLessonPage() {
                               data-testid={`playlist-item-${video.id}`}
                               // keep legacy ids for backwards compat where possible
                               data-legacy-testid={`extra-video-toggle-${video.id}`}
-                              className={`group flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-right transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-4 ${
+                              className={`group flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-start transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 sm:px-4 ${
                                 isActive
                                   ? 'border-primary/30 bg-primary/[0.08] shadow-[0_4px_16px_rgba(16,185,129,0.15)]'
                                   : 'border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]'
@@ -733,26 +728,20 @@ export function StudentLessonPage() {
                                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-bold tabular-nums transition-colors ${
                                     isActive
                                       ? 'border-primary/30 bg-primary text-white shadow-sm'
-                                      : isYoutube
-                                        ? 'border-red-500/20 bg-red-500/15 text-red-300'
-                                        : 'border-primary/20 bg-primary/15 text-primary'
+                                      : 'border-primary/20 bg-primary/15 text-primary'
                                   }`}
                                 >
                                   {isActive ? <Play className="h-3.5 w-3.5 fill-current" /> : num}
                                 </span>
-                                <div className="min-w-0 flex-1 text-right">
+                                <div className="min-w-0 flex-1 text-start">
                                   <p
                                     className={`truncate text-sm font-semibold leading-5 ${isActive ? 'text-foreground' : 'text-foreground'}`}
                                   >
                                     {video.title ?? 'فيديو الدرس'}
                                   </p>
                                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-foreground-muted">
-                                    {isYoutube ? (
-                                      <YoutubeIcon className="h-3.5 w-3.5 shrink-0 text-red-300" />
-                                    ) : (
-                                      <Play className="h-3 w-3 shrink-0 fill-current text-primary" />
-                                    )}
-                                    <span>{isYoutube ? 'يوتيوب' : 'Bunny'} · درس {idx + 1}</span>
+                                    <Play className="h-3 w-3 shrink-0 fill-current text-primary" />
+                                    <span>درس {idx + 1}</span>
                                     {isActive ? (
                                       <span className="inline-flex items-center gap-1 font-medium text-primary">
                                         · قيد التشغيل
@@ -765,10 +754,10 @@ export function StudentLessonPage() {
                               </div>
                               <div className="flex shrink-0 items-center gap-2">
                                 <Badge
-                                  variant={isYoutube ? 'info' : isActive ? 'success' : 'neutral'}
+                                  variant={isActive ? 'success' : 'neutral'}
                                   className="hidden text-[11px] sm:inline-flex"
                                 >
-                                  {isYoutube ? 'يوتيوب' : isActive ? 'يعرض الآن' : 'Bunny'}
+                                  {isActive ? 'يعرض الآن' : 'فيديو'}
                                 </Badge>
                                 <span
                                   className={`hidden h-2 w-2 shrink-0 rounded-full sm:inline-block ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-white/20'}`}

@@ -1010,6 +1010,12 @@ export async function getMyUnitPurchases(): Promise<UnitPurchaseWithUnit[]> {
   });
 }
 
+/**
+ * Student lesson gate: returns has_access / has_purchase / is_trial / price.
+ * has_access is authoritative (can_access_lesson: trial OR purchase). Callers
+ * must gate on has_access, never on has_purchase, so trial lessons open
+ * without a purchase for any active student. No client-side filtering here.
+ */
 export async function getMyLessonAccess(lessonId: string): Promise<LessonAccessInfo> {
   const { data, error } = await getSupabaseClient().rpc('get_my_lesson_access', {
     p_lesson_id: lessonId,
@@ -1031,6 +1037,11 @@ export interface TrialLessonRow {
   grade_name: string;
 }
 
+/**
+ * Cross-grade free lessons for any active student. No grade or purchase
+ * filter on the client — the RPC already enforces published + active
+ * grade + active profile. Returns [] for anon/disabled.
+ */
 export async function getTrialLessons(): Promise<TrialLessonRow[]> {
   const { data, error } = await getSupabaseClient().rpc('get_trial_lessons');
   if (error) throw error;

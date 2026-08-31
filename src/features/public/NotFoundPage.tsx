@@ -18,8 +18,8 @@ export function NotFoundPage() {
         jsonLd={breadcrumb as unknown as Record<string, unknown>}
       />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/4 top-1/4 h-72 w-72 animate-orb rounded-full bg-indigo-600/25 blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 h-80 w-80 animate-orb rounded-full bg-fuchsia-600/20 blur-3xl [animation-delay:2.5s]" />
+        <div className="absolute start-1/4 top-1/4 h-72 w-72 animate-orb rounded-full bg-indigo-600/25 blur-3xl" />
+        <div className="absolute bottom-1/4 end-1/4 h-80 w-80 animate-orb rounded-full bg-fuchsia-600/20 blur-3xl [animation-delay:2.5s]" />
       </div>
 
       <div className="conic-ring spotlight-card glass-card relative w-full max-w-md p-8 text-center">

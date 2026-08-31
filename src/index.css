@@ -255,6 +255,7 @@
   html {
     scroll-behavior: smooth;
     color-scheme: dark;
+    direction: rtl;
   }
 
   body {
@@ -263,6 +264,16 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    direction: rtl;
+  }
+
+  /* Ensure logical RTL: isolate bidi for numeric blocks stays correct */
+  [dir='ltr'] {
+    direction: ltr;
+  }
+
+  [dir='rtl'] {
+    direction: rtl;
   }
 
   /* Ambient aurora: slow-drifting neon blobs deep behind the glass */

@@ -56,6 +56,19 @@ CREATE POLICY units_select_staff_or_published_own_grade ON public.units
             AND status = 'published'
             AND deleted_at IS NULL
         )
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND EXISTS (
+                SELECT 1 FROM public.lessons l
+                WHERE l.unit_id = units.id
+                  AND l.is_trial = true
+                  AND l.status = 'published'
+                  AND l.deleted_at IS NULL
+            )
+        )
     );
 
 CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)

@@ -43,7 +43,7 @@ export function PageHeader({
           </div>
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 sm:ml-auto">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 sm:ms-auto">{actions}</div>}
     </div>
   );
 }

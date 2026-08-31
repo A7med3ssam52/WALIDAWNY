@@ -412,6 +412,7 @@ describe('StudentLessonPage', () => {
       expect.stringContaining('wa.me/201000000000'),
     );
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
+    expect(screen.queryByText('فتح على يوتيوب')).not.toBeInTheDocument();
   });
 
   it('unlocks the lesson after redeeming a valid unit code', async () => {
@@ -468,7 +469,7 @@ describe('StudentLessonPage', () => {
     renderApp('/student/lessons/lesson-1');
 
     expect((await screen.findByTestId('youtube-embed')).getAttribute('src')).toContain(
-      'https://www.youtube.com/embed/abc123XYZ',
+      'https://www.youtube-nocookie.com/embed/abc123XYZ',
     );
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
     expect(
@@ -526,26 +527,26 @@ describe('StudentLessonPage', () => {
         is_primary: false,
         source: 'youtube',
         youtube_video_id: 'dQw4w9WgXcQ',
-        title: 'شرح يوتيوب',
+        title: 'شرح إضافي',
       }),
     );
     renderApp('/student/lessons/lesson-1');
 
     expect(await screen.findByTestId('lesson-extra-videos')).toBeInTheDocument();
     // Extra videos are inside a course-style dropdown
-    expect(screen.queryByText('شرح يوتيوب')).not.toBeInTheDocument();
+    expect(screen.queryByText('شرح إضافي')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('lesson-playlist-toggle'));
     expect(await screen.findByTestId('extra-video-list')).toBeInTheDocument();
-    expect(screen.getByText('شرح يوتيوب')).toBeInTheDocument();
+    expect(screen.getByText('شرح إضافي')).toBeInTheDocument();
     // Initially primary bunny is playing — single player
     expect(await screen.findByTestId('lesson-video')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('playlist-item-video-3'));
     expect((await screen.findByTestId('youtube-embed')).getAttribute('src')).toContain(
-      'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
     );
     expect(screen.queryByTestId('lesson-video')).not.toBeInTheDocument();
-    expect(screen.getAllByText('يوتيوب').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByTestId('playlist-item-video-3')).toHaveTextContent('يوتيوب');
+    expect(screen.queryByText('يوتيوب')).not.toBeInTheDocument();
+    expect(screen.getByTestId('playlist-item-video-3')).toHaveTextContent('درس 2');
   });
 
   it('shows an inline error for a failed extra video while the primary keeps playing', async () => {
