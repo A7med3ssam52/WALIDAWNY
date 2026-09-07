@@ -113,12 +113,17 @@ export function AnnouncementFormPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const trimmedLinkUrl = form.link_url.trim() || null;
+    if (trimmedLinkUrl && !trimmedLinkUrl.startsWith('https://')) {
+      showToast('رابط الزر يجب أن يبدأ بـ https://', 'error');
+      return;
+    }
     setBusy(true);
     try {
       const basePayload = {
         title: form.title.trim(),
         body: form.body.trim(),
-        link_url: form.link_url.trim() || null,
+        link_url: trimmedLinkUrl,
         link_label: form.link_label.trim() || null,
         variant: form.variant,
         target_roles: form.target_roles,
@@ -203,7 +208,7 @@ export function AnnouncementFormPage() {
   return (
     <LayoutShell
       title={isEdit ? `تعديل: ${form.title || '...'}` : 'إنشاء إعلان جديد'}
-      subtitle="المعاينة تظهر أدناه — ستظهر للزوار في صفحة التعديل فقط"
+      subtitle="المعاينة تظهر أدناه — سيظهر الإعلان عالمياً حسب الاستهداف والجدولة"
       variant="sidebar"
       nav={<AdminNav />}
       actions={
@@ -330,9 +335,9 @@ export function AnnouncementFormPage() {
             type="text"
             value={form.hide_on_paths}
             onChange={(e) => handleChange('hide_on_paths', e.target.value)}
-            placeholder="/admin/dashboard, /walid/dashboard"
+            placeholder="/student/dashboard, /login"
             className="mt-4"
-            hint="هذه المسارات لن يظهر فيها شريط المعاينة. صفحات التعديل مستثناة تلقائياً."
+            hint="هذه المسارات لن يظهر فيها الإعلان."
           />
 
           <div className="flex flex-wrap items-center gap-4 mt-4">
@@ -352,7 +357,7 @@ export function AnnouncementFormPage() {
         </Card>
 
         {showPreview && (
-          <Card title="معاينة مباشرة" subtitle="هذا كيف سيظهر الشريط في صفحة التعديل">
+          <Card title="معاينة مباشرة" subtitle="هذا كيف سيظهر الشريط عالمياً">
             <div className="p-2 bg-black/20 rounded-lg">
               <AnnouncementPreview announcement={previewAnnouncement} />
             </div>
@@ -415,7 +420,7 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
         <p className="mt-0.5 text-sm text-white/90 leading-snug">{announcement.body}</p>
       </div>
 
-      {announcement.link_url && announcement.link_label && (
+      {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
         <a
           href={announcement.link_url}
           target="_blank"

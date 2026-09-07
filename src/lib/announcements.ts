@@ -84,11 +84,15 @@ export async function fetchActiveAnnouncement(currentPath: string): Promise<Anno
       if (code === '42883' || code === 'pgrst202' || msg.includes('could not find the function')) {
         return null;
       }
+      // eslint-disable-next-line no-console
+      console.warn('[announcement] fetch failed', error);
       return null;
     }
     if (!data?.length) return null;
     return data[0] as Announcement;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[announcement] fetch failed', err);
     return null;
   }
 }

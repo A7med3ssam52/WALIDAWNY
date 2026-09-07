@@ -31,6 +31,10 @@ BEGIN
         RAISE EXCEPTION 'permission_denied';
     END IF;
 
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN
+        RAISE EXCEPTION 'invalid_link_url';
+    END IF;
+
     INSERT INTO public.announcements (
         title, body, link_url, link_label, variant,
         target_roles, hide_on_paths, starts_at, ends_at,
@@ -82,16 +86,20 @@ BEGIN
         RAISE EXCEPTION 'not_found';
     END IF;
 
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN
+        RAISE EXCEPTION 'invalid_link_url';
+    END IF;
+
     UPDATE public.announcements SET
         title = COALESCE(p_title, title),
         body = COALESCE(p_body, body),
-        link_url = COALESCE(p_link_url, link_url),
-        link_label = COALESCE(p_link_label, link_label),
+        link_url = p_link_url,
+        link_label = p_link_label,
         variant = COALESCE(p_variant, variant),
         target_roles = COALESCE(p_target_roles, target_roles),
         hide_on_paths = COALESCE(p_hide_on_paths, hide_on_paths),
         starts_at = COALESCE(p_starts_at, starts_at),
-        ends_at = COALESCE(p_ends_at, ends_at),
+        ends_at = p_ends_at,
         is_active = COALESCE(p_is_active, is_active),
         dismissible = COALESCE(p_dismissible, dismissible),
         updated_at = now()

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS public.announcements (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     title text NOT NULL,
     body text NOT NULL,
-    link_url text,
+    link_url text CHECK (link_url IS NULL OR link_url ~ '^https://'),
     link_label text,
     variant text NOT NULL DEFAULT 'info' CHECK (variant IN ('info','warning','success','error')),
     target_roles text[] NOT NULL DEFAULT '{"student","teacher","mr_walid","admin"}',
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.announcements (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE public.announcements IS 'Global announcements. Preview shows ONLY on admin/teacher announcement edit pages via RPC path filtering.';
+COMMENT ON TABLE public.announcements IS 'Global announcements. Shown globally via AnnouncementBanner, filtered by target_roles, hide_on_paths and time window.';
 
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements FORCE ROW LEVEL SECURITY;
@@ -32,9 +32,9 @@ ALTER TABLE public.announcements FORCE ROW LEVEL SECURITY;
 -- ---------------------------------------------------------------------
 -- RLS Policies
 -- ---------------------------------------------------------------------
--- Public/anon can read ONLY active announcements (for preview on edit pages)
+-- Authenticated can read ONLY active announcements (global banner)
 CREATE POLICY announcements_select_active ON public.announcements
-    FOR SELECT USING (
+    FOR SELECT TO authenticated USING (
         is_active
         AND starts_at <= now()
         AND (ends_at IS NULL OR ends_at > now())
@@ -69,10 +69,10 @@ CREATE TRIGGER set_announcements_updated_at
 -- RPC: get_active_announcements(p_current_path)
 -- Returns active announcements filtered by:
 --   - user role (target_roles)
---   - current path (hide_on_paths) - ONLY shows on edit pages
+--   - current path (hide_on_paths) - global banner
 --   - time window (starts_at/ends_at)
 --   - is_active
--- LIMIT 1 returns the most recent for single-bar preview
+-- LIMIT 1 returns the most recent for single-bar global banner
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_active_announcements(p_current_path text DEFAULT '/')
 RETURNS SETOF public.announcements
@@ -91,17 +91,12 @@ BEGIN
       AND (a.ends_at IS NULL OR a.ends_at > now())
       AND v_role = ANY(a.target_roles)
       AND NOT (p_current_path = ANY(a.hide_on_paths))
-      AND (
-          -- ONLY show on announcement edit/create pages
-          p_current_path ILIKE '/admin/announcements/%'
-          OR p_current_path ILIKE '/walid/announcements/%'
-      )
     ORDER BY a.created_at DESC
     LIMIT 1;
 END $$;
 
 COMMENT ON FUNCTION public.get_active_announcements(text) IS
-'Returns the latest active announcement for preview. ONLY returns data when current path is an admin/teacher announcement edit or create page.';
+'Returns the latest active announcement for global banner. Filtered by role, hide_on_paths and time window.';
 
 -- ---------------------------------------------------------------------
 -- RPC: list_announcements (for management UI - admin/teacher)
@@ -186,6 +181,10 @@ BEGIN
         RAISE EXCEPTION 'permission_denied';
     END IF;
 
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN
+        RAISE EXCEPTION 'invalid_link_url';
+    END IF;
+
     INSERT INTO public.announcements (
         title, body, link_url, link_label, variant,
         target_roles, hide_on_paths, starts_at, ends_at,
@@ -241,16 +240,20 @@ BEGIN
         RAISE EXCEPTION 'not_found';
     END IF;
 
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN
+        RAISE EXCEPTION 'invalid_link_url';
+    END IF;
+
     UPDATE public.announcements SET
         title = COALESCE(p_title, title),
         body = COALESCE(p_body, body),
-        link_url = COALESCE(p_link_url, link_url),
-        link_label = COALESCE(p_link_label, link_label),
+        link_url = p_link_url,
+        link_label = p_link_label,
         variant = COALESCE(p_variant, variant),
         target_roles = COALESCE(p_target_roles, target_roles),
         hide_on_paths = COALESCE(p_hide_on_paths, hide_on_paths),
         starts_at = COALESCE(p_starts_at, starts_at),
-        ends_at = COALESCE(p_ends_at, ends_at),
+        ends_at = p_ends_at,
         is_active = COALESCE(p_is_active, is_active),
         dismissible = COALESCE(p_dismissible, dismissible),
         updated_at = now()

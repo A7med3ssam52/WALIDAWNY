@@ -99,7 +99,7 @@ export function AnnouncementBanner() {
             <p className="mt-0.5 text-sm text-white/90 leading-snug">{announcement.body}</p>
           </div>
 
-          {announcement.link_url && announcement.link_label && (
+          {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
             <a
               href={announcement.link_url}
               target="_blank"
