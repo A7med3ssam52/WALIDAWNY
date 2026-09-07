@@ -73,11 +73,22 @@ export function GradesPage() {
   const load = useCallback(async () => {
     setError(false);
     try {
-      const [active, deleted] = await Promise.all([listAllGrades(), listDeletedGrades()]);
-      setGrades(active);
-      setDeletedGrades(deleted);
+      const results = await Promise.allSettled([listAllGrades(), listDeletedGrades()]);
+      if (results[0].status === 'fulfilled') {
+        setGrades(results[0].value);
+      } else {
+        setGrades([]);
+        setError(true);
+      }
+      if (results[1].status === 'fulfilled') {
+        setDeletedGrades(results[1].value);
+      } else {
+        setDeletedGrades([]);
+      }
     } catch {
       setError(true);
+      setGrades([]);
+      setDeletedGrades([]);
     }
   }, []);
 
@@ -269,9 +280,7 @@ export function GradesPage() {
         </Card>
 
         <Card title="الصفوف المحذوفة">
-          {error ? (
-            <ErrorState message="تعذر تحميل الصفوف المحذوفة" onRetry={() => void load()} />
-          ) : deletedGrades === null ? (
+          {deletedGrades === null ? (
             <div className="flex flex-col gap-3" aria-hidden="true">
               {Array.from({ length: 2 }, (_, index) => (
                 <Skeleton key={index} className="h-12 w-full rounded-sm" />

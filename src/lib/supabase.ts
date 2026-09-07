@@ -2,14 +2,24 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../types/database';
 
-export const supabaseUrl =
-  (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ||
-  'https://nfusbrktrqfrnaetetmr.supabase.co';
-export const supabasePublishableKey =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
-  'sb_publishable_FCxdA2r2MOReIzNfTKEtLA_3AtTiMqp';
+const envSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? '';
+const envSupabasePublishableKey = (
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined
+)?.trim() ?? '';
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
+export const isSupabaseConfigured = Boolean(envSupabaseUrl && envSupabasePublishableKey);
+
+export const supabaseUrl =
+  envSupabaseUrl || (import.meta.env.DEV ? 'https://nfusbrktrqfrnaetetmr.supabase.co' : '');
+export const supabasePublishableKey =
+  envSupabasePublishableKey ||
+  (import.meta.env.DEV ? 'sb_publishable_FCxdA2r2MOReIzNfTKEtLA_3AtTiMqp' : '');
+
+if (import.meta.env.DEV && !isSupabaseConfigured) {
+  console.warn(
+    '[supabase] VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY missing — using DEV fallback. Set .env.local to silence this warning.',
+  );
+}
 
 let client: SupabaseClient<Database> | null = null;
 

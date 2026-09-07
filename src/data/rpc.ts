@@ -426,8 +426,26 @@ export async function listUnitsForGrade(gradeId: string): Promise<Unit[]> {
     .order('created_at', { ascending: true });
   if (error) {
     const code = getRpcErrorCode(error);
-    if (code === '42p17' || String(error.message ?? '').toLowerCase().includes('infinite recursion')) {
-      // Fallback 1: secure RPC that bypasses RLS (fix for 0052 recursion)
+    const msg = String((error as { message?: unknown }).message ?? '').toLowerCase();
+    const isMissing = code === '42703' || code === '42883' || msg.includes('is_free');
+    const isRecursion = code === '42p17' || msg.includes('infinite recursion');
+    if (isMissing || isRecursion) {
+      // Fallback for missing is_free column (DB without 0051) — retry without is_free
+      if (isMissing) {
+        try {
+          const { data: retryData, error: retryErr } = await getSupabaseClient()
+            .from('units')
+            .select('id, grade_id, name, sort_order, status, deleted_at, created_at, updated_at')
+            .eq('grade_id', gradeId)
+            .is('deleted_at', null)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+          if (!retryErr && retryData) {
+            return (retryData as unknown as Unit[]).map((u) => ({ ...u, is_free: false } as Unit));
+          }
+        } catch {}
+      }
+      // Fallback 1: secure RPC that bypasses RLS (fix for 0052 recursion — handles both with/without 0052)
       try {
         const { data: fallback, error: fbErr } = await getSupabaseClient().rpc(
           'list_units_for_grade_secure' as never,
@@ -469,7 +487,23 @@ export async function listDeletedUnitsForGrade(gradeId: string): Promise<Unit[]>
     .order('deleted_at', { ascending: false });
   if (error) {
     const code = getRpcErrorCode(error);
-    if (code === '42p17' || String(error.message ?? '').toLowerCase().includes('infinite recursion')) {
+    const msg = String((error as { message?: unknown }).message ?? '').toLowerCase();
+    const isMissing = code === '42703' || code === '42883' || msg.includes('is_free');
+    const isRecursion = code === '42p17' || msg.includes('infinite recursion');
+    if (isMissing || isRecursion) {
+      if (isMissing) {
+        try {
+          const { data: retryData, error: retryErr } = await getSupabaseClient()
+            .from('units')
+            .select('id, grade_id, name, sort_order, status, deleted_at, created_at, updated_at')
+            .eq('grade_id', gradeId)
+            .not('deleted_at', 'is', null)
+            .order('deleted_at', { ascending: false });
+          if (!retryErr && retryData) {
+            return (retryData as unknown as Unit[]).map((u) => ({ ...u, is_free: false } as Unit));
+          }
+        } catch {}
+      }
       const { data: fallback, error: fbErr } = await getSupabaseClient().rpc(
         'list_deleted_units_for_grade_secure' as never,
         { p_grade_id: gradeId } as never,
@@ -1216,7 +1250,16 @@ export async function getPublicUnitPrices(): Promise<PublicUnitPrice[]> {
     if (error) throw error;
     return (data ?? []) as PublicUnitPrice[];
   } catch (error) {
-    if (isMissingColumnError(error)) {
+    const _code = getRpcErrorCode(error);
+    const _msg = String((error as { message?: unknown }).message ?? '').toLowerCase();
+    const isUnifiedFallback =
+      _code === '42703' ||
+      _code === '42p17' ||
+      _code === '42883' ||
+      _msg.includes('is_free') ||
+      _msg.includes('infinite recursion') ||
+      isMissingColumnError(error);
+    if (isUnifiedFallback) {
       // Fallback for DBs without 0051 — build prices without is_free
       try {
         const { data: pricing, error: pErr } = await getSupabaseClient()

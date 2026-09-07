@@ -224,7 +224,7 @@ export function StudentLessonPage() {
             setBoards([]);
           }
         });
-      const [unitRow, lessonRows, videos, pdfs, progressRow] = await Promise.all([
+      const results = await Promise.allSettled([
         getUnitById(lessonRow.unit_id),
         listLessonsForUnit(lessonRow.unit_id),
         listLessonVideos(lessonRow.id),
@@ -234,18 +234,40 @@ export function StudentLessonPage() {
       if (requestIdRef.current !== requestId) {
         return;
       }
-      setUnit(unitRow);
-      setSiblings(
-        lessonRows
-          .filter((row) => row.status === 'published')
-          .sort((a, b) => a.sort_order - b.sort_order),
-      );
-      const readyVideos = videos.filter((video) => video.status === 'ready');
-      setPrimaryVideo(readyVideos.find((video) => video.is_primary) ?? null);
-      setExtraVideos(readyVideos.filter((video) => !video.is_primary));
-      setPrimaryPdf(pdfs.find((pdf) => pdf.is_primary && pdf.is_ready) ?? null);
-      setProgress(progressRow);
+      if (results[0].status === 'fulfilled') setUnit(results[0].value);
+      else setUnit(null);
+      if (results[1].status === 'fulfilled') {
+        const lessonRows = results[1].value as Lesson[];
+        setSiblings(
+          lessonRows
+            .filter((row) => row.status === 'published')
+            .sort((a, b) => a.sort_order - b.sort_order),
+        );
+      } else {
+        setSiblings([]);
+      }
+      if (results[2].status === 'fulfilled') {
+        const videos = results[2].value as LessonVideo[];
+        const readyVideos = videos.filter((video) => video.status === 'ready');
+        setPrimaryVideo(readyVideos.find((video) => video.is_primary) ?? null);
+        setExtraVideos(readyVideos.filter((video) => !video.is_primary));
+      } else {
+        setPrimaryVideo(null);
+        setExtraVideos([]);
+      }
+      if (results[3].status === 'fulfilled') {
+        const pdfs = results[3].value as LessonPdf[];
+        setPrimaryPdf(pdfs.find((pdf) => pdf.is_primary && pdf.is_ready) ?? null);
+      } else {
+        setPrimaryPdf(null);
+      }
+      if (results[4].status === 'fulfilled') setProgress(results[4].value as Progress | null);
+      else setProgress(null);
       setProgressLoaded(true);
+      const allFailed = results.every((r) => r.status === 'rejected');
+      if (allFailed) {
+        if (requestIdRef.current === requestId) setLoadError(true);
+      }
       if (requestIdRef.current === requestId) {
         setContentLoading(false);
       }
