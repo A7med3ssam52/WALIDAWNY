@@ -3,6 +3,7 @@ import { X, ExternalLink } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 import { fetchActiveAnnouncement, type Announcement, type AnnouncementVariant } from '../lib/announcements';
+import { safeJsonParseObject, safeSetJson } from '../lib/safeStorage';
 
 const VARIANT_STYLES: Record<AnnouncementVariant, string> = {
   info: 'bg-gradient-to-r from-blue-500/90 to-blue-600/90 border-blue-400/30',
@@ -23,20 +24,11 @@ interface DismissedState {
 }
 
 function getDismissedState(): DismissedState {
-  try {
-    const stored = localStorage.getItem('announcement-dismissed');
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
+  return safeJsonParseObject<DismissedState>('announcement-dismissed', {});
 }
 
 function setDismissedState(state: DismissedState): void {
-  try {
-    localStorage.setItem('announcement-dismissed', JSON.stringify(state));
-  } catch {
-    // ignore
-  }
+  safeSetJson('announcement-dismissed', state);
 }
 
 export function AnnouncementBanner() {
@@ -69,7 +61,7 @@ export function AnnouncementBanner() {
     return null;
   }
 
-  if (dismissed[announcement.id]) {
+  if (dismissed && typeof dismissed === 'object' && (dismissed as DismissedState)[announcement.id]) {
     return null;
   }
 
@@ -77,7 +69,11 @@ export function AnnouncementBanner() {
   const Icon = VARIANT_ICONS[announcement.variant] ?? VARIANT_ICONS.info;
 
   const handleDismiss = () => {
-    const next = { ...dismissed, [announcement.id]: true };
+    const safeDismissed =
+      dismissed && typeof dismissed === 'object' && !Array.isArray(dismissed)
+        ? dismissed
+        : {};
+    const next = { ...safeDismissed, [announcement.id]: true };
     setDismissed(next);
     setDismissedState(next);
   };

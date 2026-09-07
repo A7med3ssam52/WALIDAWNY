@@ -3,9 +3,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database';
 
 export const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL || 'https://nfusbrktrqfrnaetetmr.supabase.co';
+  (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || '';
 export const supabasePublishableKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_FCxdA2r2MOReIzNfTKEtLA_3AtTiMqp';
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() || '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { GuestOnly, ProtectedRoute, RoleGuard } from '../components/guards';
 import { Spinner } from '../components/Spinner';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // Public — lazy for code splitting (Landing excludes hls.js chunk)
 const LandingPage = lazy(() => import('../features/public/LandingPage').then((m) => ({ default: m.LandingPage })));
@@ -63,8 +64,9 @@ function PageFallback() {
 
 export function AppRoutes() {
   return (
-    <Suspense fallback={<PageFallback />}>
-      <Routes>
+    <ErrorBoundary>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
         {/* Public SEO surface — accessible without auth, indexable */}
         <Route
           path="/"
@@ -146,7 +148,8 @@ export function AppRoutes() {
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

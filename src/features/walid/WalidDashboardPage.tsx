@@ -152,7 +152,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SectionCard title="الطلاب والمشتريات حسب الصف">
-              {stats.by_grade.length === 0 ? (
+              {(Array.isArray(stats.by_grade) ? stats.by_grade : []).length === 0 ? (
                 emptyTable
               ) : (
                 <Table>
@@ -165,7 +165,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {stats.by_grade.map((row) => (
+                    {(Array.isArray(stats.by_grade) ? stats.by_grade : []).map((row) => (
                       <TableRow key={row.grade_name}>
                         <TableCell label="الصف" className="font-medium text-foreground">
                           {row.grade_name}
@@ -183,7 +183,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
             </SectionCard>
 
             <SectionCard title="الوحدات الأكثر مبيعًا">
-              {stats.top_units.length === 0 ? (
+              {(Array.isArray(stats.top_units) ? stats.top_units : []).length === 0 ? (
                 emptyTable
               ) : (
                 <Table>
@@ -195,7 +195,7 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {stats.top_units.map((row) => (
+                    {(Array.isArray(stats.top_units) ? stats.top_units : []).map((row) => (
                       <TableRow key={row.unit_name}>
                         <TableCell label="الوحدة" className="font-medium text-foreground">
                           {row.unit_name}
@@ -214,11 +214,11 @@ export function WalidDashboardPage({ nav }: { nav?: ReactNode }) {
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SectionCard title="أحدث المشتريات">
-              {stats.recent_purchases.length === 0 ? (
+              {(Array.isArray(stats.recent_purchases) ? stats.recent_purchases : []).length === 0 ? (
                 emptyTable
               ) : (
                 <ul className="divide-y divide-border-muted">
-                  {stats.recent_purchases.map((purchase) => (
+                  {(Array.isArray(stats.recent_purchases) ? stats.recent_purchases : []).map((purchase) => (
                     <li
                       key={`${purchase.student_name}-${purchase.unit_name}-${purchase.purchased_at}`}
                       className="flex items-center justify-between gap-3 py-3"
