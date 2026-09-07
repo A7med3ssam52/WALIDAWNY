@@ -13,11 +13,11 @@ const CACHE_NAME = `walid-aurora-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/manifest.webmanifest?v=2',
-  '/icons/icon-192.png?v=2',
-  '/icons/icon-512.png?v=2',
-  '/icons/icon-maskable-512.png?v=2',
-  '/icons/apple-touch-icon.png?v=2',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
 ];
 
 /* ------------------------- Background upload engine ---------------------- */
@@ -408,8 +408,15 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting()),
+      .then((cache) =>
+        cache.addAll(APP_SHELL).catch(() => {
+          // If any shell file 404s (e.g., after a new deploy), still activate
+          // and let the fetch handler populate the cache on demand.
+          return cache.addAll(['/','/index.html'].filter(Boolean));
+        }),
+      )
+      .then(() => self.skipWaiting())
+      .catch(() => self.skipWaiting()),
   );
 });
 

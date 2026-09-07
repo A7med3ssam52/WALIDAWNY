@@ -72,12 +72,25 @@ export function getRoleLabel(role: UserRole): string {
 }
 
 export async function fetchActiveAnnouncement(currentPath: string): Promise<Announcement | null> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await (supabase as any).rpc('get_active_announcements', {
-    p_current_path: currentPath,
-  });
-  if (error || !data?.length) return null;
-  return data[0] as Announcement;
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await (supabase as any).rpc('get_active_announcements', {
+      p_current_path: currentPath,
+    });
+    if (error) {
+      // 404 = function not yet deployed (migration 0049 not on prod) — treat as no banner
+      const code = String((error as { code?: unknown })?.code ?? '').toLowerCase();
+      const msg = String((error as { message?: unknown })?.message ?? '').toLowerCase();
+      if (code === '42883' || code === 'pgrst202' || msg.includes('could not find the function')) {
+        return null;
+      }
+      return null;
+    }
+    if (!data?.length) return null;
+    return data[0] as Announcement;
+  } catch {
+    return null;
+  }
 }
 
 export async function listAnnouncements(limit = 50, offset = 0): Promise<Announcement[]> {
