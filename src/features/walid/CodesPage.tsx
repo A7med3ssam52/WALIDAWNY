@@ -25,7 +25,9 @@ import {
   createUnitCodesForStaff,
   getRpcErrorCode,
   listCodesByUnit,
+  listGrades,
   listUnitPricing,
+  listUnitsForGrade,
   revokeUnitCode,
 } from '../../data/rpc';
 import { copyText } from '../../lib/clipboard';
@@ -76,8 +78,26 @@ export function CodesPage() {
     setError(false);
     try {
       const nextPricing = await listUnitPricing();
-      setPricing(nextPricing);
-      setSelectedUnitId((prev) => prev || (nextPricing[0]?.unit_id ?? ''));
+      // Filter pricing to only non-deleted units (DB may still return deleted due to 0051 bug)
+      let filteredPricing = nextPricing;
+      try {
+        const grades = await listGrades();
+        // listGrades only returns active, non-deleted grades — need all grades for staff
+        // Fallback: use pricing's grade_name to keep all, but try to filter deleted units via direct units query
+        const allUnits = (await Promise.all(grades.map((g) => listUnitsForGrade(g.id).catch(() => [] as never)))).flat();
+        const allUnitIds = new Set(allUnits.map((u) => u.id));
+        // Keep pricing only if unit is in allUnits (non-deleted) or if is_free (may be without pricing row)
+        const hasUnits = allUnitIds.size > 0;
+        if (hasUnits) {
+          filteredPricing = nextPricing.filter((p) => allUnitIds.has(p.unit_id));
+          // If filtering removed everything (e.g., all pricing was for deleted units), keep original to avoid empty dropdown
+          if (filteredPricing.length === 0) filteredPricing = nextPricing;
+        }
+      } catch {
+        // keep original pricing on fallback failure
+      }
+      setPricing(filteredPricing);
+      setSelectedUnitId((prev) => prev || (filteredPricing[0]?.unit_id ?? nextPricing[0]?.unit_id ?? ''));
     } catch {
       setError(true);
     }
