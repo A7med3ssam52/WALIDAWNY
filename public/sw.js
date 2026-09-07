@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `walid-aurora-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
@@ -470,19 +470,29 @@ self.addEventListener('fetch', (event) => {
       if (cached) {
         return cached;
       }
-      return fetch(request).then((response) => {
-        if (
-          response.ok &&
-          (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.webmanifest'))
-        ) {
-          const copy = response.clone();
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => cache.put(request, copy))
-            .catch(() => {});
-        }
-        return response;
-      });
+      return fetch(request)
+        .then((response) => {
+          if (response.status === 404 && url.pathname.startsWith('/assets/')) {
+            // Chunk was removed after a new deployment — evict stale index.html
+            // so the next hard reload fetches fresh chunk hashes.
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.delete('/index.html').then(() => cache.delete('/')))
+              .catch(() => {});
+          }
+          if (
+            response.ok &&
+            (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.webmanifest'))
+          ) {
+            const copy = response.clone();
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(request, copy))
+              .catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
     }),
   );
 });

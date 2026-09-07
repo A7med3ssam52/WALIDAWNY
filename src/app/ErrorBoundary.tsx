@@ -18,13 +18,50 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('Unhandled application error:', error, info);
+    const msg = String(error?.message ?? '');
+    const isChunk =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('ChunkLoadError') ||
+      msg.includes('Loading chunk') ||
+      msg.includes('Importing a module script failed');
+    if (isChunk) {
+      try {
+        const key = 'chunk-reload-' + (error.message || 'chunk');
+        const last = sessionStorage.getItem(key);
+        const now = Date.now();
+        // Reload once per chunk per 5 minutes to avoid loop
+        if (!last || now - Number(last) > 300_000) {
+          sessionStorage.setItem(key, String(now));
+          // Force hard reload bypassing SW cache to get fresh index.html
+          window.location.reload();
+        }
+      } catch {
+        window.location.reload();
+      }
+    }
   }
 
   private handleReset = () => {
+    const msg = String(this.state.error?.message ?? '');
+    const isChunk =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('ChunkLoadError') ||
+      msg.includes('Loading chunk');
+    if (isChunk) {
+      // Retry for chunk means hard reload to get fresh index.html
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null });
   };
 
   private handleReload = () => {
+    // Hard reload bypassing service worker cache
+    try {
+      if ('caches' in window) {
+        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
+      }
+    } catch {}
     window.location.reload();
   };
 

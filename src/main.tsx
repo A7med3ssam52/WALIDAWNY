@@ -24,14 +24,53 @@ if (typeof document !== 'undefined') {
   }
 }
 
-// Capture async errors that ErrorBoundary cannot catch (R-06)
+// Capture async errors that ErrorBoundary cannot catch (R-06) + auto-recover chunk load failures
 if (typeof window !== 'undefined') {
+  const isChunkError = (msg: string) =>
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('ChunkLoadError') ||
+    msg.includes('Loading chunk') ||
+    msg.includes('Importing a module script failed');
+
+  const handleChunkReload = (msg: string) => {
+    if (!isChunkError(msg)) return false;
+    try {
+      const key = 'chunk-reload-' + msg.slice(0, 80);
+      const last = sessionStorage.getItem(key);
+      if (!last || Date.now() - Number(last) > 300_000) {
+        sessionStorage.setItem(key, String(Date.now()));
+        window.location.reload();
+        return true;
+      }
+    } catch {
+      window.location.reload();
+      return true;
+    }
+    return false;
+  };
+
   window.addEventListener('unhandledrejection', (event) => {
+    const msg = String((event.reason as { message?: unknown })?.message ?? event.reason ?? '');
+    if (handleChunkReload(msg)) {
+      event.preventDefault();
+      return;
+    }
     console.error('Unhandled promise rejection:', event.reason);
     event.preventDefault();
   });
   window.addEventListener('error', (event) => {
+    const msg = String((event.error as { message?: unknown })?.message ?? event.message ?? '');
+    if (msg && isChunkError(msg)) {
+      // Let ErrorBoundary handle it, but also ensure reload if not caught
+      return;
+    }
     console.error('Unhandled window error:', event.error ?? event.message, event);
+  });
+  // Vite preload error event (for failed chunk preload)
+  window.addEventListener('vite:preloadError', (event) => {
+    const msg = String((event as unknown as CustomEvent<{ message?: string }>).detail?.message ?? '');
+    handleChunkReload(msg);
+    console.error('Vite preload error:', event);
   });
 }
 
