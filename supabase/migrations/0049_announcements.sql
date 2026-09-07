@@ -89,7 +89,7 @@ BEGIN
     WHERE a.is_active
       AND a.starts_at <= now()
       AND (a.ends_at IS NULL OR a.ends_at > now())
-      AND v_role = ANY(a.target_roles)
+      AND v_role::text = ANY(a.target_roles)
       AND NOT (p_current_path = ANY(a.hide_on_paths))
     ORDER BY a.created_at DESC
     LIMIT 1;

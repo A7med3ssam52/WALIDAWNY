@@ -3,7 +3,34 @@
 -- Hot-fix for 0049: audit_log() takes 4 params, 0049 was calling with 5
 -- (extra v_user_id). This patch overwrites the 3 buggy RPCs so existing
 -- deployed DBs that already ran 0049 start working without re-running it.
+-- Also fixes get_active_announcements enum cast (0049:92 operator does not exist: user_role = text)
+-- to cover production where 0049 remains buggy without re-running it.
 -- =====================================================================
+
+-- Fix get_active_announcements enum cast (covers production where 0049 buggy remains)
+CREATE OR REPLACE FUNCTION public.get_active_announcements(p_current_path text DEFAULT '/')
+RETURNS SETOF public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_role public.user_role;
+BEGIN
+    v_role := public.get_current_role();
+    RETURN QUERY
+    SELECT a.* FROM public.announcements a
+    WHERE a.is_active
+      AND a.starts_at <= now()
+      AND (a.ends_at IS NULL OR a.ends_at > now())
+      AND v_role::text = ANY(a.target_roles)
+      AND NOT (p_current_path = ANY(a.hide_on_paths))
+    ORDER BY a.created_at DESC
+    LIMIT 1;
+END $$;
+
+COMMENT ON FUNCTION public.get_active_announcements(text) IS
+'Returns the latest active announcement for global banner. Filtered by role, hide_on_paths and time window.';
 
 CREATE OR REPLACE FUNCTION public.create_announcement(
     p_title text,
@@ -141,10 +168,12 @@ BEGIN
 END $$;
 
 -- Grants (idempotent, keep in sync with 0049)
+REVOKE EXECUTE ON FUNCTION public.get_active_announcements(text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.delete_announcement(uuid) FROM PUBLIC;
 
+GRANT EXECUTE ON FUNCTION public.get_active_announcements(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_announcement(uuid) TO authenticated;

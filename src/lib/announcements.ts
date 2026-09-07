@@ -78,12 +78,13 @@ export async function fetchActiveAnnouncement(currentPath: string): Promise<Anno
       p_current_path: currentPath,
     });
     if (error) {
-      // 404 = function not yet deployed (migration 0049 not on prod) — treat as no banner
       const code = String((error as { code?: unknown })?.code ?? '').toLowerCase();
       const msg = String((error as { message?: unknown })?.message ?? '').toLowerCase();
-      if (code === '42883' || code === 'pgrst202' || msg.includes('could not find the function')) {
+      // قبل 0049: الدالة غير موجودة — صمت (PGRST202 / could not find the function)
+      if (code === 'pgrst202' || msg.includes('could not find the function')) {
         return null;
       }
+      // 42883 operator does not exist (مثل user_role = text) يجب تسجيله وليس ابتلاعه
       // eslint-disable-next-line no-console
       console.warn('[announcement] fetch failed', error);
       return null;
