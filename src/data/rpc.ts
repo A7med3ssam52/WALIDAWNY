@@ -36,6 +36,32 @@ import type {
 
 /** Refresh tokens this many seconds before server-side expiry (gateway verify_jwt rejects expired JWTs). */
 const TOKEN_REFRESH_MARGIN_SEC = 30;
+const RPC_RETRY_ATTEMPTS = 2;
+const RPC_RETRY_BASE_MS = 180;
+
+async function withRpcRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= RPC_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const code = getRpcErrorCode(error);
+      const retryable =
+        code === 'network_error' ||
+        code === 'internal_error' ||
+        code === 'function_error' ||
+        code === '429' ||
+        code === '500' ||
+        code === '502' ||
+        code === '503' ||
+        code === '504';
+      if (!retryable || attempt === RPC_RETRY_ATTEMPTS) throw error;
+      await new Promise((r) => setTimeout(r, RPC_RETRY_BASE_MS * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
 
 export interface OwnProfileInput {
   fullName: string;
@@ -219,11 +245,65 @@ export function getRpcErrorCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') {
     return null;
   }
-  const candidate = (error as { message?: unknown }).message ?? (error as { code?: unknown }).code;
-  if (typeof candidate !== 'string' || !candidate.trim()) {
-    return null;
+  const err = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown };
+  const rawCode = typeof err.code === 'string' ? err.code.trim().toLowerCase() : '';
+  const rawMessage = typeof err.message === 'string' ? err.message.trim().toLowerCase() : '';
+
+  // For unique violation the message contains the constraint text — keep it for duplicate detection
+  if (rawCode === '23505' && rawMessage) {
+    return rawMessage;
   }
-  return candidate.trim().toLowerCase();
+  if (rawMessage && rawMessage.includes('duplicate key value')) {
+    return rawMessage;
+  }
+  // Postgres numeric codes (missing column 42703, undefined function 42883, permission 42501, etc.) — surface as-is
+  if (rawCode && /^\d{5}$/.test(rawCode) && rawCode !== 'p0001') {
+    return rawCode;
+  }
+  // PGRST codes from PostgREST — prefer message which carries the custom RAISE text
+  if (rawCode.startsWith('pgrst')) {
+    if (rawMessage) {
+      // message is often the custom code like unit_is_free / unit_not_found
+      const short = rawMessage.split(':')[0].split(' ')[0].trim();
+      if (short && /^[a-z0-9_]+$/.test(short)) return short;
+      return rawMessage;
+    }
+    return rawCode;
+  }
+  // For our own codeError('network_error') both code and message are the short code
+  if (rawCode && /^[a-z0-9_]+$/.test(rawCode) && rawCode !== 'p0001') {
+    // if code is a meaningful short code (network_error, unit_is_free) prefer it
+    // but if message is also a short code and different, prefer message (RAISE case)
+    if (rawMessage && /^[a-z0-9_]+$/.test(rawMessage) && rawMessage.length < 40) {
+      return rawMessage;
+    }
+    return rawCode;
+  }
+  const candidate = rawMessage || rawCode;
+  if (!candidate) return null;
+  // For long messages like "column units.is_free does not exist" extract a usable token
+  if (candidate.includes('does not exist') && candidate.includes('is_free')) return '42703';
+  if (candidate.includes('does not exist')) return '42703';
+  if (candidate.includes('not exist')) return '42703';
+  // Duplicate grade is a special short phrase with a space — keep it
+  if (candidate === 'duplicate grade') return candidate;
+  // Take first segment before colon if message is a short code like "unit_not_found: ..."
+  const short = candidate.split(':')[0].trim();
+  if (short && short.length < 80 && /^[a-z0-9_ ]+$/.test(short)) return short;
+  return candidate;
+}
+
+export function isMissingColumnError(error: unknown): boolean {
+  const code = getRpcErrorCode(error);
+  if (code === '42703' || code === '42883') return true;
+  if (!error || typeof error !== 'object') return false;
+  const msg = String((error as { message?: unknown }).message ?? '').toLowerCase();
+  return msg.includes('is_free') && msg.includes('does not exist');
+}
+
+export function isNetworkErrorCode(error: unknown): boolean {
+  const code = getRpcErrorCode(error);
+  return code === 'network_error' || code === 'internal_error' || code === 'function_error';
 }
 
 export interface CreateGradeInput {
@@ -512,15 +592,20 @@ export async function deletePdfUpload(lessonId: string, pdfId: string): Promise<
 }
 
 export async function uploadPdfBytes(uploadUrl: string, file: Blob): Promise<void> {
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/pdf',
-    },
-    body: file,
-  });
+  let response: Response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/pdf',
+      },
+      body: file,
+    });
+  } catch {
+    throw codeError('network_error');
+  }
   if (!response.ok) {
-    throw new Error('pdf_upload_failed');
+    throw codeError(response.status >= 500 || response.status === 429 ? 'internal_error' : 'pdf_upload_failed');
   }
 }
 
@@ -1011,19 +1096,58 @@ export async function getMyUnitPurchases(): Promise<UnitPurchaseWithUnit[]> {
 }
 
 /**
- * Student lesson gate: returns has_access / has_purchase / is_trial / price.
- * has_access is authoritative (can_access_lesson: trial OR purchase). Callers
- * must gate on has_access, never on has_purchase, so trial lessons open
+ * Student lesson gate: returns has_access / has_purchase / is_trial / is_free / price.
+ * has_access is authoritative (can_access_lesson: trial OR free OR purchase). Callers
+ * must gate on has_access, never on has_purchase, so trial/free lessons open
  * without a purchase for any active student. No client-side filtering here.
  */
 export async function getMyLessonAccess(lessonId: string): Promise<LessonAccessInfo> {
-  const { data, error } = await getSupabaseClient().rpc('get_my_lesson_access', {
-    p_lesson_id: lessonId,
-  });
-  if (error) {
+  try {
+    const { data, error } = await getSupabaseClient().rpc('get_my_lesson_access', {
+      p_lesson_id: lessonId,
+    });
+    if (error) throw error;
+    const result = (data ?? {}) as LessonAccessInfo;
+    // Backward compat: old RPC without is_free
+    if (typeof result.is_free === 'undefined') {
+      (result as LessonAccessInfo).is_free = false;
+    }
+    return result;
+  } catch (error) {
+    if (isMissingColumnError(error)) {
+      // Fallback: treat as not free, compute has_access via trial/purchase only
+      try {
+        const { data, error: err2 } = await getSupabaseClient().rpc('get_my_lesson_access', {
+          p_lesson_id: lessonId,
+        } as never);
+        if (err2) throw err2;
+        const fallback = (data ?? {}) as LessonAccessInfo;
+        (fallback as LessonAccessInfo).is_free = false;
+        return fallback;
+      } catch {
+        // If still fails, return no access but don't crash page
+        return {
+          has_access: false,
+          has_purchase: false,
+          is_trial: false,
+          is_free: false,
+          unit_id: null,
+          unit_name: null,
+          price: null,
+        } as LessonAccessInfo;
+      }
+    }
+    if (isNetworkErrorCode(error)) {
+      return withRpcRetry(async () => {
+        const { data, error: err2 } = await getSupabaseClient().rpc('get_my_lesson_access', {
+          p_lesson_id: lessonId,
+        });
+        if (err2) throw err2;
+        return (data ?? {}) as LessonAccessInfo;
+      });
+    }
     throw error;
   }
-  return (data ?? {}) as LessonAccessInfo;
 }
 
 export interface TrialLessonRow {
@@ -1049,11 +1173,52 @@ export async function getTrialLessons(): Promise<TrialLessonRow[]> {
 }
 
 export async function getPublicUnitPrices(): Promise<PublicUnitPrice[]> {
-  const { data, error } = await getSupabaseClient().rpc('get_public_unit_prices');
-  if (error) {
+  try {
+    const { data, error } = await getSupabaseClient().rpc('get_public_unit_prices');
+    if (error) throw error;
+    return (data ?? []) as PublicUnitPrice[];
+  } catch (error) {
+    if (isMissingColumnError(error)) {
+      // Fallback for DBs without 0051 — build prices without is_free
+      try {
+        const { data: pricing, error: pErr } = await getSupabaseClient()
+          .from('unit_pricing')
+          .select('unit_id, base_price, platform_fee, total_price, is_active');
+        if (pErr) throw pErr;
+        const unitIds = [...new Set((pricing ?? []).map((p) => p.unit_id))];
+        if (unitIds.length === 0) return [];
+        const { data: units, error: uErr } = await getSupabaseClient()
+          .from('units')
+          .select('id, name, grade_id')
+          .in('id', unitIds)
+          .eq('status', 'published')
+          .is('deleted_at', null);
+        if (uErr) throw uErr;
+        const gradeIds = [...new Set((units ?? []).map((u) => u.grade_id))];
+        const gradeMap = await fetchGradeNames(gradeIds);
+        const activePricing = (pricing ?? []).filter((p) => p.is_active !== false);
+        return activePricing
+          .map((p) => {
+            const unit = (units ?? []).find((u) => u.id === p.unit_id);
+            if (!unit) return null;
+            return {
+              unit_id: p.unit_id,
+              unit_name: unit.name,
+              grade_name: gradeMap.get(unit.grade_id) ?? null,
+              base_price: Number(p.base_price),
+              platform_fee: Number(p.platform_fee),
+              total_price: Number(p.total_price),
+              is_free: false,
+            } as PublicUnitPrice;
+          })
+          .filter(Boolean) as PublicUnitPrice[];
+      } catch {
+        // if fallback also fails, rethrow original
+        throw error;
+      }
+    }
     throw error;
   }
-  return (data ?? []) as PublicUnitPrice[];
 }
 
 export interface UnitPriceInput {
@@ -1065,6 +1230,16 @@ export async function setUnitPrice(input: UnitPriceInput): Promise<void> {
   const { error } = await getSupabaseClient().rpc('set_unit_price', {
     p_unit_id: input.unitId,
     p_base_price: input.basePrice,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function setUnitFree(unitId: string, isFree: boolean): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_unit_free', {
+    p_unit_id: unitId,
+    p_is_free: isFree,
   });
   if (error) {
     throw error;
@@ -1089,11 +1264,31 @@ export async function getPlatformFee(): Promise<number> {
 }
 
 export async function listUnitPricing(): Promise<UnitPricingWithUnit[]> {
-  const { data, error } = await getSupabaseClient().rpc('list_unit_pricing');
-  if (error) {
+  try {
+    const { data, error } = await getSupabaseClient().rpc('list_unit_pricing');
+    if (error) throw error;
+    return (data ?? []) as UnitPricingWithUnit[];
+  } catch (error) {
+    if (isMissingColumnError(error)) {
+      // Fallback: old RPC without is_free — enrich with false
+      try {
+        const { data, error: err2 } = await getSupabaseClient().rpc('list_unit_pricing' as never);
+        if (err2) throw err2;
+        return ((data ?? []) as UnitPricingWithUnit[]).map((row) => ({ ...row, is_free: false }));
+      } catch {
+        throw error;
+      }
+    }
+    // Retry for transient network errors
+    if (isNetworkErrorCode(error)) {
+      return withRpcRetry(async () => {
+        const { data, error: err2 } = await getSupabaseClient().rpc('list_unit_pricing');
+        if (err2) throw err2;
+        return (data ?? []) as UnitPricingWithUnit[];
+      });
+    }
     throw error;
   }
-  return (data ?? []) as UnitPricingWithUnit[];
 }
 
 export async function listCodesByUnit(unitId: string): Promise<UnitCodeWithUnit[]> {
@@ -1258,28 +1453,34 @@ export async function invokeFunction<T = unknown>(
     }
   };
 
-  let response = await send(await ensureFreshAccessToken());
-  if (response.status === 401) {
-    // The gateway may reject a token that supabase-js still considers valid
-    // (server-side expiry, rotated signing keys). Refresh once and retry.
-    try {
-      const { data } = await getSupabaseClient().auth.refreshSession();
-      const retryToken = data.session?.access_token;
-      if (retryToken) {
-        response = await send(retryToken);
+  return withRpcRetry(async () => {
+    let response = await send(await ensureFreshAccessToken());
+    if (response.status === 401) {
+      // The gateway may reject a token that supabase-js still considers valid
+      // (server-side expiry, rotated signing keys). Refresh once and retry.
+      try {
+        const { data } = await getSupabaseClient().auth.refreshSession();
+        const retryToken = data.session?.access_token;
+        if (retryToken) {
+          response = await send(retryToken);
+        }
+      } catch {
+        // keep the original 401 response
       }
-    } catch {
-      // keep the original 401 response
     }
-  }
-  if (!response.ok) {
-    throw await functionErrorFromResponse(response);
-  }
-  try {
-    return (await response.json()) as T;
-  } catch {
-    throw codeError('internal_error');
-  }
+    if (!response.ok) {
+      const err = await functionErrorFromResponse(response);
+      const code = getRpcErrorCode(err);
+      // Retryable EF errors: internal/429 will be retried by withRpcRetry
+      if (code === 'internal_error' || code === 'function_error') throw err;
+      throw err;
+    }
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw codeError('internal_error');
+    }
+  });
 }
 
 export async function listExams(lessonId: string): Promise<Exam[]> {

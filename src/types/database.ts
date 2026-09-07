@@ -48,6 +48,7 @@ export type Unit = {
   name: string;
   sort_order: number;
   status: ContentStatus;
+  is_free: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -151,6 +152,7 @@ export type UnitPricing = {
 export type UnitPricingWithUnit = UnitPricing & {
   unit_name: string;
   grade_name: string;
+  is_free: boolean;
 };
 
 export type PublicUnitPrice = {
@@ -160,6 +162,7 @@ export type PublicUnitPrice = {
   base_price: number;
   platform_fee: number;
   total_price: number;
+  is_free: boolean;
 };
 
 export type UnitCode = {
@@ -202,6 +205,7 @@ export interface LessonAccessInfo {
   has_access: boolean;
   has_purchase: boolean;
   is_trial: boolean;
+  is_free: boolean;
   unit_id: string | null;
   unit_name: string | null;
   price: number | null;
@@ -659,6 +663,10 @@ export interface Database {
           p_unit_id: string;
           p_base_price: number;
         };
+        Returns: void;
+      };
+      set_unit_free: {
+        Args: { p_unit_id: string; p_is_free: boolean };
         Returns: void;
       };
       set_platform_fee: { Args: { p_fee: number }; Returns: void };

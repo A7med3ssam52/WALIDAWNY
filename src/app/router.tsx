@@ -44,10 +44,14 @@ const ExamsPage = lazy(() => import('../features/walid/ExamsPage').then((m) => (
 const LessonAssetsPage = lazy(() => import('../features/walid/LessonAssetsPage').then((m) => ({ default: m.LessonAssetsPage })));
 const PricingPage = lazy(() => import('../features/walid/PricingPage').then((m) => ({ default: m.PricingPage })));
 const CodesPage = lazy(() => import('../features/walid/CodesPage').then((m) => ({ default: m.CodesPage })));
+const WalidAnnouncementsListPage = lazy(() => import('../features/walid/AnnouncementsListPage').then((m) => ({ default: m.WalidAnnouncementsListPage })));
+const WalidAnnouncementFormPage = lazy(() => import('../features/walid/AnnouncementFormPage').then((m) => ({ default: m.WalidAnnouncementFormPage })));
 
 // Admin
 const AuditLogPage = lazy(() => import('../features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
 const RolesPage = lazy(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
+const AnnouncementsListPage = lazy(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
+const AnnouncementFormPage = lazy(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
 
 function PageFallback() {
   return (
@@ -125,6 +129,9 @@ export function AppRoutes() {
             <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
             <Route path="pricing" element={<PricingPage />} />
             <Route path="codes" element={<CodesPage />} />
+            <Route path="announcements" element={<WalidAnnouncementsListPage />} />
+            <Route path="announcements/new" element={<WalidAnnouncementFormPage />} />
+            <Route path="announcements/:id/edit" element={<WalidAnnouncementFormPage />} />
           </Route>
           <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
@@ -132,6 +139,9 @@ export function AppRoutes() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditLogPage />} />
             <Route path="roles" element={<RolesPage />} />
+            <Route path="announcements" element={<AnnouncementsListPage />} />
+            <Route path="announcements/new" element={<AnnouncementFormPage />} />
+            <Route path="announcements/:id/edit" element={<AnnouncementFormPage />} />
           </Route>
         </Route>
 

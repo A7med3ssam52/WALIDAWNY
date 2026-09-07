@@ -6,6 +6,7 @@ const REDEEM_ERROR_MESSAGES: Record<string, string> = {
   code_revoked: 'تم إلغاء هذا الكود',
   unit_not_found: 'الوحدة المطلوبة غير موجودة',
   unit_inactive: 'هذه الوحدة غير متاحة حاليًا',
+  unit_is_free: 'هذه الوحدة مجانية — لا تحتاج كود تفعيل',
   no_grade_assigned: 'لم يتم تحديد صفك الدراسي بعد — تواصل مع الأستاذ',
   unit_not_in_student_grade: 'هذه الوحدة ليست ضمن صفك الدراسي',
   unit_already_purchased: 'لقد قمت بتفعيل هذه الوحدة بالفعل',

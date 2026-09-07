@@ -85,16 +85,29 @@ export function UnitsPage() {
   const load = useCallback(async () => {
     setError(false);
     try {
-      const [unitsResult, purchasesResult, pricesResult, settingsResult] = await Promise.all([
-        profile?.grade_id ? listUnitsForGrade(profile.grade_id) : Promise.resolve([]),
+      const settled = await Promise.allSettled([
+        profile?.grade_id ? listUnitsForGrade(profile.grade_id) : Promise.resolve([] as Unit[]),
         getMyUnitPurchases(),
         getPublicUnitPrices(),
         getPublicSettings(),
       ]);
+      const unitsResult = settled[0].status === 'fulfilled' ? settled[0].value : [];
+      const purchasesResult = settled[1].status === 'fulfilled' ? settled[1].value : [];
+      const pricesResult = settled[2].status === 'fulfilled' ? settled[2].value : [];
+      const settingsResult = settled[3].status === 'fulfilled' ? (settled[3].value as PublicSettings | null) : null;
+
+      if (settled[0].status === 'rejected' || settled[1].status === 'rejected') {
+        // units or purchases are critical — show error if both failed, but still render what we have
+        if (unitsResult.length === 0 && purchasesResult.length === 0 && settled[0].status === 'rejected') {
+          setError(true);
+          return;
+        }
+      }
+
       setUnits(unitsResult.filter((unit) => unit.status === 'published'));
       setPurchases(purchasesResult);
       setPrices(pricesResult);
-      setSettings(settingsResult);
+      if (settingsResult) setSettings(settingsResult);
     } catch {
       setError(true);
     }
@@ -106,7 +119,9 @@ export function UnitsPage() {
 
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
   const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
-  const lockedUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id));
+  const isFreeUnit = (unitId: string) => priceById.get(unitId)?.is_free === true;
+  const freeUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id) && isFreeUnit(unit.id));
+  const lockedUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id) && !isFreeUnit(unit.id));
   const purchasedUnits = (units ?? []).filter((unit) => purchasedUnitIds.has(unit.id));
 
   const handleRedeem = async (code: string): Promise<boolean> => {
@@ -206,18 +221,20 @@ export function UnitsPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {purchasedUnits.map((unit) => {
                     const price = priceById.get(unit.id);
+                    const isFree = price?.is_free === true;
                     return (
                       <UnitCard
                         key={unit.id}
                         name={unit.name}
                         gradeName={price?.grade_name}
-                        price={price?.total_price}
+                        price={isFree ? 0 : price?.total_price}
                         isPurchased={true}
+                        isFree={isFree}
                         onAction={() => {
                           const link = `/student/curriculum?unit=${unit.id}`;
                           window.location.href = link;
                         }}
-                        actionLabel="افتح الوحدة"
+                        actionLabel={isFree ? 'افتح مجاناً' : 'افتح الوحدة'}
                         actionIcon={<PlayCircle className="h-4 w-4" />}
                       />
                     );
@@ -225,6 +242,39 @@ export function UnitsPage() {
                 </div>
               )}
             </GridCard>
+
+            {/* Free Units */}
+            {freeUnits.length > 0 ? (
+              <GridCard>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h2 className="font-display text-lg font-bold text-foreground">
+                    وحدات مجانية
+                    <span className="ms-2 text-sm font-normal text-emerald-300">مجاني — متاحة بدون كود</span>
+                    <span className="ms-2 text-sm font-normal text-foreground-muted">({freeUnits.length})</span>
+                  </h2>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {freeUnits.map((unit) => {
+                    const price = priceById.get(unit.id);
+                    return (
+                      <UnitCard
+                        key={unit.id}
+                        name={unit.name}
+                        gradeName={price?.grade_name}
+                        price={0}
+                        isPurchased={false}
+                        isFree={true}
+                        onAction={() => {
+                          window.location.href = `/student/curriculum?unit=${unit.id}`;
+                        }}
+                        actionLabel="افتح مجاناً"
+                        actionIcon={<PlayCircle className="h-4 w-4" />}
+                      />
+                    );
+                  })}
+                </div>
+              </GridCard>
+            ) : null}
 
             {/* Available Units */}
             {lockedUnits.length > 0 ? (

@@ -5,6 +5,7 @@ const adminItems = [
   { to: '/admin/reports', label: 'التقارير المالية' },
   { to: '/admin/audit', label: 'سجل النشاطات' },
   { to: '/admin/roles', label: 'الأدوار والصلاحيات' },
+  { to: '/admin/announcements', label: 'الإعلانات' },
 ];
 
 const contentItems = [

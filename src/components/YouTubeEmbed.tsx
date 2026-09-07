@@ -14,7 +14,10 @@ export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
     fs: '1',
     disablekb: '0',
   });
-  if (origin) params.set('origin', origin);
+  if (origin) {
+    params.set('origin', origin);
+    params.set('widget_referrer', origin);
+  }
   const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
 
   return (
@@ -31,21 +34,21 @@ export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
           loading="lazy"
           className="aspect-video w-full border-0 bg-black"
           data-testid="youtube-embed"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
           referrerPolicy="strict-origin-when-cross-origin"
         />
-        {/* Visual + click blocking overlays — quick fix to fully hide YouTube branding:
-            - Top bar: hides video title + "Watch on YouTube" / Share / Watch later link
-            - Bottom-end: hides YouTube watermark/logo
-            Solid bg-black makes branding invisible, not just unclickable; middle controls stay fully usable. */}
+        {/* Overlays to hide external navigation without blocking player controls:
+            - Top: hides title link / Share / Watch later (leads outside)
+            - Bottom: hides YouTube watermark/logo only, leaves ~44px gap on the right
+              so the native Fullscreen button stays clickable + rotatable. */}
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="pointer-events-auto absolute inset-x-0 top-0 h-[58px] bg-black sm:h-[56px]"
+            className="pointer-events-auto absolute inset-x-0 top-0 h-[56px] bg-black sm:h-[52px]"
             aria-hidden="true"
             data-testid="youtube-overlay-top"
           />
           <div
-            className="pointer-events-auto absolute bottom-0 end-0 h-[42px] w-[112px] bg-black sm:h-10 sm:w-[100px]"
+            className="pointer-events-auto absolute bottom-0 end-[44px] h-[36px] w-[88px] bg-black sm:h-[34px] sm:w-[84px]"
             aria-hidden="true"
             data-testid="youtube-overlay-bottom"
           />

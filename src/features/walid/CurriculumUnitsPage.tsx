@@ -22,6 +22,7 @@ import {
   listUnitsForGrade,
   publishUnit,
   restoreUnit,
+  setUnitFree,
   setUnitPrice,
   updateUnit,
 } from '../../data/rpc';
@@ -59,6 +60,7 @@ export function CurriculumUnitsPage() {
   const [deleteUnitBusy, setDeleteUnitBusy] = useState(false);
   const [restoringUnitId, setRestoringUnitId] = useState<string | null>(null);
   const [togglingUnitId, setTogglingUnitId] = useState<string | null>(null);
+  const [freeTogglingId, setFreeTogglingId] = useState<string | null>(null);
 
   const loadGrade = useCallback(async () => {
     if (!gradeId) {
@@ -81,12 +83,14 @@ export function CurriculumUnitsPage() {
     }
     setUnitsError(false);
     try {
-      const [active, deleted] = await Promise.all([
+      const settled = await Promise.allSettled([
         listUnitsForGrade(gradeId),
         listDeletedUnitsForGrade(gradeId),
       ]);
-      setUnits(active);
-      setDeletedUnits(deleted);
+      if (settled[0].status === 'fulfilled') setUnits(settled[0].value);
+      else setUnitsError(true);
+      if (settled[1].status === 'fulfilled') setDeletedUnits(settled[1].value);
+      else setDeletedUnits([]);
     } catch {
       setUnitsError(true);
     }
@@ -228,6 +232,20 @@ export function CurriculumUnitsPage() {
     }
   };
 
+  const handleToggleFree = async (unit: Unit) => {
+    const nextFree = !unit.is_free;
+    setFreeTogglingId(unit.id);
+    try {
+      await setUnitFree(unit.id, nextFree);
+      showToast(nextFree ? 'تم جعل الباب مجاني — سعره الآن صفر' : 'تم إلغاء مجانية الباب');
+      await loadUnits();
+    } catch (err) {
+      showToast(curriculumErrorMessage(err, true), 'error');
+    } finally {
+      setFreeTogglingId(null);
+    }
+  };
+
   return (
     <LayoutShell
       title={grade ? `وحدات ${grade.name}` : 'وحدات الصف'}
@@ -280,6 +298,9 @@ export function CurriculumUnitsPage() {
                       {unit.name}
                     </span>
                     <UnitStatusBadge status={unit.status} />
+                    {unit.is_free ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-300">مجاني</span>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-1">
                     <Link
@@ -318,6 +339,15 @@ export function CurriculumUnitsPage() {
                       onClick={() => openEditUnit(unit)}
                     >
                       تعديل
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={unit.is_free ? 'secondary' : 'ghost'}
+                      onClick={() => void handleToggleFree(unit)}
+                      disabled={freeTogglingId === unit.id}
+                      className={unit.is_free ? 'text-emerald-300' : ''}
+                    >
+                      {freeTogglingId === unit.id ? 'جاري...' : unit.is_free ? 'إلغاء المجانية' : 'اجعله مجاني'}
                     </Button>
                     <Button
                       size="sm"

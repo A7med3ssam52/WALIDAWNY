@@ -76,7 +76,7 @@ export function dismissPrompt(): void {
   }
 }
 
-/** Register the service worker — production builds only. */
+/** Register the service worker — production builds only. Forces v2 icon update. */
 export function registerServiceWorker(): void {
   if (
     !import.meta.env.PROD ||
@@ -86,8 +86,49 @@ export function registerServiceWorker(): void {
     return;
   }
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
-      console.error('Failed to register service worker:', error);
-    });
+    navigator.serviceWorker
+      .register('/sw.js?v=2')
+      .then((reg) => {
+        // Check for update immediately and on visibility change — forces v2 for already-installed clients
+        const checkUpdate = () => {
+          reg.update().catch(() => {});
+        };
+        // Listen for new SW taking over — reload to show new icons without manual reinstall
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // New v2 is ready — skipWaiting already called in sw.js, controllerchange will reload
+            }
+          });
+        });
+        // Periodic update check + on visibility return
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkUpdate();
+        });
+        // Also force a check 2s after load to catch v1 -> v2 quickly
+        setTimeout(checkUpdate, 2000);
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to register service worker:', error);
+      });
+  });
+}
+
+/**
+ * Force PWA update check — call on app start to ensure v2 icons propagate
+ * even if the user never closes the tab. Safe to call multiple times.
+ */
+export function forcePWAUpdate(): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.getRegistration().then((reg) => {
+    reg?.update().catch(() => {});
   });
 }

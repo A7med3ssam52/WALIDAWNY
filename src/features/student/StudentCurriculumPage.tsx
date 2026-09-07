@@ -97,7 +97,9 @@ export function StudentCurriculumPage() {
       setGrade(null);
       setUnits([]);
       try {
-        const [trials, progressRows] = await Promise.all([getTrialLessons(), listMyProgress()]);
+        const results = await Promise.allSettled([getTrialLessons(), listMyProgress()]);
+        const trials = results[0].status === 'fulfilled' ? results[0].value : [];
+        const progressRows = results[1].status === 'fulfilled' ? results[1].value : [];
         setTrialLessons(trials);
         setProgressByLesson(new Map(progressRows.map((row) => [row.lesson_id, row])));
       } catch {
@@ -108,32 +110,50 @@ export function StudentCurriculumPage() {
     setError(false);
     try {
       const gradeRow = await getGradeById(profile.grade_id);
-      const [allUnits, progressRows, purchasesResult, pricesResult, settingsResult, trialRows] =
-        await Promise.all([
-          listUnitsForGrade(profile.grade_id as string),
-          listMyProgress(),
-          getMyUnitPurchases(),
-          getPublicUnitPrices(),
-          getPublicSettings(),
-          getTrialLessons(),
-        ]);
+      const settled = await Promise.allSettled([
+        listUnitsForGrade(profile.grade_id as string),
+        listMyProgress(),
+        getMyUnitPurchases(),
+        getPublicUnitPrices(),
+        getPublicSettings(),
+        getTrialLessons(),
+      ]);
+      const allUnits = settled[0].status === 'fulfilled' ? settled[0].value : [];
+      const progressRows = settled[1].status === 'fulfilled' ? settled[1].value : [];
+      const purchasesResult = settled[2].status === 'fulfilled' ? settled[2].value : [];
+      const pricesResult = settled[3].status === 'fulfilled' ? settled[3].value : [];
+      const settingsResult = settled[4].status === 'fulfilled' ? (settled[4].value as typeof settings) : null;
+      const trialRows = settled[5].status === 'fulfilled' ? settled[5].value : [];
+
+      // If the critical units fetch failed, show error but keep other data
+      if (settled[0].status === 'rejected') {
+        setError(true);
+      }
+
       const publishedUnits = allUnits
         .filter((unit) => unit.status === 'published')
         .sort((a, b) => a.sort_order - b.sort_order);
-      const withLessons = await Promise.all(
+      const withLessonsSettled = await Promise.allSettled(
         publishedUnits.map(async (unit) => {
-          const lessons = (await listLessonsForUnit(unit.id))
-            .filter((lesson) => lesson.status === 'published')
-            .sort((a, b) => a.sort_order - b.sort_order);
-          return { ...unit, lessons };
+          try {
+            const lessons = (await listLessonsForUnit(unit.id))
+              .filter((lesson) => lesson.status === 'published')
+              .sort((a, b) => a.sort_order - b.sort_order);
+            return { ...unit, lessons };
+          } catch {
+            return { ...unit, lessons: [] as typeof unit extends { lessons: infer L } ? L : never };
+          }
         }),
       );
+      const withLessons = withLessonsSettled
+        .filter((r): r is PromiseFulfilledResult<UnitWithLessons> => r.status === 'fulfilled')
+        .map((r) => r.value);
       setGrade(gradeRow);
       setUnits(withLessons);
       setProgressByLesson(new Map(progressRows.map((row) => [row.lesson_id, row])));
       setPurchases(purchasesResult);
       setPrices(pricesResult);
-      setSettings(settingsResult);
+      if (settingsResult) setSettings(settingsResult);
       setTrialLessons(trialRows);
     } catch {
       setError(true);
@@ -141,7 +161,15 @@ export function StudentCurriculumPage() {
   }, [profile?.grade_id]);
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    const run = async () => {
+      await load();
+      if (cancelled) return;
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   const focusUnitId = searchParams.get('unit');
@@ -424,8 +452,9 @@ export function StudentCurriculumPage() {
         ) : (
           <div className="space-y-4">
             {units.map((unit) => {
-              const isPurchased = purchasedUnitIds.has(unit.id);
+              const isPurchased = purchasedUnitIds.has(unit.id) || priceById.get(unit.id)?.is_free === true;
               const price = priceById.get(unit.id);
+              const isFree = price?.is_free === true;
               const unitLessons = unit.lessons;
               const unitCompleted = unitLessons.filter((l) => progressByLesson.get(l.id)?.is_completed).length;
               const unitTotal = unitLessons.length;
@@ -502,7 +531,10 @@ export function StudentCurriculumPage() {
                         <PackageOpen className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-display text-lg font-bold text-foreground truncate">{unit.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-display text-lg font-bold text-foreground truncate">{unit.name}</h3>
+                          {isFree ? <Badge variant="success" className="text-xs">مجاني</Badge> : null}
+                        </div>
                         <div className="flex items-center gap-2 mt-1 text-sm text-foreground-muted">
                           <span>{unitCompleted} / {unitTotal} دروس</span>
                           <span className="text-primary">{unitProgress}%</span>

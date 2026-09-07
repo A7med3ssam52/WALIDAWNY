@@ -10,6 +10,23 @@ interface PriceTagProps {
 }
 
 export function PriceTag({ pricing }: PriceTagProps) {
+  const isFree = (pricing as { is_free?: boolean }).is_free || pricing.total_price === 0;
+  if (isFree) {
+    return (
+      <div className="flex items-center gap-2.5">
+        <span
+          aria-hidden="true"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"
+        >
+          <Tag className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="font-semibold text-emerald-300">مجاني</p>
+          <p className="text-xs text-foreground-subtle">متاح لجميع الطلاب بدون كود</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2.5">
       <span

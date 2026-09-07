@@ -4,6 +4,7 @@ import { getRpcErrorCode } from '../../data/rpc';
 const CURRICULUM_ERROR_MESSAGES: Record<string, string> = {
   unit_not_found: 'الوحدة غير موجودة',
   lesson_not_found: 'الدرس غير موجود',
+  unit_is_free: 'هذه الوحدة مجانية — ألغِ المجانية أولاً',
   access_denied: 'ليست لديك صلاحية',
   permission_denied: 'ليست لديك صلاحية',
 };

@@ -170,6 +170,7 @@ export function makeUnit(overrides: Partial<AnyRecord> = {}): AnyRecord {
     name: 'الوحدة الأولى',
     sort_order: 1,
     status: 'draft',
+    is_free: false,
     deleted_at: null,
     created_at: '2026-01-01T10:00:00.000Z',
     updated_at: '2026-01-01T10:00:00.000Z',
@@ -1073,7 +1074,6 @@ function createMockClient() {
   const applyUnitPricingRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     if (fn === 'set_unit_price') {
       const base = Number(args?.p_base_price);
-      const fee = state.platformFee;
       const unitId = String(args?.p_unit_id ?? '');
       if (Number.isNaN(base) || base < 0) {
         return error('invalid_price_values');
@@ -1082,6 +1082,10 @@ function createMockClient() {
       if (!unit) {
         return error('unit_not_found');
       }
+      if (Boolean(unit.is_free) && base !== 0) {
+        return error('unit_is_free');
+      }
+      const fee = Boolean(unit.is_free) ? 0 : state.platformFee;
       const existing = state.unitPricing.find((item) => item.unit_id === unitId);
       if (existing) {
         existing.base_price = base;
@@ -1111,9 +1115,47 @@ function createMockClient() {
       }
       state.platformFee = fee;
       state.unitPricing.forEach((item) => {
-        item.platform_fee = fee;
-        item.total_price = Number(item.base_price ?? 0) + fee;
+        const unit = state.units.find((u) => u.id === item.unit_id);
+        if (Boolean(unit?.is_free)) {
+          item.platform_fee = 0;
+          item.total_price = Number(item.base_price ?? 0);
+        } else {
+          item.platform_fee = fee;
+          item.total_price = Number(item.base_price ?? 0) + fee;
+        }
       });
+      return { data: null, error: null };
+    }
+    if (fn === 'set_unit_free') {
+      const unitId = String(args?.p_unit_id ?? '');
+      const isFree = Boolean(args?.p_is_free);
+      const unit = state.units.find((item) => item.id === unitId);
+      if (!unit) {
+        return error('unit_not_found');
+      }
+      unit.is_free = isFree;
+      if (isFree) {
+        const existing = state.unitPricing.find((item) => item.unit_id === unitId);
+        if (existing) {
+          existing.base_price = 0;
+          existing.platform_fee = 0;
+          existing.total_price = 0;
+          existing.is_active = true;
+          existing.updated_at = nowIso();
+        } else {
+          const row = makeUnitPricing({
+            id: `pricing-created-${++state.idSeq}`,
+            unit_id: unitId,
+            base_price: 0,
+            platform_fee: 0,
+            total_price: 0,
+            is_active: true,
+            created_at: nowIso(),
+            updated_at: nowIso(),
+          });
+          state.unitPricing.push(row);
+        }
+      }
       return { data: null, error: null };
     }
     if (fn === 'get_platform_fee') {
@@ -1125,10 +1167,15 @@ function createMockClient() {
   const enrichUnitPricing = (item: AnyRecord): AnyRecord => {
     const unit = state.units.find((candidate) => candidate.id === item.unit_id);
     const grade = unit ? state.grades.find((candidate) => candidate.id === unit.grade_id) : null;
+    const isFree = Boolean(unit?.is_free);
     return {
       ...item,
+      base_price: isFree ? 0 : item.base_price,
+      platform_fee: isFree ? 0 : item.platform_fee,
+      total_price: isFree ? 0 : item.total_price,
       unit_name: unit?.name ?? item.unit_id,
       grade_name: grade?.name ?? null,
+      is_free: isFree,
     };
   };
 
@@ -1194,8 +1241,9 @@ function createMockClient() {
       const unit = state.units.find((item) => item.id === lesson.unit_id);
       const grade = unit ? state.grades.find((g) => g.id === unit.grade_id) : null;
       const profile = state.profiles.find((p) => p.id === uid);
-      const pricing = state.unitPricing.find((item) => item.unit_id === lesson.unit_id);
       const isTrial = lesson.is_trial === true;
+      const isFree = Boolean(unit?.is_free);
+      const pricing = state.unitPricing.find((item) => item.unit_id === lesson.unit_id);
       const purchased = state.unitPurchases.some(
         (item) => item.student_id === uid && item.unit_id === lesson.unit_id && item.status === 'active',
       );
@@ -1205,33 +1253,67 @@ function createMockClient() {
       const profileActive = Boolean(profile && profile.status === 'active' && !profile.deleted_at);
       const gradeMatches = !profile?.grade_id || !unit || unit.grade_id === profile.grade_id;
       const isTrialEligible = isTrial && lessonPublished && unitPublished && gradeActive && profileActive;
+      const isFreeEligible = isFree && lessonPublished && unitPublished && gradeActive && profileActive;
       const isPurchasedEligible =
         purchased && lessonPublished && unitPublished && gradeActive && profileActive && gradeMatches;
-      const hasAccess = isTrialEligible || isPurchasedEligible;
+      const hasAccess = isTrialEligible || isFreeEligible || isPurchasedEligible;
       return {
         data: {
           has_access: hasAccess,
           has_purchase: purchased,
           is_trial: isTrial,
+          is_free: isFree,
           unit_id: lesson.unit_id,
           unit_name: unit?.name ?? '',
-          price: pricing?.total_price ?? null,
+          price: isFree ? 0 : (pricing?.total_price ?? null),
         },
         error: null,
       };
     }
     if (fn === 'get_public_unit_prices') {
-      const rows = state.unitPricing
-        .filter((item) => item.is_active !== false)
-        .filter((item) => {
-          const unit = state.units.find((candidate) => candidate.id === item.unit_id);
-          return unit && unit.status === 'published' && unit.deleted_at === null;
-        })
-        .map(enrichUnitPricing);
+      // Build from units LEFT JOIN pricing so free units without pricing still appear
+      const rows: AnyRecord[] = [];
+      for (const unit of state.units) {
+        if (unit.status !== 'published' || unit.deleted_at !== null) continue;
+        const grade = state.grades.find((g) => g.id === unit.grade_id);
+        if (!grade || !grade.is_active || grade.deleted_at) continue;
+        const pricing = state.unitPricing.find((p) => p.unit_id === unit.id);
+        const isFree = Boolean(unit.is_free);
+        if (!isFree && (!pricing || pricing.is_active === false)) continue;
+        const base = isFree ? 0 : (pricing?.base_price ?? 0);
+        const fee = isFree ? 0 : (pricing?.platform_fee ?? 0);
+        const total = isFree ? 0 : (pricing?.total_price ?? 0);
+        rows.push({
+          unit_id: unit.id,
+          unit_name: unit.name,
+          grade_name: grade.name,
+          base_price: base,
+          platform_fee: fee,
+          total_price: total,
+          is_free: isFree,
+        });
+      }
       return { data: rows, error: null };
     }
     if (fn === 'list_unit_pricing') {
       const rows = state.unitPricing.map(enrichUnitPricing);
+      // Also include free units without pricing row (union fallback)
+      for (const unit of state.units) {
+        if (!unit.is_free || unit.deleted_at !== null) continue;
+        if (state.unitPricing.some((p) => p.unit_id === unit.id)) continue;
+        const grade = state.grades.find((g) => g.id === unit.grade_id);
+        rows.push({
+          id: null,
+          unit_id: unit.id,
+          base_price: 0,
+          platform_fee: 0,
+          total_price: 0,
+          is_active: true,
+          unit_name: unit.name,
+          grade_name: grade?.name ?? null,
+          is_free: true,
+        });
+      }
       return { data: rows, error: null };
     }
     if (fn === 'list_codes_by_unit') {
@@ -1420,6 +1502,7 @@ function createMockClient() {
     const grade = unit ? state.grades.find((g) => g.id === unit.grade_id) : null;
     const profile = state.profiles.find((p) => p.id === uid);
     const isTrial = lesson.is_trial === true;
+    const isFree = Boolean(unit?.is_free);
     const purchased = state.unitPurchases.some(
       (item) => item.student_id === uid && item.unit_id === lesson.unit_id && item.status === 'active',
     );
@@ -1429,8 +1512,9 @@ function createMockClient() {
     const profileActive = Boolean(profile && profile.status === 'active' && !profile.deleted_at);
     const gradeMatches = !profile?.grade_id || !unit || unit.grade_id === profile.grade_id;
     const isTrialEligible = isTrial && lessonPublished && unitPublished && gradeActive && profileActive;
+    const isFreeEligible = isFree && lessonPublished && unitPublished && gradeActive && profileActive;
     const isPurchasedEligible = purchased && lessonPublished && unitPublished && gradeActive && profileActive && gradeMatches;
-    return isTrialEligible || isPurchasedEligible;
+    return isTrialEligible || isFreeEligible || isPurchasedEligible;
   };
 
   const applyPhase6Rpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {

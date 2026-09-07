@@ -208,7 +208,7 @@ export function CodesPage() {
                 ) : (
                   pricing.map((item) => (
                     <option key={item.unit_id} value={item.unit_id}>
-                      {item.grade_name} — {item.unit_name} ({formatPrice(item.total_price)})
+                      {item.grade_name} — {item.unit_name} ({item.is_free ? 'مجاني' : formatPrice(item.total_price)})
                     </option>
                   ))
                 )}

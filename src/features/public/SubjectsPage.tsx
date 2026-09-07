@@ -86,7 +86,11 @@ export function SubjectsPage() {
                 <div key={p.unit_id} className="glass-soft rounded-xl p-4">
                   <p className="flex items-center gap-2 text-sm font-bold text-foreground"><BookOpen className="h-4 w-4 text-indigo-300" /> {p.unit_name}</p>
                   <p className="mt-1 text-xs text-foreground-subtle">{p.grade_name ?? ''}</p>
-                  <p className="mt-2 font-display text-lg font-extrabold text-gradient">{p.total_price} ج.م</p>
+                  {p.is_free ? (
+                    <p className="mt-2 font-display text-lg font-extrabold text-emerald-300">مجاني</p>
+                  ) : (
+                    <p className="mt-2 font-display text-lg font-extrabold text-gradient">{p.total_price} ج.م</p>
+                  )}
                 </div>
               ))}
             </div>

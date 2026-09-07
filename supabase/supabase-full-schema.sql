@@ -1,7 +1,7 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0048, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0051, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
@@ -8924,13 +8924,13 @@ COMMENT ON COLUMN public.lessons.is_trial IS 'Free trial lesson (any number per 
 
 -- =====================================================================
 -- 0048_fix_units_rls_recursion
--- Fixes infinite recursion between units ↔ lessons RLS policies
+-- Fixes infinite recursion between units and lessons RLS policies
 -- introduced in 0047_fix_trial_access. The 0047 units trial branch did
 --   EXISTS (SELECT 1 FROM lessons WHERE unit_id = units.id AND is_trial ...)
--- while the lessons policy queries units — PostgreSQL detects recursion
+-- while the lessons policy queries units - PostgreSQL detects recursion
 -- and aborts every student SELECT on units/lessons with:
 --   "infinite recursion detected in policy for relation units"
--- which surfaces in the app as «تعذر تحميل وحدات صفك».
+-- which surfaces in the app as "tathar tahmil wahdat safak".
 --
 -- Fix: two SECURITY DEFINER helpers that bypass RLS (owner postgres
 -- bypasses RLS) and are GRANTed to authenticated for policy evaluation.
@@ -9047,3 +9047,936 @@ CREATE POLICY units_select_staff_or_published_own_grade ON public.units
 
 COMMENT ON FUNCTION public.unit_has_published_trial(uuid) IS 'RLS helper (SECURITY DEFINER, bypasses RLS): true if the unit has a published, non-deleted trial lesson. Used by units trial branch to break 0047 recursion.';
 COMMENT ON FUNCTION public.unit_is_published_active(uuid) IS 'RLS helper (SECURITY DEFINER, bypasses RLS): true if the unit is published, non-deleted and its grade is active/non-deleted. Used by lessons trial branch to break 0047 recursion.';
+
+-- =====================================================================
+-- >>> included from migrations\0049_announcements.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0049_announcements
+-- Announcements system: admin/teacher manageable, preview only on edit pages
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Table: public.announcements
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.announcements (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    title text NOT NULL,
+    body text NOT NULL,
+    link_url text,
+    link_label text,
+    variant text NOT NULL DEFAULT 'info' CHECK (variant IN ('info','warning','success','error')),
+    target_roles text[] NOT NULL DEFAULT '{"student","teacher","mr_walid","admin"}',
+    hide_on_paths text[] NOT NULL DEFAULT '{}',
+    starts_at timestamptz NOT NULL DEFAULT now(),
+    ends_at timestamptz,
+    is_active boolean NOT NULL DEFAULT true,
+    dismissible boolean NOT NULL DEFAULT true,
+    created_by uuid REFERENCES public.profiles(id),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.announcements IS 'Global announcements. Preview shows ONLY on admin/teacher announcement edit pages via RPC path filtering.';
+
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements FORCE ROW LEVEL SECURITY;
+
+-- ---------------------------------------------------------------------
+-- RLS Policies
+-- ---------------------------------------------------------------------
+-- Public/anon can read ONLY active announcements (for preview on edit pages)
+CREATE POLICY announcements_select_active ON public.announcements
+    FOR SELECT USING (
+        is_active
+        AND starts_at <= now()
+        AND (ends_at IS NULL OR ends_at > now())
+    );
+
+-- Admin full access
+CREATE POLICY announcements_admin_all ON public.announcements
+    FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- Teacher/mr_walid: read all, write own (for management UI)
+CREATE POLICY announcements_teacher_select ON public.announcements
+    FOR SELECT USING (public.get_current_role() IN ('teacher','mr_walid'));
+
+CREATE POLICY announcements_teacher_write ON public.announcements
+    FOR INSERT WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin'));
+
+CREATE POLICY announcements_teacher_update ON public.announcements
+    FOR UPDATE USING (public.get_current_role() IN ('teacher','mr_walid','admin'))
+    WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin'));
+
+CREATE POLICY announcements_teacher_delete ON public.announcements
+    FOR DELETE USING (public.get_current_role() IN ('teacher','mr_walid','admin'));
+
+-- ---------------------------------------------------------------------
+-- Updated_at trigger (uses existing set_updated_at from 0004)
+-- ---------------------------------------------------------------------
+CREATE TRIGGER set_announcements_updated_at
+    BEFORE UPDATE ON public.announcements
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ---------------------------------------------------------------------
+-- RPC: get_active_announcements(p_current_path)
+-- Returns active announcements filtered by:
+--   - user role (target_roles)
+--   - current path (hide_on_paths) - ONLY shows on edit pages
+--   - time window (starts_at/ends_at)
+--   - is_active
+-- LIMIT 1 returns the most recent for single-bar preview
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_active_announcements(p_current_path text DEFAULT '/')
+RETURNS SETOF public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_role public.user_role;
+BEGIN
+    v_role := public.get_current_role();
+    RETURN QUERY
+    SELECT a.* FROM public.announcements a
+    WHERE a.is_active
+      AND a.starts_at <= now()
+      AND (a.ends_at IS NULL OR a.ends_at > now())
+      AND v_role = ANY(a.target_roles)
+      AND NOT (p_current_path = ANY(a.hide_on_paths))
+      AND (
+          -- ONLY show on announcement edit/create pages
+          p_current_path ILIKE '/admin/announcements/%'
+          OR p_current_path ILIKE '/walid/announcements/%'
+      )
+    ORDER BY a.created_at DESC
+    LIMIT 1;
+END $$;
+
+COMMENT ON FUNCTION public.get_active_announcements(text) IS
+'Returns the latest active announcement for preview. ONLY returns data when current path is an admin/teacher announcement edit or create page.';
+
+-- ---------------------------------------------------------------------
+-- RPC: list_announcements (for management UI - admin/teacher)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.list_announcements(
+    p_limit integer DEFAULT 50,
+    p_offset integer DEFAULT 0
+)
+RETURNS SETOF public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    RETURN QUERY
+    SELECT a.* FROM public.announcements a
+    ORDER BY a.created_at DESC
+    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 50), 100))
+    OFFSET GREATEST(0, COALESCE(p_offset, 0));
+END $$;
+
+COMMENT ON FUNCTION public.list_announcements(integer, integer) IS
+'Paginated list for admin/teacher management UI.';
+
+-- ---------------------------------------------------------------------
+-- RPC: get_announcement_by_id (for edit page)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_announcement_by_id(p_id uuid)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_announcement public.announcements;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT * INTO v_announcement
+    FROM public.announcements
+    WHERE id = p_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found';
+    END IF;
+
+    RETURN v_announcement;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- RPC: create_announcement (admin/teacher)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.create_announcement(
+    p_title text,
+    p_body text,
+    p_link_url text DEFAULT NULL,
+    p_link_label text DEFAULT NULL,
+    p_variant text DEFAULT 'info',
+    p_target_roles text[] DEFAULT '{"student","teacher","mr_walid","admin"}',
+    p_hide_on_paths text[] DEFAULT '{}',
+    p_starts_at timestamptz DEFAULT now(),
+    p_ends_at timestamptz DEFAULT NULL,
+    p_is_active boolean DEFAULT true,
+    p_dismissible boolean DEFAULT true
+)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_announcement public.announcements;
+    v_user_id uuid := auth.uid();
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    INSERT INTO public.announcements (
+        title, body, link_url, link_label, variant,
+        target_roles, hide_on_paths, starts_at, ends_at,
+        is_active, dismissible, created_by
+    ) VALUES (
+        p_title, p_body, p_link_url, p_link_label, p_variant,
+        p_target_roles, p_hide_on_paths, p_starts_at, p_ends_at,
+        p_is_active, p_dismissible, v_user_id
+    )
+    RETURNING * INTO v_announcement;
+
+    PERFORM public.audit_log(
+        'announcement.create', 'announcements', v_announcement.id,
+        jsonb_build_object('title', p_title, 'variant', p_variant)
+    );
+
+    RETURN v_announcement;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- RPC: update_announcement (admin/teacher)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.update_announcement(
+    p_id uuid,
+    p_title text DEFAULT NULL,
+    p_body text DEFAULT NULL,
+    p_link_url text DEFAULT NULL,
+    p_link_label text DEFAULT NULL,
+    p_variant text DEFAULT NULL,
+    p_target_roles text[] DEFAULT NULL,
+    p_hide_on_paths text[] DEFAULT NULL,
+    p_starts_at timestamptz DEFAULT NULL,
+    p_ends_at timestamptz DEFAULT NULL,
+    p_is_active boolean DEFAULT NULL,
+    p_dismissible boolean DEFAULT NULL
+)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_announcement public.announcements;
+    v_user_id uuid := auth.uid();
+    v_old jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT to_jsonb(a) INTO v_old FROM public.announcements a WHERE a.id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found';
+    END IF;
+
+    UPDATE public.announcements SET
+        title = COALESCE(p_title, title),
+        body = COALESCE(p_body, body),
+        link_url = COALESCE(p_link_url, link_url),
+        link_label = COALESCE(p_link_label, link_label),
+        variant = COALESCE(p_variant, variant),
+        target_roles = COALESCE(p_target_roles, target_roles),
+        hide_on_paths = COALESCE(p_hide_on_paths, hide_on_paths),
+        starts_at = COALESCE(p_starts_at, starts_at),
+        ends_at = COALESCE(p_ends_at, ends_at),
+        is_active = COALESCE(p_is_active, is_active),
+        dismissible = COALESCE(p_dismissible, dismissible),
+        updated_at = now()
+    WHERE id = p_id
+    RETURNING * INTO v_announcement;
+
+    PERFORM public.audit_log(
+        'announcement.update', 'announcements', v_announcement.id,
+        jsonb_build_object('old', v_old, 'new', to_jsonb(v_announcement))
+    );
+
+    RETURN v_announcement;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- RPC: delete_announcement (admin/teacher)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.delete_announcement(p_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    v_title text;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT title INTO v_title FROM public.announcements WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found';
+    END IF;
+
+    DELETE FROM public.announcements WHERE id = p_id;
+
+    PERFORM public.audit_log(
+        'announcement.delete', 'announcements', p_id,
+        jsonb_build_object('title', v_title)
+    );
+END $$;
+
+-- ---------------------------------------------------------------------
+-- Grants
+-- ---------------------------------------------------------------------
+REVOKE EXECUTE ON FUNCTION public.get_active_announcements(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.list_announcements(integer, integer) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_announcement_by_id(uuid) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.delete_announcement(uuid) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.get_active_announcements(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.list_announcements(integer, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_announcement_by_id(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_announcement(uuid) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_announcements_active_time ON public.announcements (is_active, starts_at, ends_at);
+CREATE INDEX IF NOT EXISTS idx_announcements_created_by ON public.announcements (created_by);
+CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON public.announcements (created_at DESC);
+
+-- =====================================================================
+-- >>> included from migrations\0050_fix_announcements_audit_log.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0050_fix_announcements_audit_log
+-- Hot-fix for 0049: audit_log() takes 4 params, 0049 was calling with 5
+-- (extra v_user_id). This patch overwrites the 3 buggy RPCs so existing
+-- deployed DBs that already ran 0049 start working without re-running it.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.create_announcement(
+    p_title text,
+    p_body text,
+    p_link_url text DEFAULT NULL,
+    p_link_label text DEFAULT NULL,
+    p_variant text DEFAULT 'info',
+    p_target_roles text[] DEFAULT '{"student","teacher","mr_walid","admin"}',
+    p_hide_on_paths text[] DEFAULT '{}',
+    p_starts_at timestamptz DEFAULT now(),
+    p_ends_at timestamptz DEFAULT NULL,
+    p_is_active boolean DEFAULT true,
+    p_dismissible boolean DEFAULT true
+)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_announcement public.announcements;
+    v_user_id uuid := auth.uid();
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    INSERT INTO public.announcements (
+        title, body, link_url, link_label, variant,
+        target_roles, hide_on_paths, starts_at, ends_at,
+        is_active, dismissible, created_by
+    ) VALUES (
+        p_title, p_body, p_link_url, p_link_label, p_variant,
+        p_target_roles, p_hide_on_paths, p_starts_at, p_ends_at,
+        p_is_active, p_dismissible, v_user_id
+    )
+    RETURNING * INTO v_announcement;
+
+    PERFORM public.audit_log(
+        'announcement.create', 'announcements', v_announcement.id,
+        jsonb_build_object('title', p_title, 'variant', p_variant)
+    );
+
+    RETURN v_announcement;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.update_announcement(
+    p_id uuid,
+    p_title text DEFAULT NULL,
+    p_body text DEFAULT NULL,
+    p_link_url text DEFAULT NULL,
+    p_link_label text DEFAULT NULL,
+    p_variant text DEFAULT NULL,
+    p_target_roles text[] DEFAULT NULL,
+    p_hide_on_paths text[] DEFAULT NULL,
+    p_starts_at timestamptz DEFAULT NULL,
+    p_ends_at timestamptz DEFAULT NULL,
+    p_is_active boolean DEFAULT NULL,
+    p_dismissible boolean DEFAULT NULL
+)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_announcement public.announcements;
+    v_old jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT to_jsonb(a) INTO v_old FROM public.announcements a WHERE a.id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found';
+    END IF;
+
+    UPDATE public.announcements SET
+        title = COALESCE(p_title, title),
+        body = COALESCE(p_body, body),
+        link_url = COALESCE(p_link_url, link_url),
+        link_label = COALESCE(p_link_label, link_label),
+        variant = COALESCE(p_variant, variant),
+        target_roles = COALESCE(p_target_roles, target_roles),
+        hide_on_paths = COALESCE(p_hide_on_paths, hide_on_paths),
+        starts_at = COALESCE(p_starts_at, starts_at),
+        ends_at = COALESCE(p_ends_at, ends_at),
+        is_active = COALESCE(p_is_active, is_active),
+        dismissible = COALESCE(p_dismissible, dismissible),
+        updated_at = now()
+    WHERE id = p_id
+    RETURNING * INTO v_announcement;
+
+    PERFORM public.audit_log(
+        'announcement.update', 'announcements', v_announcement.id,
+        jsonb_build_object('old', v_old, 'new', to_jsonb(v_announcement))
+    );
+
+    RETURN v_announcement;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_announcement(p_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_title text;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT title INTO v_title FROM public.announcements WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_found';
+    END IF;
+
+    DELETE FROM public.announcements WHERE id = p_id;
+
+    PERFORM public.audit_log(
+        'announcement.delete', 'announcements', p_id,
+        jsonb_build_object('title', v_title)
+    );
+END $$;
+
+-- Grants (idempotent, keep in sync with 0049)
+REVOKE EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.delete_announcement(uuid) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.create_announcement(text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_announcement(uuid, text, text, text, text, text, text[], text[], timestamptz, timestamptz, boolean, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_announcement(uuid) TO authenticated;
+
+-- =====================================================================
+-- >>> included from migrations\0051_free_units.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0051_free_units
+-- Free units (doors) — when marked is_free=true the unit becomes free
+-- for students (price 0, coupon price 0, badge مجاني). Covers:
+--   * units.is_free column
+--   * set_unit_free RPC (staff-only toggle + price zeroing)
+--   * can_access_lesson updated to include free units
+--   * RLS policies updated (units/lessons) to expose free content
+--   * get_public_unit_prices / list_unit_pricing / get_my_lesson_access
+--     updated to expose is_free and return zero prices for free units
+--   * set_unit_price guard (reject non-zero for free units)
+-- Reference: user request "أبواب مجانية — سعر الكوبون وسعر الباب صفر ومكتوب مجاني"
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1) units.is_free
+-- ---------------------------------------------------------------------
+ALTER TABLE public.units
+    ADD COLUMN IF NOT EXISTS is_free boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.units.is_free IS 'When true the unit is free for all active students — price 0, coupon price 0, badge مجاني — no purchase required. Toggled via set_unit_free.';
+
+-- ---------------------------------------------------------------------
+-- 2) set_unit_free — staff-guarded toggle; when enabling free, ensure
+--    pricing row exists with 0/0 so every price surface shows 0
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_unit_free(
+    p_unit_id uuid,
+    p_is_free boolean
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_fee numeric(10,2);
+    v_pricing_id uuid;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+
+    UPDATE public.units SET is_free = p_is_free WHERE id = p_unit_id;
+
+    IF p_is_free THEN
+        -- Force pricing to zero so coupons and price surfaces are 0
+        INSERT INTO public.unit_pricing (unit_id, base_price, platform_fee, is_active)
+        VALUES (p_unit_id, 0, 0, true)
+        ON CONFLICT (unit_id) DO UPDATE
+        SET base_price = 0,
+            platform_fee = 0,
+            is_active = true
+        RETURNING id INTO v_pricing_id;
+
+        -- If ON CONFLICT ... DO UPDATE did not RETURNING (older PG path),
+        -- fetch the id
+        IF v_pricing_id IS NULL THEN
+            SELECT id INTO v_pricing_id FROM public.unit_pricing WHERE unit_id = p_unit_id;
+        END IF;
+
+        PERFORM public.audit_log('unit.free_set', 'unit', p_unit_id,
+            jsonb_build_object('is_free', true, 'pricing_id', v_pricing_id));
+    ELSE
+        -- Un-free: keep pricing at 0 until staff sets a new price explicitly.
+        -- Do not auto-restore old price to avoid surprise charges.
+        PERFORM public.audit_log('unit.free_set', 'unit', p_unit_id,
+            jsonb_build_object('is_free', false));
+    END IF;
+END $$;
+
+COMMENT ON FUNCTION public.set_unit_free(uuid, boolean) IS 'Staff-guarded free-unit toggle; when enabling free, pricing is forced to 0/0 so coupons and all price surfaces show مجاني.';
+
+REVOKE EXECUTE ON FUNCTION public.set_unit_free(uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_unit_free(uuid, boolean) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 3) Guard set_unit_price for free units — setting a non-zero price for
+--    a free unit is rejected (must un-free first). Zero price is allowed.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_unit_price(
+    p_unit_id uuid,
+    p_base_price numeric(10, 2)
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_fee numeric(10, 2) := COALESCE(
+        (SELECT (value::text)::numeric
+           FROM public.app_settings WHERE key = 'platform_fee'),
+        0
+    );
+    v_pricing_id uuid;
+    v_is_free boolean;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM public.units WHERE id = p_unit_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'unit_not_found';
+    END IF;
+
+    SELECT is_free INTO v_is_free FROM public.units WHERE id = p_unit_id;
+    IF COALESCE(v_is_free, false) AND p_base_price <> 0 THEN
+        RAISE EXCEPTION 'unit_is_free';
+    END IF;
+
+    IF p_base_price < 0 THEN
+        RAISE EXCEPTION 'invalid_price';
+    END IF;
+
+    -- For free units force platform_fee 0 so total stays 0 regardless of global fee
+    IF COALESCE(v_is_free, false) THEN
+        v_fee := 0;
+    END IF;
+
+    INSERT INTO public.unit_pricing (unit_id, base_price, platform_fee)
+    VALUES (p_unit_id, p_base_price, v_fee)
+    ON CONFLICT (unit_id) DO UPDATE
+    SET base_price = EXCLUDED.base_price,
+        platform_fee = EXCLUDED.platform_fee
+    RETURNING id INTO v_pricing_id;
+
+    IF v_pricing_id IS NULL THEN
+        SELECT id INTO v_pricing_id FROM public.unit_pricing WHERE unit_id = p_unit_id;
+    END IF;
+
+    PERFORM public.audit_log('unit_pricing.set', 'unit_pricing', v_pricing_id,
+        jsonb_build_object('unit_id', p_unit_id, 'base_price', p_base_price,
+                           'platform_fee', v_fee, 'is_free', COALESCE(v_is_free,false)));
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.set_unit_price(uuid, numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_unit_price(uuid, numeric) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 4) can_access_lesson — add free-unit branch (u.is_free) alongside
+--    trial. Free units are open to any active student for published
+--    lesson+unit+active grade, no purchase needed.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_grade_id uuid;
+BEGIN
+    IF v_uid IS NULL THEN
+        RETURN false;
+    END IF;
+    IF public.is_admin() OR public.is_mr_walid() OR public.is_teacher() THEN
+        RETURN EXISTS (SELECT 1 FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL);
+    END IF;
+
+    SELECT grade_id INTO v_grade_id
+    FROM public.profiles
+    WHERE id = v_uid
+    LIMIT 1;
+
+    RETURN EXISTS (
+        SELECT 1
+        FROM public.lessons l
+        JOIN public.units u ON u.id = l.unit_id
+        JOIN public.grades g ON g.id = u.grade_id
+        WHERE l.id = p_lesson_id
+          AND l.deleted_at IS NULL AND l.status = 'published'
+          AND u.deleted_at IS NULL AND u.status = 'published'
+          AND g.is_active AND g.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM public.profiles p
+              WHERE p.id = v_uid AND p.deleted_at IS NULL AND p.status = 'active'
+          )
+          AND (
+              l.is_trial
+              OR u.is_free
+              OR (
+                  EXISTS (
+                      SELECT 1 FROM public.unit_purchases up
+                      WHERE up.student_id = v_uid
+                        AND up.unit_id = u.id
+                        AND up.status = 'active'
+                  )
+                  AND u.grade_id = COALESCE(v_grade_id, u.grade_id)
+              )
+          )
+    );
+END $$;
+
+COMMENT ON FUNCTION public.can_access_lesson(uuid) IS 'Lesson access: staff see any live lesson; students need published lesson+unit+active grade; trial lessons OR free units (u.is_free) are open to any active student, non-trial non-free require active purchase in own grade.';
+
+GRANT EXECUTE ON FUNCTION public.can_access_lesson(uuid) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 4b) set_platform_fee — keep free units at 0 when global fee changes
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.set_platform_fee(p_fee numeric(10, 2))
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    IF p_fee < 0 THEN
+        RAISE EXCEPTION 'invalid_fee';
+    END IF;
+
+    INSERT INTO public.app_settings (key, value, description)
+    VALUES ('platform_fee', to_jsonb(p_fee),
+            'Fixed platform fee added on top of every unit price (owner/admin-only)')
+    ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value,
+        description = EXCLUDED.description,
+        updated_at = now();
+
+    -- Do not overwrite free units — they stay 0/0
+    UPDATE public.unit_pricing
+    SET platform_fee = p_fee
+    WHERE unit_id IS NOT NULL
+      AND unit_id NOT IN (SELECT id FROM public.units WHERE is_free = true);
+
+    PERFORM public.audit_log('platform_fee.set', 'app_settings', NULL,
+        jsonb_build_object('platform_fee', p_fee));
+END $$;
+
+COMMENT ON FUNCTION public.set_platform_fee(numeric) IS 'One fixed platform fee added on top of every unit price (owner mr_walid or admin only; 0033; safe-update WHERE 0034) — free units keep 0.';
+
+REVOKE EXECUTE ON FUNCTION public.set_platform_fee(numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_platform_fee(numeric) TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 5) RLS — add free-unit branches (student can SELECT free units and
+--    their lessons even without own-grade purchase)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                JOIN public.profiles p ON p.grade_id = u.grade_id
+                WHERE p.id = auth.uid()
+                  AND u.grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+                  AND u.status = 'published'
+                  AND u.deleted_at IS NULL
+            )
+        )
+        OR (
+            public.is_student()
+            AND is_trial = true
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT id FROM public.units
+                WHERE status = 'published' AND deleted_at IS NULL
+                  AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            )
+        )
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT id FROM public.units
+                WHERE is_free = true
+                  AND status = 'published' AND deleted_at IS NULL
+                  AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
+CREATE POLICY units_select_staff_or_published_own_grade ON public.units
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher()
+        OR (
+            public.is_student()
+            AND grade_id IN (
+                SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid()
+            )
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND status = 'published'
+            AND deleted_at IS NULL
+        )
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND EXISTS (
+                SELECT 1 FROM public.lessons l
+                WHERE l.unit_id = units.id
+                  AND l.is_trial = true
+                  AND l.status = 'published'
+                  AND l.deleted_at IS NULL
+            )
+        )
+        OR (
+            public.is_student()
+            AND is_free = true
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+        )
+    );
+
+-- ---------------------------------------------------------------------
+-- 6) get_public_unit_prices — expose is_free and force 0 prices for free
+--    units (LEFT JOIN so free units without a pricing row still appear as 0)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.get_public_unit_prices();
+
+CREATE OR REPLACE FUNCTION public.get_public_unit_prices()
+RETURNS TABLE (
+    unit_id uuid, unit_name text, grade_name text,
+    base_price numeric(10, 2), platform_fee numeric(10, 2), total_price numeric(10, 2),
+    is_free boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT u.id AS unit_id, u.name AS unit_name, g.name AS grade_name,
+           CASE WHEN u.is_free THEN 0 ELSE COALESCE(up.base_price, 0) END AS base_price,
+           CASE WHEN u.is_free THEN 0 ELSE COALESCE(up.platform_fee, 0) END AS platform_fee,
+           CASE WHEN u.is_free THEN 0 ELSE COALESCE(up.total_price, 0) END AS total_price,
+           u.is_free AS is_free
+    FROM public.units u
+    JOIN public.grades g ON g.id = u.grade_id
+    LEFT JOIN public.unit_pricing up ON up.unit_id = u.id AND up.is_active
+    WHERE u.status = 'published' AND u.deleted_at IS NULL
+      AND g.is_active AND g.deleted_at IS NULL;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.get_public_unit_prices() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_public_unit_prices() TO anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 7) list_unit_pricing — add is_free to the returned table (exposes free
+--    units even without a pricing row — UNION fallback)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.list_unit_pricing();
+
+CREATE OR REPLACE FUNCTION public.list_unit_pricing()
+RETURNS TABLE (
+    id uuid, unit_id uuid, base_price numeric(10, 2), platform_fee numeric(10, 2),
+    total_price numeric(10, 2), is_active boolean, unit_name text, grade_name text,
+    is_free boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT up.id, up.unit_id, up.base_price, up.platform_fee, up.total_price,
+           up.is_active, u.name, g.name, u.is_free
+    FROM public.unit_pricing up
+    JOIN public.units u ON u.id = up.unit_id
+    JOIN public.grades g ON g.id = u.grade_id
+    WHERE (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    UNION ALL
+    SELECT NULL::uuid, u.id, 0::numeric(10,2), 0::numeric(10,2), 0::numeric(10,2),
+           true, u.name, g.name, u.is_free
+    FROM public.units u
+    JOIN public.grades g ON g.id = u.grade_id
+    WHERE u.is_free = true
+      AND u.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM public.unit_pricing up2 WHERE up2.unit_id = u.id)
+      AND (public.is_admin() OR public.is_mr_walid() OR public.is_teacher())
+    ORDER BY 8, 7;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.list_unit_pricing() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.list_unit_pricing() TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- 8) get_my_lesson_access — include is_free and force price 0 for free
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.get_my_lesson_access(uuid);
+
+CREATE OR REPLACE FUNCTION public.get_my_lesson_access(p_lesson_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+    v_lesson_id uuid;
+    v_unit_id uuid;
+    v_unit_name text;
+    v_is_trial boolean;
+    v_is_free boolean;
+    v_has_purchase boolean;
+    v_price numeric(10, 2);
+BEGIN
+    SELECT l.id, l.unit_id, l.is_trial, u.name, u.is_free
+    INTO v_lesson_id, v_unit_id, v_is_trial, v_unit_name, v_is_free
+    FROM public.lessons l
+    JOIN public.units u ON u.id = l.unit_id
+    WHERE l.id = p_lesson_id AND l.deleted_at IS NULL;
+
+    IF v_lesson_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'has_access', false, 'has_purchase', false, 'is_trial', false, 'is_free', false,
+            'unit_id', NULL::uuid, 'unit_name', NULL::text, 'price', NULL::numeric);
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1 FROM public.unit_purchases
+        WHERE student_id = v_uid AND unit_id = v_unit_id AND status = 'active'
+    ) INTO v_has_purchase;
+
+    IF COALESCE(v_is_free, false) THEN
+        v_price := 0;
+    ELSE
+        SELECT total_price INTO v_price
+        FROM public.unit_pricing
+        WHERE unit_id = v_unit_id AND is_active;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'has_access', public.can_access_lesson(p_lesson_id),
+        'has_purchase', v_has_purchase,
+        'is_trial', COALESCE(v_is_trial, false),
+        'is_free', COALESCE(v_is_free, false),
+        'unit_id', v_unit_id,
+        'unit_name', v_unit_name,
+        'price', v_price);
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.get_my_lesson_access(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_my_lesson_access(uuid) TO authenticated;

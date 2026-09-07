@@ -102,13 +102,23 @@ export function PricingPublicPage() {
                       <BookOpen className="h-5 w-5 text-indigo-300" />
                       <h3 className="mt-2 font-display text-sm font-bold text-foreground">{u.unit_name}</h3>
                       <p className="mt-1 text-xs text-foreground-subtle">{gradeName}</p>
-                      <p className="mt-2 font-display text-2xl font-extrabold text-gradient" dir="ltr">
-                        {formatPrice(u.total_price)} <span className="text-sm">ج.م</span>
-                      </p>
-                      <p className="text-xs text-foreground-subtle">
-                        أساسي {formatPrice(u.base_price)} + رسوم {formatPrice(u.platform_fee)}
-                      </p>
-                      <Link to="/faq#codes" className="mt-3 inline-flex text-xs font-bold text-indigo-300 hover:text-indigo-200">تفاصيل التفعيل ←</Link>
+                      {u.is_free ? (
+                        <>
+                          <p className="mt-2 font-display text-2xl font-extrabold text-emerald-300">مجاني</p>
+                          <p className="text-xs text-emerald-300">متاح لجميع الطلاب بدون كود</p>
+                          <span className="mt-2 inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">مجاني</span>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-2 font-display text-2xl font-extrabold text-gradient" dir="ltr">
+                            {formatPrice(u.total_price)} <span className="text-sm">ج.م</span>
+                          </p>
+                          <p className="text-xs text-foreground-subtle">
+                            أساسي {formatPrice(u.base_price)} + رسوم {formatPrice(u.platform_fee)}
+                          </p>
+                          <Link to="/faq#codes" className="mt-3 inline-flex text-xs font-bold text-indigo-300 hover:text-indigo-200">تفاصيل التفعيل ←</Link>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

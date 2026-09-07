@@ -32,6 +32,21 @@ export function LockedUnitCard({
 }: LockedUnitCardProps) {
   const whatsappLink = whatsappNumber ? buildWhatsAppLink(whatsappNumber, whatsappMessage) : null;
   const hasPrice = unit !== null;
+  const isFree = hasPrice && ((unit as { is_free?: boolean }).is_free || unit.total_price === 0);
+
+  if (isFree) {
+    return (
+      <Card title={unitName} subtitle={`${unit.grade_name ?? gradeName ?? ''} — مجاني`}>
+        <div className="flex flex-col gap-4">
+          <PriceTag pricing={unit} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="success">مجاني</Badge>
+            <span className="text-xs text-foreground-subtle">متاح لجميع الطلاب بدون كود</span>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card title={unitName} subtitle={hasPrice ? (unit.grade_name ?? gradeName ?? '') : 'السعر غير محدد — تواصل مع الإدارة'}>

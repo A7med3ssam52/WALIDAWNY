@@ -10,6 +10,7 @@ interface UnitCardProps {
   price?: string | number;
   isPurchased: boolean;
   isLocked?: boolean;
+  isFree?: boolean;
   onAction?: () => void;
   actionLabel?: string;
   actionIcon?: ReactNode;
@@ -23,11 +24,13 @@ export function UnitCard({
   price,
   isPurchased,
   isLocked = false,
+  isFree = false,
   onAction,
   actionLabel = 'افتح الوحدة',
   actionIcon,
   children,
 }: UnitCardProps) {
+  const showFree = isFree || price === 0;
   return (
     <article className="glass-card glass-card-hover group p-4 sm:p-5 flex flex-col h-full">
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -41,7 +44,9 @@ export function UnitCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {isPurchased ? (
+          {showFree ? (
+            <Badge variant="success" className="text-xs">مجاني</Badge>
+          ) : isPurchased ? (
             <Badge variant="success" className="text-xs">
               <CheckCircle2 className="h-3 w-3 me-1" aria-hidden="true" />
               مملوكة
@@ -59,11 +64,13 @@ export function UnitCard({
         </div>
       </div>
 
-      {price && !isPurchased && (
+      {showFree && !isPurchased ? (
+        <div className="mb-4 text-sm font-semibold text-emerald-300">مجاني — متاح بدون كود</div>
+      ) : price !== undefined && price !== null && !isPurchased ? (
         <div className="mb-4 text-sm text-foreground-muted" dir="ltr">
           السعر: {typeof price === 'number' ? formatPrice(price) : price}
         </div>
-      )}
+      ) : null}
 
       <div className="mt-auto flex flex-col gap-2 pt-3 border-t border-white/5">
         {children}

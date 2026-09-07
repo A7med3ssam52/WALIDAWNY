@@ -492,7 +492,7 @@ export function StudentLessonPage() {
                 </div>
                 {access?.price != null ? (
                   <span className="text-sm font-semibold text-foreground" dir="ltr">
-                    {formatPrice(access.price)}
+                    {access?.is_free ? 'مجاني' : formatPrice(access.price)}
                   </span>
                 ) : null}
               </div>
@@ -619,6 +619,11 @@ export function StudentLessonPage() {
             {access?.is_trial ? (
               <Badge variant="info" data-testid="trial-lesson-badge">
                 درس تجريبي
+              </Badge>
+            ) : null}
+            {access?.is_free ? (
+              <Badge variant="success" data-testid="free-unit-badge">
+                باب مجاني
               </Badge>
             ) : null}
             {progress?.is_completed ? (

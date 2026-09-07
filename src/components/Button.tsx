@@ -9,7 +9,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   loading?: boolean;
   icon?: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 const baseClasses =

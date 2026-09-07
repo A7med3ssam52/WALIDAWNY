@@ -136,8 +136,17 @@ export function GradeLandingPage() {
                   <BookOpen className="h-5 w-5 text-indigo-300" />
                   <h3 className="mt-2 font-display text-sm font-bold text-foreground">{u.unit_name}</h3>
                   <p className="mt-1 text-xs text-foreground-subtle">{grade.name}</p>
-                  <p className="mt-2 font-display text-xl font-extrabold text-gradient">{u.total_price} ج.م</p>
-                  <p className="text-xs text-foreground-subtle">شامل رسوم المنصة — تفعيل مدى الحياة بكود WLDN</p>
+                  {u.is_free ? (
+                    <>
+                      <p className="mt-2 font-display text-xl font-extrabold text-emerald-300">مجاني</p>
+                      <p className="text-xs text-emerald-300">متاح مجاناً بدون كود</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-2 font-display text-xl font-extrabold text-gradient">{u.total_price} ج.م</p>
+                      <p className="text-xs text-foreground-subtle">شامل رسوم المنصة — تفعيل مدى الحياة بكود WLDN</p>
+                    </>
+                  )}
                   <Link to="/pricing" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-indigo-300 hover:text-indigo-200">التفاصيل والشراء <ArrowLeft className="h-3 w-3" /></Link>
                 </div>
               ))}

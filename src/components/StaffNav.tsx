@@ -4,13 +4,14 @@ import { Badge } from './Badge';
 
 const items: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/dashboard', label: 'الرئيسية' },
-  { to: '/walid/reports', label: 'التقارير', badge: 'جديد' },
+  { to: '/walid/reports', label: 'التقارير' },
   { to: '/walid/students', label: 'الطلاب' },
   { to: '/walid/grades', label: 'الصفوف' },
   { to: '/walid/curriculum', label: 'المنهج' },
   { to: '/walid/exams', label: 'الإختبارات' },
   { to: '/walid/pricing', label: 'أسعار الوحدات' },
   { to: '/walid/codes', label: 'أكواد الوحدات' },
+  { to: '/walid/announcements', label: 'الإعلانات', badge: 'جديد' },
 ];
 
 export function StaffNav() {

@@ -103,12 +103,17 @@ export function LandingPage() {
   const loadSettings = useCallback(async () => {
     setSettingsError(false);
     setPricesError(false);
-    try {
-      const [settingsRow, pricesRow] = await Promise.all([getPublicSettings(), getPublicUnitPrices()]);
+    const settled = await Promise.allSettled([getPublicSettings(), getPublicUnitPrices()]);
+    const settingsRow = settled[0].status === 'fulfilled' ? settled[0].value : null;
+    const pricesRow = settled[1].status === 'fulfilled' ? settled[1].value : [];
+    if (settled[0].status === 'fulfilled') {
       setSettings(settingsRow);
-      setPrices(pricesRow);
-    } catch {
+    } else {
       setSettingsError(true);
+    }
+    if (settled[1].status === 'fulfilled') {
+      setPrices(pricesRow);
+    } else {
       setPricesError(true);
     }
   }, []);
@@ -424,12 +429,24 @@ export function LandingPage() {
                     </span>
                     <h3 className="font-display text-base font-bold text-foreground">{price.unit_name}</h3>
                     <p className="text-xs text-foreground-subtle">{price.grade_name ?? ''}</p>
-                    <p className="mt-1 font-display text-2xl font-extrabold text-gradient" dir="ltr">{formatPrice(price.total_price)} <span className="text-sm">ج.م</span></p>
-                    <p className="text-xs text-foreground-subtle">سعر الوحدة {formatPrice(price.base_price)} + رسوم منصة {formatPrice(price.platform_fee)}</p>
-                    {whatsappNumber ? (
+                    {price.is_free ? (
+                      <>
+                        <p className="mt-1 font-display text-2xl font-extrabold text-emerald-300">مجاني</p>
+                        <p className="text-xs text-emerald-300">متاح لجميع الطلاب بدون كود</p>
+                        <span className="mt-1 inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">مجاني</span>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 font-display text-2xl font-extrabold text-gradient" dir="ltr">{formatPrice(price.total_price)} <span className="text-sm">ج.م</span></p>
+                        <p className="text-xs text-foreground-subtle">سعر الوحدة {formatPrice(price.base_price)} + رسوم منصة {formatPrice(price.platform_fee)}</p>
+                      </>
+                    )}
+                    {whatsappNumber && !price.is_free ? (
                       <a href={buildWhatsAppLink(whatsappNumber, `${settings?.whatsapp_default_message ?? ''} — وحدة ${price.unit_name}`)} target="_blank" rel="noreferrer" className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-emerald-500 to-green-500 px-4 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.97]">
                         <WhatsAppIcon className="h-4 w-4" /> تواصل لتفعيل الوحدة
                       </a>
+                    ) : price.is_free ? (
+                      <Link to="/register" className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white">افتح مجاناً — سجّل الآن</Link>
                     ) : null}
                   </div>
                 ))}

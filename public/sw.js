@@ -8,16 +8,16 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `walid-aurora-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-512.png',
-  '/icons/apple-touch-icon.png',
+  '/manifest.webmanifest?v=2',
+  '/icons/icon-192.png?v=2',
+  '/icons/icon-512.png?v=2',
+  '/icons/icon-maskable-512.png?v=2',
+  '/icons/apple-touch-icon.png?v=2',
 ];
 
 /* ------------------------- Background upload engine ---------------------- */

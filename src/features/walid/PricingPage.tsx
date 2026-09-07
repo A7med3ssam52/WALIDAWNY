@@ -27,6 +27,7 @@ import {
   listUnitPricing,
   listUnitsForGrade,
   setPlatformFee,
+  setUnitFree,
   setUnitPrice,
 } from '../../data/rpc';
 import { formatPrice } from '../../lib/format';
@@ -38,6 +39,7 @@ const PRICING_ERROR_MESSAGES: Record<string, string> = {
   invalid_price: 'قيم السعر غير صحيحة',
   invalid_fee: 'قيمة الرسوم غير صحيحة',
   unit_not_found: 'الوحدة غير موجودة',
+  unit_is_free: 'هذه الوحدة مجانية — ألغِ المجانية أولاً لتحديد سعر',
   permission_denied: 'ليست لديك صلاحية',
   access_denied: 'ليست لديك صلاحية',
 };
@@ -75,22 +77,32 @@ export function PricingPage() {
   const [feeForm, setFeeForm] = useState('');
   const [feeError, setFeeError] = useState<string | null>(null);
   const [feeSaving, setFeeSaving] = useState(false);
+  const [freeTogglingId, setFreeTogglingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(false);
     try {
-      const [nextPricing, nextGrades, nextFee] = await Promise.all([
-        listUnitPricing(),
-        listGrades(),
-        getPlatformFee(),
-      ]);
-      setPricing(nextPricing);
-      setGrades(nextGrades);
-      setPlatformFeeValue(nextFee);
+      const settled = await Promise.allSettled([listUnitPricing(), listGrades(), getPlatformFee()]);
+      const nextPricing = settled[0].status === 'fulfilled' ? settled[0].value : [];
+      const nextGrades = settled[1].status === 'fulfilled' ? settled[1].value : [];
+      const nextFee = settled[2].status === 'fulfilled' ? settled[2].value : 0;
+
+      if (settled[0].status === 'rejected' || settled[1].status === 'rejected') {
+        // pricing/grades are critical but we still show what we have
+        if (nextPricing.length === 0 && nextGrades.length === 0) {
+          setError(true);
+          return;
+        }
+      }
+
+      setPricing(nextPricing as UnitPricingWithUnit[]);
+      setGrades(nextGrades as Grade[]);
+      setPlatformFeeValue(nextFee as number);
       setFeeForm((prev) => (prev === '' ? String(nextFee) : prev));
-      const nextUnits = (
-        await Promise.all(nextGrades.map((grade) => listUnitsForGrade(grade.id)))
-      ).flat();
+      const unitsSettled = await Promise.allSettled(nextGrades.map((grade) => listUnitsForGrade(grade.id)));
+      const nextUnits = unitsSettled
+        .filter((r): r is PromiseFulfilledResult<Unit[]> => r.status === 'fulfilled')
+        .flatMap((r) => r.value);
       setUnits(nextUnits);
       setForm((prev) => ({
         ...prev,
@@ -164,6 +176,20 @@ export function PricingPage() {
     }
   };
 
+  const handleToggleFree = async (item: UnitPricingWithUnit) => {
+    const nextFree = !item.is_free;
+    setFreeTogglingId(item.unit_id);
+    try {
+      await setUnitFree(item.unit_id, nextFree);
+      showToast(nextFree ? 'تم جعل الباب مجاني — سعره الآن صفر' : 'تم إلغاء مجانية الباب — حدد سعره الآن');
+      await load();
+    } catch (err) {
+      showToast(pricingErrorMessage(err), 'error');
+    } finally {
+      setFreeTogglingId(null);
+    }
+  };
+
   const totalPrice = Number(form.basePrice || 0) + (platformFee ?? 0);
   const selectedUnit = units.find((unit) => unit.id === form.unitId) ?? null;
 
@@ -212,32 +238,48 @@ export function PricingPage() {
                       {item.unit_name}
                     </TableCell>
                     <TableCell label="السعر الأساسي" dir="ltr" className="font-mono">
-                      {formatPrice(item.base_price)}
+                      {item.is_free ? <span className="text-emerald-300 font-semibold">مجاني</span> : formatPrice(item.base_price)}
                     </TableCell>
                     <TableCell label="رسوم المنصة" dir="ltr" className="font-mono">
-                      {formatPrice(item.platform_fee)}
+                      {item.is_free ? <span className="text-emerald-300 font-semibold">—</span> : formatPrice(item.platform_fee)}
                     </TableCell>
                     <TableCell
                       label="الإجمالي"
                       dir="ltr"
-                      className="font-mono font-medium text-foreground"
+                      className="font-mono font-medium"
                     >
-                      {formatPrice(item.total_price)}
+                      {item.is_free ? <span className="text-emerald-300">مجاني</span> : <span className="text-foreground">{formatPrice(item.total_price)}</span>}
                     </TableCell>
                     <TableCell label="الحالة">
-                      <Badge variant={item.is_active ? 'success' : 'neutral'}>
-                        {item.is_active ? 'نشط' : 'موقف'}
-                      </Badge>
+                      {item.is_free ? (
+                        <Badge variant="success">مجاني</Badge>
+                      ) : (
+                        <Badge variant={item.is_active ? 'success' : 'neutral'}>
+                          {item.is_active ? 'نشط' : 'موقف'}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell label="إجراءات">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => startEdit(item)}
-                      >
-                        تعديل
-                      </Button>
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
+                          onClick={() => startEdit(item)}
+                          disabled={item.is_free}
+                          title={item.is_free ? 'ألغِ المجانية أولاً' : undefined}
+                        >
+                          تعديل
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={item.is_free ? 'secondary' : 'ghost'}
+                          loading={freeTogglingId === item.unit_id}
+                          onClick={() => void handleToggleFree(item)}
+                        >
+                          {item.is_free ? 'إلغاء المجانية' : 'اجعله مجاني'}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

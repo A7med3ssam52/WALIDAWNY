@@ -15,19 +15,19 @@
   "categories": ["education"],
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/icon-192.png?v=2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/icon-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable-512.png",
+      "src": "/icons/icon-maskable-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -39,21 +39,21 @@
       "short_name": "لوحة الطالب",
       "description": "افتح لوحة الطالب مباشرة",
       "url": "/student/dashboard",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192.png?v=2", "sizes": "192x192" }]
     },
     {
       "name": "لوحة الأستاذ",
       "short_name": "لوحة الأستاذ",
       "description": "افتح لوحة الأستاذ مباشرة",
       "url": "/walid/dashboard",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192.png?v=2", "sizes": "192x192" }]
     },
     {
       "name": "إنشاء حساب",
       "short_name": "حساب جديد",
       "description": "سجّل حسابك في المنصة",
       "url": "/register",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192.png?v=2", "sizes": "192x192" }]
     }
   ]
 }
