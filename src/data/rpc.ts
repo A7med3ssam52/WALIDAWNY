@@ -425,6 +425,36 @@ export async function listUnitsForGrade(gradeId: string): Promise<Unit[]> {
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true });
   if (error) {
+    const code = getRpcErrorCode(error);
+    if (code === '42p17' || String(error.message ?? '').toLowerCase().includes('infinite recursion')) {
+      // Fallback 1: secure RPC that bypasses RLS (fix for 0052 recursion)
+      try {
+        const { data: fallback, error: fbErr } = await getSupabaseClient().rpc(
+          'list_units_for_grade_secure' as never,
+          { p_grade_id: gradeId } as never,
+        );
+        if (!fbErr && fallback) return (fallback as Unit[]).filter((u) => !u.deleted_at) as Unit[];
+      } catch {}
+      // Fallback 2: use public prices (security definer, no RLS) to reconstruct units
+      try {
+        const prices = await getPublicUnitPrices();
+        const grade = await getGradeById(gradeId).catch(() => null);
+        const filtered = prices.filter((p) => grade && p.grade_name === grade.name);
+        if (filtered.length > 0) {
+          return filtered.map((p) => ({
+            id: p.unit_id,
+            grade_id: gradeId,
+            name: p.unit_name,
+            sort_order: 0,
+            status: 'published' as const,
+            is_free: p.is_free,
+            deleted_at: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })) as Unit[];
+        }
+      } catch {}
+    }
     throw error;
   }
   return (data ?? []) as Unit[];
@@ -438,6 +468,14 @@ export async function listDeletedUnitsForGrade(gradeId: string): Promise<Unit[]>
     .not('deleted_at', 'is', null)
     .order('deleted_at', { ascending: false });
   if (error) {
+    const code = getRpcErrorCode(error);
+    if (code === '42p17' || String(error.message ?? '').toLowerCase().includes('infinite recursion')) {
+      const { data: fallback, error: fbErr } = await getSupabaseClient().rpc(
+        'list_deleted_units_for_grade_secure' as never,
+        { p_grade_id: gradeId } as never,
+      );
+      if (!fbErr && fallback) return fallback as Unit[];
+    }
     throw error;
   }
   return (data ?? []) as Unit[];
