@@ -46,7 +46,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       <div className="flex flex-1">
-        <aside className="relative hidden w-[45%] max-w-xl flex-col justify-between overflow-hidden border-e border-white/8 p-10 lg:flex">
+        <aside className="relative hidden w-[45%] max-w-xl flex-col justify-between overflow-hidden border-e border-white/8 p-10 lg:flex bg-gradient-to-b from-white/[0.04] to-transparent backdrop-blur">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0"
@@ -54,6 +54,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             <div className="absolute -start-24 -top-24 h-80 w-80 animate-orb rounded-full bg-indigo-600/30 blur-3xl" />
             <div className="absolute -bottom-32 -end-20 h-96 w-96 animate-orb rounded-full bg-fuchsia-600/25 blur-3xl [animation-delay:2s]" />
             <div className="absolute start-1/3 top-1/2 h-72 w-72 animate-pulse-soft rounded-full bg-cyan-500/15 blur-3xl" />
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           </div>
 
           <div className="relative flex items-center gap-3">
@@ -106,8 +107,10 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             <div className="conic-ring absolute start-1/2 top-6 h-72 w-72 -translate-x-1/2 rounded-full opacity-40 blur-[1px]" />
             <div className="absolute start-10 top-10 h-56 w-56 animate-orb rounded-full bg-purple-600/15 blur-3xl" />
             <div className="absolute bottom-10 end-10 h-64 w-64 animate-orb rounded-full bg-indigo-600/15 blur-3xl [animation-delay:3s]" />
+            <div className="absolute end-1/4 top-1/3 h-2 w-2 animate-particle rounded-full bg-indigo-300/60 shadow-[0_0_10px_2px_rgba(129,140,248,0.5)]" />
+            <div className="absolute start-1/4 bottom-1/4 h-1.5 w-1.5 animate-particle rounded-full bg-fuchsia-300/60 shadow-[0_0_10px_2px_rgba(217,70,239,0.5)] [animation-delay:1s]" />
           </div>
-          <div className="relative w-full max-w-md animate-scale-in">{children}</div>
+          <div className="relative w-full max-w-md animate-scale-in rise">{children}</div>
         </main>
       </div>
     </div>

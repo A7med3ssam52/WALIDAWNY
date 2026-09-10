@@ -27,12 +27,13 @@ export function GridCard({
     <div
       className={cn(
         'glass-card relative overflow-hidden',
-        hover && 'glass-card-hover group',
+        hover && 'glass-card-hover spotlight-card group',
         paddingStyles[padding],
         border && 'border border-white/10',
         className
       )}
     >
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent opacity-60" />
       <div className="relative z-10">{children}</div>
       {hover && (
         <div className="absolute inset-0 -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" aria-hidden="true">

@@ -30,6 +30,9 @@ const UnitsPage = lazy(() => import('../features/student/UnitsPage').then((m) =>
 const StudentCurriculumPage = lazy(() => import('../features/student/StudentCurriculumPage').then((m) => ({ default: m.StudentCurriculumPage })));
 const StudentLessonPage = lazy(() => import('../features/student/StudentLessonPage').then((m) => ({ default: m.StudentLessonPage })));
 const StudentNotificationsPage = lazy(() => import('../features/student/StudentNotificationsPage').then((m) => ({ default: m.StudentNotificationsPage })));
+const StudentPresenceGate = lazy(() =>
+  import('../features/student/StudentPresenceGate').then((m) => ({ default: m.StudentPresenceGate })),
+);
 
 // Walid / Teacher
 const WalidDashboardPage = lazy(() => import('../features/walid/WalidDashboardPage').then((m) => ({ default: m.WalidDashboardPage })));
@@ -53,6 +56,10 @@ const AuditLogPage = lazy(() => import('../features/admin/AuditLogPage').then((m
 const RolesPage = lazy(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
 const AnnouncementsListPage = lazy(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
 const AnnouncementFormPage = lazy(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
+const PresencePage = lazy(() => import('../features/admin/PresencePage').then((m) => ({ default: m.PresencePage })));
+const StudentPresenceHistoryPage = lazy(() =>
+  import('../features/admin/StudentPresenceHistoryPage').then((m) => ({ default: m.StudentPresenceHistoryPage })),
+);
 
 function PageFallback() {
   return (
@@ -107,14 +114,16 @@ export function AppRoutes() {
         {/* Protected */}
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<RoleGuard allow={['student']} />}>
-            <Route index element={<Navigate to="/student/dashboard" replace />} />
-            <Route path="dashboard" element={<StudentDashboardPage />} />
-            <Route path="profile" element={<StudentProfilePage />} />
-            <Route path="password" element={<StudentChangePasswordPage />} />
-            <Route path="units" element={<UnitsPage />} />
-            <Route path="curriculum" element={<StudentCurriculumPage />} />
-            <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
-            <Route path="notifications" element={<StudentNotificationsPage />} />
+            <Route element={<StudentPresenceGate />}>
+              <Route index element={<Navigate to="/student/dashboard" replace />} />
+              <Route path="dashboard" element={<StudentDashboardPage />} />
+              <Route path="profile" element={<StudentProfilePage />} />
+              <Route path="password" element={<StudentChangePasswordPage />} />
+              <Route path="units" element={<UnitsPage />} />
+              <Route path="curriculum" element={<StudentCurriculumPage />} />
+              <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
+              <Route path="notifications" element={<StudentNotificationsPage />} />
+            </Route>
           </Route>
           <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
             <Route index element={<Navigate to="/walid/dashboard" replace />} />
@@ -138,6 +147,8 @@ export function AppRoutes() {
           <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<WalidDashboardPage />} />
+            <Route path="presence" element={<PresencePage />} />
+            <Route path="presence/:studentId" element={<StudentPresenceHistoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditLogPage />} />
             <Route path="roles" element={<RolesPage />} />

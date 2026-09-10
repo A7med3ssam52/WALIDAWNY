@@ -407,50 +407,41 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
   const Icon = variantIcons[announcement.variant] ?? variantIcons.info;
 
   return (
-    <div
-      className={`relative flex items-center gap-3 rounded-xl border px-4 py-3 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.4)] text-white bg-gradient-to-r ${style}`}
-      dir="rtl"
-    >
-      <span className="flex-shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15" aria-hidden="true">
-        {Icon}
-      </span>
+    <div className="relative flex min-h-[320px] items-center justify-center rounded-xl bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
+      <div className={`relative w-full max-w-lg rounded-2xl border p-6 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.6)] text-white bg-gradient-to-r ${style}`}>
+        {announcement.dismissible && (
+          <span className="absolute left-3 top-3 rounded-lg p-1.5 text-white/70" aria-hidden="true">
+            <X className="h-4 w-4" />
+          </span>
+        )}
 
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm leading-snug">{announcement.title}</p>
-        <p className="mt-0.5 text-sm text-white/90 leading-snug">{announcement.body}</p>
+        <div className="flex flex-col items-center text-center">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15" aria-hidden="true">
+            {Icon}
+          </span>
+          <p className="mt-4 text-lg font-bold leading-snug">{announcement.title}</p>
+          <p className="mt-2 text-sm leading-6 text-white/90 whitespace-pre-wrap">{announcement.body}</p>
+
+          {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
+            <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-gray-900 shadow-lg">
+              {announcement.link_label}
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <polyline points="15 3 21 3 21 9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1="10" y1="14" x2="21" y2="3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          )}
+
+          {announcement.dismissible ? (
+            <span className="mt-5 inline-flex min-w-[140px] items-center justify-center rounded-xl bg-white/20 px-6 py-2.5 text-sm font-bold text-white">
+              فهمت
+            </span>
+          ) : (
+            <span className="mt-4 text-xs text-white/70">سيختفي تلقائياً عند انتهاء المدة</span>
+          )}
+        </div>
       </div>
-
-      {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
-        <a
-          href={announcement.link_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/30"
-        >
-          {announcement.link_label}
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <polyline points="15 3 21 3 21 9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <line x1="10" y1="14" x2="21" y2="3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </a>
-      )}
-
-      {announcement.dismissible && (
-        <button
-          type="button"
-          className="flex-shrink-0 rounded-lg p-1.5 text-white/70 hover:bg-white/15 hover:text-white transition-colors"
-          aria-label="إخفاء الإعلان (معاينة فقط)"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
-      )}
-
-      <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 hidden md:block">
-        <svg className="h-3 w-3 text-current" fill="currentColor" viewBox="0 0 10 6" aria-hidden="true">
-          <path d="M5 0L10 6H0Z" />
-        </svg>
-      </span>
     </div>
   );
 }

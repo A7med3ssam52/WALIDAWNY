@@ -36,11 +36,11 @@ export function LockedUnitCard({
 
   if (isFree) {
     return (
-      <Card title={unitName} subtitle={`${unit.grade_name ?? gradeName ?? ''} — مجاني`}>
+      <Card title={unitName} subtitle={`${unit.grade_name ?? gradeName ?? ''} — مجاني`} className="conic-ring spotlight-card">
         <div className="flex flex-col gap-4">
           <PriceTag pricing={unit} />
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="success">مجاني</Badge>
+            <Badge variant="success" className="shadow-[0_0_16px_-6px_rgba(52,211,153,0.5)]">مجاني</Badge>
             <span className="text-xs text-foreground-subtle">متاح لجميع الطلاب بدون كود</span>
           </div>
         </div>
@@ -49,15 +49,17 @@ export function LockedUnitCard({
   }
 
   return (
-    <Card title={unitName} subtitle={hasPrice ? (unit.grade_name ?? gradeName ?? '') : 'السعر غير محدد — تواصل مع الإدارة'}>
+    <Card title={unitName} subtitle={hasPrice ? (unit.grade_name ?? gradeName ?? '') : 'السعر غير محدد — تواصل مع الإدارة'} className="conic-ring spotlight-card">
       <div className="flex flex-col gap-4">
         {hasPrice ? (
           <PriceTag pricing={unit} />
         ) : (
-          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-border-muted">
-            <AlertCircle className="h-5 w-5 text-warning" aria-hidden="true" />
+          <div className="glass-soft flex items-center gap-3 p-3 rounded-xl">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300">
+              <AlertCircle className="h-5 w-5" aria-hidden="true" />
+            </span>
             <div>
-              <p className="font-medium text-foreground">السعر غير محدد</p>
+              <p className="font-bold text-foreground">السعر غير محدد</p>
               <p className="text-xs text-foreground-subtle">تواصل مع الإدارة لمعرفة السعر وتفعيل الوحدة</p>
             </div>
           </div>

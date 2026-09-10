@@ -679,13 +679,28 @@ export function StudentLessonPage() {
                   title={activeVideo.title ?? 'فيديو الدرس'}
                 />
               ) : playback && progressLoaded ? (
-                <VideoPlayer
-                  key={activeVideo.id}
-                  src={playback.playback_url}
-                  initialPosition={progress?.position_seconds ?? 0}
-                  onProgress={handleProgress}
-                  onComplete={handleComplete}
-                />
+                (() => {
+                  // E-11 / R-10 — guard إضافي قبل تمرير playback_url إلى VideoPlayer لمنع "undefined"/فارغ
+                  const rawUrl = (playback as { playback_url?: unknown }).playback_url;
+                  const isValidUrl =
+                    typeof rawUrl === 'string' &&
+                    rawUrl.trim() !== '' &&
+                    rawUrl !== 'undefined' &&
+                    rawUrl !== 'null' &&
+                    rawUrl.trim().toLowerCase() !== 'undefined';
+                  if (!isValidUrl) {
+                    return <ErrorState message="تعذر تحميل الفيديو — رابط غير صالح" />;
+                  }
+                  return (
+                    <VideoPlayer
+                      key={activeVideo.id}
+                      src={rawUrl.trim()}
+                      initialPosition={progress?.position_seconds ?? 0}
+                      onProgress={handleProgress}
+                      onComplete={handleComplete}
+                    />
+                  );
+                })()
               ) : playbackError === 'access_checking' ? (
                 <div
                   className="glass-card flex flex-col items-center gap-3 rounded-2xl p-8"
@@ -858,13 +873,14 @@ export function StudentLessonPage() {
         {primaryPdf ? (
           <Card
             title="ملف الدرس"
+            className="conic-ring spotlight-card"
             actions={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setPdfPreviewOpen((open) => !open)}
                   aria-expanded={pdfPreviewOpen}
-                  className="glass-soft inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                  className="glass-soft inline-flex items-center gap-2 rounded-xl border border-white/5 px-3.5 py-2 text-sm font-bold text-foreground backdrop-blur transition-all hover:bg-white/10 hover:border-indigo-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                   data-testid="lesson-pdf-toggle"
                 >
                   {pdfPreviewOpen ? (
@@ -884,7 +900,7 @@ export function StudentLessonPage() {
                       event.preventDefault();
                       void handlePdfDownload();
                     }}
-                    className="btn-primary inline-flex w-fit items-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+                    className="btn-primary inline-flex w-fit items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_-10px_rgba(99,102,241,0.6)]"
                     data-testid="lesson-pdf-download"
                   >
                     <Download aria-hidden="true" className="h-4 w-4" />
@@ -897,14 +913,17 @@ export function StudentLessonPage() {
             {pdfAccess ? (
               <div className="flex flex-col gap-3">
                 {pdfPreviewOpen ? (
-                  <iframe
-                    src={pdfAccess.pdf_url}
-                    title="ملف الدرس"
-                    className="h-72 w-full rounded-lg border border-white/15 bg-white/5 sm:h-96"
-                    data-testid="lesson-pdf-frame"
-                  />
+                  <div className="glass-card overflow-hidden p-1.5 rounded-xl">
+                    <iframe
+                      src={pdfAccess.pdf_url}
+                      title="ملف الدرس"
+                      className="h-72 w-full rounded-lg border-0 bg-white/5 sm:h-96"
+                      data-testid="lesson-pdf-frame"
+                    />
+                  </div>
                 ) : null}
-                <p className="text-sm text-foreground-muted">
+                <p className="inline-flex items-center gap-2 text-sm font-medium text-foreground-muted">
+                  <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.6)]" />
                   {pdfAccess.original_name ?? 'ملف الدرس'}
                 </p>
               </div>
@@ -919,20 +938,30 @@ export function StudentLessonPage() {
         ) : null}
 
         {boards && boards.length > 0 ? (
-          <Card title="سبورة الدرس">
+          <Card title="سبورة الدرس" className="conic-ring spotlight-card">
             <div
               className="grid grid-cols-2 gap-3 sm:grid-cols-3"
               data-testid="board-grid"
             >
               {boards.map((board) => (
-                <img
-                  key={board.board_id}
-                  src={board.signed_url}
-                  alt={board.original_name}
-                  loading="lazy"
-                  className="aspect-video w-full rounded-lg border border-white/15 bg-white/5 object-cover transition-transform duration-300 hover:scale-[1.03]"
-                  data-testid={`board-image-${board.board_id}`}
-                />
+                <div key={board.board_id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-1 transition-all duration-300 hover:border-indigo-400/30 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.4)] hover:-translate-y-1">
+                  <img
+                    src={board.signed_url}
+                    alt={board.original_name}
+                    loading="lazy"
+                    className="aspect-video w-full rounded-lg bg-white/5 object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                    data-testid={`board-image-${board.board_id}`}
+                    onError={(e) => {
+                      try {
+                        const target = e.currentTarget as HTMLImageElement;
+                        target.style.display = 'none';
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                  />
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
               ))}
             </div>
           </Card>
@@ -941,7 +970,7 @@ export function StudentLessonPage() {
         <div
           role="tablist"
           aria-label="أنشطة الدرس"
-          className="flex w-full flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/4 p-1 sm:w-fit"
+          className="glass-card flex w-full flex-wrap items-center gap-1 p-1.5 sm:w-fit sm:rounded-full rounded-2xl border-white/10"
         >
           {tabs.map((tab) => (
             <button
@@ -949,10 +978,10 @@ export function StudentLessonPage() {
               role="tab"
               aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(activeTab === tab.id ? null : tab.id)}
-              className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
+              className={`flex-1 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
                 activeTab === tab.id
-                  ? 'nav-pill-active font-bold text-white'
-                  : 'text-foreground-muted hover:text-foreground'
+                  ? 'nav-pill-active text-white shadow-[0_6px_16px_-6px_rgba(99,102,241,0.6)] scale-[1.02]'
+                  : 'text-foreground-muted hover:bg-white/6 hover:text-foreground'
               }`}
               data-testid={`lesson-tab-${tab.id}`}
             >
@@ -971,21 +1000,25 @@ export function StudentLessonPage() {
           {prevLesson ? (
             <Link
               to={`/student/lessons/${prevLesson.id}`}
-              className="glass-soft inline-flex items-center justify-start gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+              className="glass-card group inline-flex items-center justify-start gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-foreground-muted transition-all duration-300 hover:border-indigo-400/20 hover:text-foreground hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.3)] hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
               data-testid="prev-lesson"
             >
-              <DirectionalArrow direction="back" size={16} />
-              الدرس السابق: {prevLesson.title}
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 group-hover:bg-indigo-500/20 transition-colors">
+                <DirectionalArrow direction="back" size={14} />
+              </span>
+              <span className="truncate">الدرس السابق: {prevLesson.title}</span>
             </Link>
           ) : null}
           {nextLesson ? (
             <Link
               to={`/student/lessons/${nextLesson.id}`}
-              className="glass-soft inline-flex items-center justify-end gap-1.5 rounded-lg px-4 py-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong sm:justify-start"
+              className="glass-card group inline-flex items-center justify-between gap-2 rounded-xl px-4 py-3.5 text-sm font-bold text-foreground transition-all duration-300 hover:border-indigo-400/20 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.3)] hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong sm:justify-start btn-primary"
               data-testid="next-lesson"
             >
-              الدرس التالي: {nextLesson.title}
-              <DirectionalArrow direction="forward" size={16} />
+              <span className="truncate">الدرس التالي: {nextLesson.title}</span>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-white">
+                <DirectionalArrow direction="forward" size={14} />
+              </span>
             </Link>
           ) : null}
         </div>

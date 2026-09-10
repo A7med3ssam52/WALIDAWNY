@@ -90,7 +90,7 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_
     'anon: youtube_video_id_from_url NOT executable (0042 internal helper)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (79 functions = 73 + 5 financial from 0043 + get_trial_lessons 0047)
+-- authenticated: the full client allowlist (84 functions = 79 + 5 presence RPCs from 0055)
 -- ---------------------------------------------------------------------
 
 DO $
@@ -104,10 +104,10 @@ BEGIN
     RAISE NOTICE 'ACTUAL FUNCTION COUNT: %', v_count;
 END $;
 SELECT tests.assert(
-    (SELECT count(*) = 79 FROM pg_proc
+    (SELECT count(*) = 84 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
         AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 79 executable public functions (78 + get_trial_lessons from 0047)');
+    'authenticated: exactly 84 executable public functions (79 + 5 presence RPCs from 0055)');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -188,6 +188,11 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.list_platfor
 SELECT tests.assert(has_function_privilege('authenticated', 'public.add_platform_payout(numeric, text, timestamptz)', 'EXECUTE'), 'g: add_platform_payout (0043)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_platform_payouts(timestamptz, timestamptz)', 'EXECUTE'), 'g: list_platform_payouts (0043)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_financial_reports(timestamptz, timestamptz, uuid, uuid)', 'EXECUTE'), 'g: get_financial_reports (0043)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.touch_presence(text, uuid, boolean, boolean)', 'EXECUTE'), 'g: touch_presence (0055)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_online_students()', 'EXECUTE'), 'g: get_online_students (0055)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_student_presence_history(uuid, timestamptz, timestamptz, integer, integer)', 'EXECUTE'), 'g: get_student_presence_history (0055)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_most_active_students(timestamptz, timestamptz, integer)', 'EXECUTE'), 'g: get_most_active_students (0055)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.cleanup_old_presence_events()', 'EXECUTE'), 'g: cleanup_old_presence_events (0055)');
 
 -- ---------------------------------------------------------------------
 -- authenticated: internal/system functions stay locked down
@@ -207,6 +212,7 @@ SELECT tests.assert(NOT has_function_privilege('authenticated', 'public.revoke_s
 SELECT tests.assert(NOT has_function_privilege('authenticated', 'public.get_current_role()', 'EXECUTE'), 'g: get_current_role locked');
 SELECT tests.assert(NOT has_function_privilege('authenticated', 'public.lesson_comments_parent_check()', 'EXECUTE'), 'g: lesson_comments_parent_check locked (0030)');
 SELECT tests.assert(NOT has_function_privilege('authenticated', 'public.youtube_video_id_from_url(text)', 'EXECUTE'), 'g: youtube_video_id_from_url locked (0042 internal helper)');
+SELECT tests.assert(NOT has_function_privilege('authenticated', 'public.close_stale_sessions()', 'EXECUTE'), 'g: close_stale_sessions locked (0055 internal)');
 
 -- ---------------------------------------------------------------------
 -- Binding B2: notifications DML revoked, SELECT remains
@@ -234,7 +240,7 @@ SELECT tests.assert(has_table_privilege('authenticated', 'public.unit_purchases'
 SELECT tests.assert(has_table_privilege('anon', 'public.unit_pricing', 'SELECT'), 't: anon unit_pricing SELECT granted (0028 landing page)');
 
 -- ---------------------------------------------------------------------
--- View lockdown (0026 + 0028): the 5 remaining views are internal-only,
+-- View lockdown (0026 + 0028 + 0055): the 7 views are internal-only,
 -- consumed by SECURITY DEFINER functions (owner postgres) - no client
 -- role (anon or authenticated) holds any privilege on them (L5 /
 -- SECURITY.md section 8). v_active_subscriptions is dropped (0028).
@@ -249,3 +255,7 @@ SELECT tests.assert(NOT has_table_privilege('anon', 'public.v_dashboard_metrics'
 SELECT tests.assert(NOT has_table_privilege('authenticated', 'public.v_dashboard_metrics', 'SELECT'), 'v: v_dashboard_metrics authenticated locked');
 SELECT tests.assert(NOT has_table_privilege('anon', 'public.v_audit_log', 'SELECT'), 'v: v_audit_log anon locked');
 SELECT tests.assert(NOT has_table_privilege('authenticated', 'public.v_audit_log', 'SELECT'), 'v: v_audit_log authenticated locked');
+SELECT tests.assert(NOT has_table_privilege('anon', 'public.v_online_students', 'SELECT'), 'v: v_online_students anon locked (0055)');
+SELECT tests.assert(NOT has_table_privilege('authenticated', 'public.v_online_students', 'SELECT'), 'v: v_online_students authenticated locked (0055)');
+SELECT tests.assert(NOT has_table_privilege('anon', 'public.v_student_activity_summary', 'SELECT'), 'v: v_student_activity_summary anon locked (0055)');
+SELECT tests.assert(NOT has_table_privilege('authenticated', 'public.v_student_activity_summary', 'SELECT'), 'v: v_student_activity_summary authenticated locked (0055)');

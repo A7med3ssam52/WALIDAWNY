@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const adminItems = [
   { to: '/admin/dashboard', label: 'الرئيسية' },
+  { to: '/admin/presence', label: 'المتواجدون الآن' },
   { to: '/admin/reports', label: 'التقارير المالية' },
   { to: '/admin/audit', label: 'سجل النشاطات' },
   { to: '/admin/roles', label: 'الأدوار والصلاحيات' },
@@ -25,10 +26,10 @@ function NavSection({ items }: { items: Array<{ to: string; label: string }> }) 
           to={item.to}
           end={item.to === '/admin/dashboard'}
           className={({ isActive }) =>
-            `rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+            `rounded-xl px-3 py-3 text-sm font-bold transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
               isActive
-                ? 'nav-pill-active font-bold text-white'
-                : 'text-foreground-muted hover:bg-white/6 hover:text-foreground'
+                ? 'nav-pill-active text-white shadow-[0_8px_20px_-8px_rgba(99,102,241,0.5)]'
+                : 'text-foreground-muted hover:bg-white/6 hover:text-foreground hover:translate-x-0.5'
             }`
           }
         >

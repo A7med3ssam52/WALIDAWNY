@@ -454,6 +454,20 @@ SELECT tests.assert(
        AND has_function_privilege('anon', oid, 'EXECUTE')),
     'sec: anon still has exactly four executable public functions (get_public_settings + list_active_grades + get_public_unit_prices + get_platform_fee)');
 
+-- 0055 presence: student heartbeat + admin reads must stay anon-locked (admin-only RPCs)
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.touch_presence(text, uuid, boolean, boolean)', 'EXECUTE'),
+    'sec: anon cannot exec touch_presence (0055)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_online_students()', 'EXECUTE'),
+    'sec: anon cannot exec get_online_students (0055)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_student_presence_history(uuid, timestamptz, timestamptz, integer, integer)', 'EXECUTE'),
+    'sec: anon cannot exec get_student_presence_history (0055)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_most_active_students(timestamptz, timestamptz, integer)', 'EXECUTE'),
+    'sec: anon cannot exec get_most_active_students (0055)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.cleanup_old_presence_events()', 'EXECUTE'),
+    'sec: anon cannot exec cleanup_old_presence_events (0055)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.close_stale_sessions()', 'EXECUTE'),
+    'sec: anon cannot exec close_stale_sessions (0055 internal)');
+
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_audit_logs(timestamptz, timestamptz, text, text, uuid, integer, integer)', 'EXECUTE'),
     'sec: anon cannot exec list_audit_logs');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.count_audit_logs(timestamptz, timestamptz, text, text, uuid)', 'EXECUTE'),

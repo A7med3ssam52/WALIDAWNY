@@ -37,7 +37,20 @@ export function VideoPlayer({
   onCompleteRef.current = onComplete;
   initialPositionRef.current = initialPosition;
 
+  // E-11 / R-10 — guard ضد src غير صالح (undefined/"undefined"/فارغ) لمنع hls.loadSource("") والـ buffering العالق
+  const isValidSrc =
+    typeof src === 'string' &&
+    src.trim() !== '' &&
+    src !== 'undefined' &&
+    src !== 'null' &&
+    src.trim().toLowerCase() !== 'undefined';
+
   useEffect(() => {
+    if (!isValidSrc) {
+      setUnsupported(false);
+      setIsBuffering(false);
+      return;
+    }
     const video = videoRef.current;
     if (!video) {
       return;
@@ -80,7 +93,7 @@ export function VideoPlayer({
 
     setUnsupported(true);
     return undefined;
-  }, [src]);
+  }, [src, isValidSrc]);
 
   const handleTimeUpdate = () => {
     const video = videoRef.current;
@@ -110,9 +123,18 @@ export function VideoPlayer({
     }
   };
 
+  // عرض ErrorState بدل محاولة التحميل عند src غير صالح — يمنع hls.loadSource("") نهائيًا
+  if (!isValidSrc) {
+    return (
+      <div className="glass-card conic-ring spotlight-card relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35)]">
+        <ErrorState message="تعذر تحميل الفيديو — رابط غير صالح" />
+      </div>
+    );
+  }
+
   if (unsupported) {
     return (
-      <div className="glass-card overflow-hidden rounded-2xl border-white/15 p-1.5">
+      <div className="glass-card conic-ring spotlight-card relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35)]">
         <ErrorState message="متصفحك لا يدعم تشغيل الفيديو (HLS). جرّب متصفحًا أحدث مثل Chrome أو Safari." />
       </div>
     );
@@ -120,17 +142,21 @@ export function VideoPlayer({
 
   return (
     <div
-      className="glass-card relative overflow-hidden rounded-2xl border-white/15 p-1.5"
+      className="glass-card conic-ring spotlight-card group relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35),0_18px_44px_-22px_rgba(2,1,10,0.9)] transition-shadow duration-500 hover:shadow-[0_0_50px_-10px_rgba(129,140,248,0.5),0_28px_60px_-20px_rgba(2,1,10,0.95)]"
       data-testid="lesson-video-frame"
     >
-      <div className="relative overflow-hidden rounded-xl">
+      {/* ambient glow behind video */}
+      <div aria-hidden="true" className="pointer-events-none absolute -inset-6 -z-10 bg-gradient-to-br from-indigo-600/15 via-purple-600/10 to-cyan-500/10 blur-2xl opacity-60 group-hover:opacity-80 transition-opacity duration-700" />
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-950 via-[#1e1b4b] to-violet-950">
+        {/* subtle top highlight */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <video
           ref={videoRef}
           controls
           playsInline
           preload="auto"
           poster={poster}
-          className="aspect-video w-full bg-gradient-to-br from-indigo-950 via-[#312e81] to-violet-950"
+          className="aspect-video w-full bg-transparent"
           data-testid="lesson-video"
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleEnded}
@@ -144,13 +170,14 @@ export function VideoPlayer({
         {isBuffering ? (
           <div
             role="status"
-            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-indigo-950/50"
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#070513]/70 backdrop-blur-[6px]"
           >
-            <span
-              aria-hidden="true"
-              className="h-11 w-11 animate-spin rounded-full border-[3px] border-white/25 border-t-white"
-            />
-            <span className="rounded-full bg-white/10 px-3.5 py-1 text-xs font-semibold tracking-wide text-white/90">
+            <span aria-hidden="true" className="relative flex h-12 w-12 items-center justify-center">
+              <span className="absolute inset-0 rounded-full border border-white/10" />
+              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-400 border-r-purple-400 animate-spin" />
+              <span className="h-2 w-2 rounded-full bg-white shadow-[0_0_12px_2px_rgba(129,140,248,0.8)]" />
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/10 px-4 py-1.5 text-xs font-bold tracking-wide text-white/95 shadow-[0_0_20px_-6px_rgba(129,140,248,0.6)] backdrop-blur">
               جاري تحميل الفيديو
             </span>
           </div>

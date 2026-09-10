@@ -33,12 +33,12 @@ export function PageHeader({
         )}
         <div className="flex items-center gap-3">
           {icon && (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 text-indigo-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(129,140,248,0.5)]">
               {icon}
             </div>
           )}
           <div>
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">{title}</h1>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">{title}</h1>
             {subtitle && <p className="mt-0.5 text-sm text-foreground-muted">{subtitle}</p>}
           </div>
         </div>

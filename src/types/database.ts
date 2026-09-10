@@ -511,6 +511,63 @@ export interface DashboardStats {
   recent_purchases: DashboardRecentPurchase[];
 }
 
+export type StudentSession = {
+  id: string;
+  student_id: string;
+  started_at: string;
+  last_seen_at: string;
+  ended_at: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  current_path: string | null;
+  current_lesson_id: string | null;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OnlineStudent = {
+  session_id: string;
+  student_id: string;
+  started_at: string;
+  last_seen_at: string;
+  current_path: string | null;
+  current_lesson_id: string | null;
+  is_visible: boolean;
+  ip_address: string | null;
+  full_name: string;
+  phone: string;
+  grade_id: string | null;
+  grade_name: string | null;
+  lesson_title: string | null;
+  minutes_online: number;
+  seconds_since_seen: number;
+};
+
+export type PresenceHistoryRow = {
+  id: string;
+  student_id: string;
+  started_at: string;
+  last_seen_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+  current_path: string | null;
+  current_lesson_id: string | null;
+  is_visible: boolean;
+  ip_address: string | null;
+};
+
+export type MostActiveStudent = {
+  student_id: string;
+  full_name: string;
+  phone: string;
+  grade_name: string | null;
+  total_sessions: number;
+  total_seconds: number;
+  total_hours: number;
+  last_seen_at: string | null;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -842,6 +899,32 @@ export interface Database {
           grade_name: string;
         }[];
       };
+      touch_presence: {
+        Args: {
+          p_path?: string | null;
+          p_lesson_id?: string | null;
+          p_is_visible?: boolean | null;
+          p_closing?: boolean | null;
+        };
+        Returns: unknown;
+      };
+      get_online_students: { Args: never; Returns: OnlineStudent[] };
+      get_student_presence_history: {
+        Args: {
+          p_student_id: string;
+          p_from?: string | null;
+          p_to?: string | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+        };
+        Returns: PresenceHistoryRow[];
+      };
+      get_most_active_students: {
+        Args: { p_from?: string | null; p_to?: string | null; p_limit?: number | null };
+        Returns: MostActiveStudent[];
+      };
+      close_stale_sessions: { Args: never; Returns: number };
+      cleanup_old_presence_events: { Args: never; Returns: number };
     };
   };
 }

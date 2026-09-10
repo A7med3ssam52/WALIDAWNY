@@ -213,7 +213,7 @@ export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) 
                   return (
                     <div
                       key={question.id}
-                      className="rounded-xl border border-white/10 bg-white/4 p-4"
+                      className="glass-card rounded-xl border-white/10 p-4"
                       data-testid={`exam-question-${question.id}`}
                     >
                       <p className="font-medium text-foreground">

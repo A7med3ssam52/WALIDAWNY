@@ -6,14 +6,17 @@ interface TableProps extends HTMLAttributes<HTMLTableElement> {
 
 export function Table({ dense = false, className, children, ...rest }: TableProps) {
   return (
-    <div className="glass-card overflow-x-auto p-0">
-      <table
-        data-density={dense ? 'dense' : 'normal'}
-        className={`w-full text-sm ${className ?? ''}`}
-        {...rest}
-      >
-        {children}
-      </table>
+    <div className="glass-card spotlight-card relative overflow-hidden p-0">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="overflow-x-auto">
+        <table
+          data-density={dense ? 'dense' : 'normal'}
+          className={`w-full text-sm ${className ?? ''}`}
+          {...rest}
+        >
+          {children}
+        </table>
+      </div>
     </div>
   );
 }
@@ -23,7 +26,7 @@ type TableHeadProps = HTMLAttributes<HTMLTableSectionElement>;
 export function TableHead({ className, children, ...rest }: TableHeadProps) {
   return (
     <thead
-      className={`border-b border-white/8 bg-white/4 text-start ${className ?? ''}`}
+      className={`border-b border-white/8 bg-gradient-to-r from-white/5 via-white/3 to-transparent text-start backdrop-blur ${className ?? ''}`}
       {...rest}
     >
       {children}
@@ -46,7 +49,7 @@ type TableRowProps = HTMLAttributes<HTMLTableRowElement>;
 export function TableRow({ className, children, ...rest }: TableRowProps) {
   return (
     <tr
-      className={`border-b border-white/8 transition-colors last:border-0 hover:bg-white/5 ${className ?? ''}`}
+      className={`group/row border-b border-white/5 transition-all duration-200 last:border-0 hover:bg-gradient-to-r hover:from-indigo-500/[0.07] hover:via-purple-500/[0.04] hover:to-transparent hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${className ?? ''}`}
       {...rest}
     >
       {children}
@@ -59,7 +62,7 @@ type TableHeadCellProps = ThHTMLAttributes<HTMLTableCellElement>;
 export function TableHeadCell({ className, children, ...rest }: TableHeadCellProps) {
   return (
     <th
-      className={`px-4 py-3 text-start text-xs font-semibold text-foreground-subtle ${className ?? ''}`}
+      className={`px-4 py-3 text-start text-xs font-bold tracking-wider text-foreground-subtle uppercase ${className ?? ''}`}
       {...rest}
     >
       {children}

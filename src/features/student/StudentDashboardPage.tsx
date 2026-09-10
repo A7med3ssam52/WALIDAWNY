@@ -288,24 +288,24 @@ export function StudentDashboardPage() {
                   عرض الكل
                 </Link>
               </div>
-              <div className="space-y-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 {gradeUnits.map((unit) => {
                   const price = priceById.get(unit.id);
                   const isPurchased = purchasedUnitIds.has(unit.id);
                   return (
                     <div
                       key={unit.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-lg bg-white/3 hover:bg-white/5 transition-colors"
+                      className="group flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-gradient-to-br from-white/5 to-white/[0.02] p-3.5 backdrop-blur transition-all duration-300 hover:border-indigo-400/20 hover:from-indigo-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.4)]"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 text-indigo-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] group-hover:scale-105 transition-transform">
                           <PackageOpen className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">{unit.name}</p>
-                          <p className="text-xs text-foreground-muted">
+                          <p className="font-bold text-foreground truncate">{unit.name}</p>
+                          <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-white/5 border border-white/5 px-2 py-0.5 text-[11px] font-medium text-foreground-subtle">
                             {price?.total_price != null
-                              ? formatPrice(price.total_price)
+                              ? <span dir="ltr">{formatPrice(price.total_price)}</span>
                               : 'لا يوجد سعر بعد'}
                           </p>
                         </div>
@@ -313,7 +313,7 @@ export function StudentDashboardPage() {
                       {isPurchased ? (
                         <Link
                           to={`/student/curriculum?unit=${unit.id}`}
-                          className="btn-primary text-xs px-3 py-1.5 shrink-0"
+                          className="btn-primary shrink-0 rounded-xl px-4 py-2 text-xs font-bold"
                           data-testid={`open-grade-unit-${unit.id}`}
                         >
                           افتح
@@ -321,7 +321,7 @@ export function StudentDashboardPage() {
                       ) : (
                         <Link
                           to="/student/units"
-                          className="glass-soft inline-flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-white/10 shrink-0"
+                          className="glass-soft inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-foreground transition-colors hover:bg-white/10 hover:border-indigo-400/30"
                         >
                           تفعيل
                         </Link>

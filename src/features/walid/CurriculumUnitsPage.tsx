@@ -290,11 +290,11 @@ export function CurriculumUnitsPage() {
                 <li
                   key={unit.id}
                   data-testid={`unit-row-${unit.id}`}
-                  className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-indigo-400/20"
+                  className="glass-soft flex flex-col gap-3 rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-indigo-400/20 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                     <OrderChip order={unit.sort_order} />
-                    <span className="block truncate text-sm font-medium text-foreground">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground sm:flex-none">
                       {unit.name}
                     </span>
                     <UnitStatusBadge status={unit.status} />
@@ -302,12 +302,12 @@ export function CurriculumUnitsPage() {
                       <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-300">مجاني</span>
                     ) : null}
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-1">
+                  <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
                     <Link
                       to={`/walid/curriculum/${gradeId}/${unit.id}`}
-                      className="inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-primary-strong transition-colors hover:bg-primary-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
+                      className="col-span-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary-soft px-3 text-sm font-semibold text-primary-strong transition-colors hover:bg-primary-soft/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:col-span-1 sm:h-9 sm:justify-start sm:bg-transparent sm:px-2.5 sm:hover:bg-primary-soft"
                     >
-                      <BookOpen aria-hidden="true" className="h-4 w-4" />
+                      <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0" />
                       فتح الدروس
                     </Link>
                     {unit.status === 'published' ? (
@@ -317,7 +317,7 @@ export function CurriculumUnitsPage() {
                         icon={<EyeOff aria-hidden="true" className="h-4 w-4" />}
                         onClick={() => void handleToggleUnitStatus(unit)}
                         disabled={togglingUnitId === unit.id}
-                        className="text-warning hover:bg-amber-500/10 hover:text-warning"
+                        className="w-full justify-center whitespace-nowrap text-warning hover:bg-amber-500/10 hover:text-warning sm:w-auto"
                       >
                         {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
                       </Button>
@@ -327,7 +327,7 @@ export function CurriculumUnitsPage() {
                         variant="ghost"
                         onClick={() => void handleToggleUnitStatus(unit)}
                         disabled={togglingUnitId === unit.id}
-                        className="text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
+                        className="w-full justify-center whitespace-nowrap text-primary-strong hover:bg-primary-soft hover:text-primary-strong sm:w-auto"
                       >
                         {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
                       </Button>
@@ -337,6 +337,7 @@ export function CurriculumUnitsPage() {
                       variant="ghost"
                       icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
                       onClick={() => openEditUnit(unit)}
+                      className="w-full justify-center whitespace-nowrap sm:w-auto"
                     >
                       تعديل
                     </Button>
@@ -345,16 +346,28 @@ export function CurriculumUnitsPage() {
                       variant={unit.is_free ? 'secondary' : 'ghost'}
                       onClick={() => void handleToggleFree(unit)}
                       disabled={freeTogglingId === unit.id}
-                      className={unit.is_free ? 'text-emerald-300' : ''}
+                      className={`w-full justify-center whitespace-nowrap sm:w-auto ${unit.is_free ? 'text-emerald-300' : ''}`}
                     >
-                      {freeTogglingId === unit.id ? 'جاري...' : unit.is_free ? 'إلغاء المجانية' : 'اجعله مجاني'}
+                      {freeTogglingId === unit.id ? (
+                        'جاري...'
+                      ) : unit.is_free ? (
+                        <>
+                          <span className="sm:hidden">إلغاء</span>
+                          <span className="hidden sm:inline">إلغاء المجانية</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="sm:hidden">مجاني</span>
+                          <span className="hidden sm:inline">اجعله مجاني</span>
+                        </>
+                      )}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
                       onClick={() => setDeletingUnit({ unit })}
-                      className="text-error hover:bg-rose-500/10 hover:text-error"
+                      className="col-span-2 w-full justify-center whitespace-nowrap text-error hover:bg-rose-500/10 hover:text-error sm:col-span-1 sm:w-auto"
                     >
                       حذف
                     </Button>

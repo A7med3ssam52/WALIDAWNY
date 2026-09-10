@@ -22,11 +22,13 @@ export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
 
   return (
     <div
-      className="glass-card relative overflow-hidden rounded-2xl border-white/15 p-1.5"
+      className="glass-card conic-ring spotlight-card group relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35),0_18px_44px_-22px_rgba(2,1,10,0.9)] transition-shadow duration-500 hover:shadow-[0_0_50px_-10px_rgba(129,140,248,0.5)]"
       onContextMenu={(event) => event.preventDefault()}
       data-testid="youtube-embed-wrapper"
     >
+      <div aria-hidden="true" className="pointer-events-none absolute -inset-6 -z-10 bg-gradient-to-br from-indigo-600/15 via-fuchsia-600/10 to-cyan-500/10 blur-2xl opacity-60 group-hover:opacity-80 transition-opacity duration-700" />
       <div className="relative overflow-hidden rounded-xl bg-black">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent z-10" />
         <iframe
           src={src}
           title={title ?? 'فيديو الدرس'}

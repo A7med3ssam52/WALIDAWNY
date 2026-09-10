@@ -269,76 +269,71 @@ export function CurriculumLessonsPage() {
                 <li
                   key={lesson.id}
                   data-testid={`lesson-row-${lesson.id}`}
-                  className="glass-soft rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-sky-400/20"
+                  className="glass-soft flex flex-col gap-3 rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-sky-400/20 sm:gap-3"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <OrderChip order={lesson.sort_order} />
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {lesson.title}
-                        </span>
-                        {lesson.is_trial ? (
-                          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
-                            مجاني
-                          </span>
-                        ) : null}
-                        <LessonStatusBadge status={lesson.status} />
-                      </div>
-                      {lesson.description ? (
-                        <p className="mt-1 truncate text-xs text-foreground-subtle">
-                          {lesson.description}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                      {lesson.status === 'published' ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          icon={<EyeOff aria-hidden="true" className="h-4 w-4" />}
-                          onClick={() => void handleToggleLessonStatus(lesson)}
-                          disabled={togglingLessonId === lesson.id}
-                          className="text-warning hover:bg-amber-500/10 hover:text-warning"
-                        >
-                          {togglingLessonId === lesson.id ? 'جاري...' : 'إخفاء'}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void handleToggleLessonStatus(lesson)}
-                          disabled={togglingLessonId === lesson.id}
-                          className="text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
-                        >
-                          {togglingLessonId === lesson.id ? 'جاري...' : 'نشر'}
-                        </Button>
-                      )}
-                      <Link
-                        to={`/walid/lessons/${lesson.id}`}
-                        className="inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-info transition-colors hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
-                      >
-                        <Upload aria-hidden="true" className="h-4 w-4" />
-                        الملفات
-                      </Link>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <OrderChip order={lesson.sort_order} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground sm:flex-none">
+                      {lesson.title}
+                    </span>
+                    {lesson.is_trial ? (
+                      <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                        مجاني
+                      </span>
+                    ) : null}
+                    <LessonStatusBadge status={lesson.status} />
+                  </div>
+                  {lesson.description ? (
+                    <p className="truncate text-xs text-foreground-subtle">{lesson.description}</p>
+                  ) : null}
+                  <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-full sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
+                    <Link
+                      to={`/walid/lessons/${lesson.id}`}
+                      className="col-span-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-sky-500/10 px-3 text-sm font-semibold text-info transition-colors hover:bg-sky-500/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:col-span-1 sm:h-9 sm:justify-start sm:bg-transparent sm:px-2.5 sm:hover:bg-sky-500/10"
+                    >
+                      <Upload aria-hidden="true" className="h-4 w-4 shrink-0" />
+                      الملفات
+                    </Link>
+                    {lesson.status === 'published' ? (
                       <Button
                         size="sm"
                         variant="ghost"
-                        icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => openEditLesson(lesson)}
+                        icon={<EyeOff aria-hidden="true" className="h-4 w-4" />}
+                        onClick={() => void handleToggleLessonStatus(lesson)}
+                        disabled={togglingLessonId === lesson.id}
+                        className="w-full justify-center whitespace-nowrap text-warning hover:bg-amber-500/10 hover:text-warning sm:w-auto"
                       >
-                        تعديل
+                        {togglingLessonId === lesson.id ? 'جاري...' : 'إخفاء'}
                       </Button>
+                    ) : (
                       <Button
                         size="sm"
                         variant="ghost"
-                        icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => setDeletingLesson({ lesson })}
-                        className="text-error hover:bg-rose-500/10 hover:text-error"
+                        onClick={() => void handleToggleLessonStatus(lesson)}
+                        disabled={togglingLessonId === lesson.id}
+                        className="w-full justify-center whitespace-nowrap text-primary-strong hover:bg-primary-soft hover:text-primary-strong sm:w-auto"
                       >
-                        حذف
+                        {togglingLessonId === lesson.id ? 'جاري...' : 'نشر'}
                       </Button>
-                    </div>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
+                      onClick={() => openEditLesson(lesson)}
+                      className="w-full justify-center whitespace-nowrap sm:w-auto"
+                    >
+                      تعديل
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                      onClick={() => setDeletingLesson({ lesson })}
+                      className="w-full justify-center whitespace-nowrap text-error hover:bg-rose-500/10 hover:text-error sm:w-auto"
+                    >
+                      حذف
+                    </Button>
                   </div>
                 </li>
               ))}

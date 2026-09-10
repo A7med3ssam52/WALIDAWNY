@@ -18,11 +18,11 @@ const items: StudentNavItem[] = [
 
 const linkClasses = (isActive: boolean) =>
   [
-    'group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200',
+    'group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition-all duration-300',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
     isActive
-      ? 'nav-pill-active font-bold text-white'
-      : 'text-foreground-muted hover:bg-white/6 hover:text-foreground',
+      ? 'nav-pill-active text-white shadow-[0_8px_20px_-8px_rgba(99,102,241,0.5)]'
+      : 'text-foreground-muted hover:bg-white/6 hover:text-foreground hover:translate-x-0.5',
   ].join(' ');
 
 export function StudentNav() {

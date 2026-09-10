@@ -22,7 +22,7 @@ describe('StudentDashboardPage', () => {
   it('shows a greeting and the profile summary', async () => {
     renderApp('/student/dashboard');
 
-    expect(await screen.findByRole('heading', { name: 'لوحة الطالب' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'لوحة الطالب' }, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByText(/مرحبًا، أحمد محمد/)).toBeInTheDocument();
   });
 

@@ -1955,3 +1955,69 @@ export async function deleteLessonComment(commentId: string): Promise<void> {
     throw error;
   }
 }
+
+// ---------------------------------------------------------------------
+// Presence — student heartbeat & admin live monitoring (0055)
+// ---------------------------------------------------------------------
+export type OnlineStudent = import('../types/database').OnlineStudent;
+export type PresenceHistoryRow = import('../types/database').PresenceHistoryRow;
+export type MostActiveStudent = import('../types/database').MostActiveStudent;
+
+export async function touchPresence(input: {
+  path?: string | null;
+  lessonId?: string | null;
+  isVisible?: boolean;
+  closing?: boolean;
+} = {}): Promise<{ session_id: string | null; throttled: boolean } | null> {
+  const { data, error } = await getSupabaseClient().rpc('touch_presence', {
+    p_path: input.path ?? null,
+    p_lesson_id: input.lessonId ?? null,
+    p_is_visible: input.isVisible ?? true,
+    p_closing: input.closing ?? false,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data as { session_id: string | null; throttled: boolean } | null) ?? null;
+}
+
+export async function getOnlineStudents(): Promise<OnlineStudent[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_online_students');
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as OnlineStudent[];
+}
+
+export async function getStudentPresenceHistory(
+  studentId: string,
+  filters: { from?: string | null; to?: string | null; limit?: number; offset?: number } = {},
+): Promise<PresenceHistoryRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_student_presence_history', {
+    p_student_id: studentId,
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+    p_limit: filters.limit ?? 50,
+    p_offset: filters.offset ?? 0,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as PresenceHistoryRow[];
+}
+
+export async function getMostActiveStudents(filters: {
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+} = {}): Promise<MostActiveStudent[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_most_active_students', {
+    p_from: filters.from ?? null,
+    p_to: filters.to ?? null,
+    p_limit: filters.limit ?? 20,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as MostActiveStudent[];
+}

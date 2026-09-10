@@ -8,8 +8,10 @@ export function Skeleton({ className, ...rest }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse rounded-lg bg-gradient-to-r from-white/4 via-white/10 to-white/4 ${className ?? ''}`}
+      className={`relative overflow-hidden rounded-lg bg-white/5 ${className ?? ''}`}
       {...rest}
-    />
+    >
+      <span className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    </div>
   );
 }

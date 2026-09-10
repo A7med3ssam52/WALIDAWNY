@@ -108,9 +108,10 @@ export function Modal({
         aria-label={title}
         data-state={open ? 'open' : 'closed'}
         aria-describedby={description ? descriptionId : undefined}
-        className="glass-panel w-full max-w-md rounded-t-xl px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-5 sm:rounded-lg sm:p-6 max-h-[90dvh] overflow-y-auto animate-scale-in"
+        className="glass-panel conic-ring relative w-full max-w-md overflow-hidden rounded-t-2xl px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-5 sm:rounded-2xl sm:p-6 max-h-[90dvh] overflow-y-auto animate-scale-in shadow-[0_30px_70px_-18px_rgba(124,58,237,0.45)]"
       >
-        <h2 id={titleId} className="text-lg font-bold text-foreground">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+        <h2 id={titleId} className="font-display text-lg font-bold text-foreground">
           {title}
         </h2>
         {description ? (

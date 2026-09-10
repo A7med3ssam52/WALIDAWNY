@@ -145,11 +145,11 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
 
   return (
     <div className="flex flex-col gap-4" data-testid="lesson-comments-tab">
-      <Card>
+      <Card className="conic-ring">
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <MessageSquareText aria-hidden="true" className="h-4 w-4 text-foreground-subtle" />
-            <span className="text-sm font-medium text-foreground">أضف تعليقك</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-300"><MessageSquareText aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="text-sm font-bold text-foreground">أضف تعليقك</span>
           </div>
           <textarea
             aria-label="نص التعليق"
@@ -162,7 +162,7 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
             }}
             rows={3}
             maxLength={500}
-            className="w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="glass-input w-full rounded-xl border p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:outline-none focus:ring-2"
             placeholder="اكتب تعليقك على الدرس هنا..."
             data-testid="comment-input"
           />
@@ -194,8 +194,8 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
             return (
               <div
                 key={comment.id}
-                className={`rounded-xl border border-white/10 bg-white/4 p-4 ${
-                  isReply ? 'ms-6 border-primary/15 bg-primary/5' : ''
+                className={`group rounded-xl border p-4 backdrop-blur transition-all duration-300 hover:shadow-[0_8px_24px_-12px_rgba(2,1,10,0.5)] ${
+                  isReply ? 'ms-6 border-indigo-400/20 bg-indigo-500/10' : 'border-white/10 bg-white/5 hover:border-white/15 hover:bg-white/8'
                 }`}
                 data-testid={`comment-${comment.id}`}
               >

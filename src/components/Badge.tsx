@@ -40,11 +40,18 @@ export function Badge({
   className,
   ...rest
 }: BadgeProps) {
+  const glowMap: Record<BadgeVariant, string> = {
+    success: 'shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_-4px_rgba(52,211,153,0.5)]',
+    warning: 'shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_-4px_rgba(251,191,36,0.5)]',
+    error: 'shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_-4px_rgba(251,113,133,0.5)]',
+    info: 'shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_-4px_rgba(56,189,248,0.5)]',
+    neutral: 'shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
+  };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${textClasses[variant]} ${
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold backdrop-blur ${textClasses[variant]} ${
         outline ? 'bg-white/5' : bgClasses[variant]
-      } ${borderClasses[variant]} ${className ?? ''}`}
+      } ${borderClasses[variant]} ${glowMap[variant]} ${className ?? ''}`}
       {...rest}
     >
       {icon ? (

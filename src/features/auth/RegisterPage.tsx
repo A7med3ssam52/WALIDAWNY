@@ -151,7 +151,7 @@ export function RegisterPage() {
             <div className="flex flex-col items-center gap-4 text-center">
               <span
                 aria-hidden="true"
-                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-accent/20 text-primary-strong shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
+                className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_30px_-8px_rgba(52,211,153,0.6)]"
               >
                 <MailCheck className="h-7 w-7" />
               </span>
@@ -160,7 +160,7 @@ export function RegisterPage() {
               </p>
               <Link
                 to="/login"
-                className="btn-primary inline-flex h-11 w-full items-center justify-center rounded-md px-6 text-sm font-semibold text-white"
+                className="btn-primary inline-flex h-11 w-full items-center justify-center rounded-xl px-6 text-sm font-bold text-white shadow-[0_8px_20px_-10px_rgba(99,102,241,0.6)]"
               >
                 الذهاب إلى تسجيل الدخول
               </Link>
@@ -188,8 +188,9 @@ export function RegisterPage() {
             {formError ? (
               <p
                 role="alert"
-                className="rounded-md border border-error/25 bg-error/5 px-3 py-2 text-sm leading-6 text-error"
+                className="glass-tile-error flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm leading-6 font-medium text-rose-200 shadow-[0_0_20px_-8px_rgba(251,113,133,0.4)]"
               >
+                <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]" />
                 {formError}
               </p>
             ) : null}

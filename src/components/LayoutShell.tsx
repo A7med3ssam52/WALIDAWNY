@@ -92,14 +92,14 @@ export function LayoutShell({
         تخطي إلى المحتوى الرئيسي
       </a>
 
-      <header className="glass-nav sticky top-0 z-40">
+      <header className="glass-nav sticky top-0 z-40 backdrop-blur-[20px]">
         <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-2 px-4 sm:gap-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             {hasSidebar ? (
               <button
                 type="button"
                 aria-label="فتح القائمة"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-10 sm:w-10 lg:hidden"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-foreground-muted backdrop-blur transition-all hover:bg-white/10 hover:text-foreground hover:border-indigo-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-10 sm:w-10 lg:hidden"
                 onClick={() => setDrawerOpen(true)}
               >
                 <Menu aria-hidden="true" className="h-5 w-5" />
@@ -107,16 +107,19 @@ export function LayoutShell({
             ) : null}
             <Brand />
             {roleLabel ? (
-              <span className="hidden rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-indigo-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(129,140,248,0.6)] sm:inline">
+              <span className="hidden rounded-full border border-indigo-400/20 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 px-3 py-1 text-xs font-bold text-indigo-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(129,140,248,0.6)] backdrop-blur sm:inline">
                 {roleLabel}
               </span>
             ) : null}
           </div>
           <div className="flex min-w-0 items-center gap-3">
-            <span className="max-w-[26vw] truncate text-sm text-foreground-muted sm:max-w-[30vw] lg:max-w-[40vw]">
+            <span className="hidden max-w-[26vw] truncate rounded-full border border-white/5 bg-white/5 px-3 py-1 text-sm font-medium text-foreground-muted sm:block sm:max-w-[30vw] lg:max-w-[40vw]">
               {displayName}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => void handleSignOut()} className="shrink-0">
+            <span className="max-w-[26vw] truncate text-sm font-bold text-foreground sm:hidden sm:max-w-[30vw] lg:max-w-[40vw]">
+              {displayName.split(' ')[0]}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => void handleSignOut()} className="shrink-0 rounded-xl border border-white/5">
               تسجيل الخروج
             </Button>
           </div>
@@ -124,7 +127,8 @@ export function LayoutShell({
       </header>
 
       {hasSidebar ? (
-        <aside className="glass-card fixed inset-y-20 start-4 z-40 hidden w-60 overflow-y-auto rounded-2xl p-0 lg:block">
+        <aside className="glass-card spotlight-card fixed inset-y-20 start-4 z-40 hidden w-60 overflow-y-auto rounded-2xl border-white/10 p-0 shadow-[0_18px_44px_-22px_rgba(2,1,10,0.9),0_0_40px_-12px_rgba(129,140,248,0.15)] lg:block">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           {nav}
         </aside>
       ) : null}
