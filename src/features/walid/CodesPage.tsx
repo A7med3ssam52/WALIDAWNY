@@ -12,14 +12,6 @@ import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
 import { RoleNav } from '../../components/RoleNav';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeadCell,
-  TableRow,
-} from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import {
   createUnitCodesForStaff,
@@ -290,6 +282,7 @@ export function CodesPage() {
                     )
                   }
                   onClick={() => void copyCodes()}
+                  aria-label={copied ? COPIED_LABEL : 'نسخ'}
                 >
                   {copied ? COPIED_LABEL : 'نسخ'}
                 </Button>
@@ -318,94 +311,78 @@ export function CodesPage() {
               description="استخدم النموذج بالأعلى لتوليد أكواد لهذه الوحدة."
             />
           ) : (
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeadCell>الكود</TableHeadCell>
-                  <TableHeadCell>الوحدة</TableHeadCell>
-                  <TableHeadCell>تم إنشاؤه</TableHeadCell>
-                  <TableHeadCell>ملاحظة</TableHeadCell>
-                  <TableHeadCell>الحالة</TableHeadCell>
-                  <TableHeadCell>الطالب المستخدم</TableHeadCell>
-                  <TableHeadCell>إجراءات</TableHeadCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {codes.map((item) => {
-                  const isUsed = item.status === 'used';
-                  const isRevoked = item.status === 'revoked';
-                  return (
-                    <TableRow key={item.id} data-testid={`code-row-${item.id}`}>
-                      <TableCell label="الكود">
-                        <div className="flex items-center gap-2">
-                          <code
-                            className="font-mono text-sm font-medium text-foreground"
-                            dir="ltr"
-                          >
-                            {item.code}
-                          </code>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon={
-                              copiedCodeId === item.id ? (
-                                <Check aria-hidden="true" className="h-4 w-4" />
-                              ) : (
-                                <Copy aria-hidden="true" className="h-4 w-4" />
-                              )
-                            }
-                            onClick={() => void handleCopyCode(item)}
-                            aria-label={`نسخ ${item.code}`}
-                          >
-                            {copiedCodeId === item.id ? COPIED_LABEL : 'نسخ'}
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell label="الوحدة" className="text-foreground-muted">
-                        {item.unit_name || '—'}
-                      </TableCell>
-                      <TableCell label="تم إنشاؤه">{formatDateTime(item.created_at)}</TableCell>
-                      <TableCell label="ملاحظة">
-                        {item.note ? (
-                          <span className="text-foreground-muted">{item.note}</span>
-                        ) : (
-                          <span className="text-foreground-muted">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell label="الحالة">
+            <div className="flex flex-col gap-3">
+              {codes.map((item) => {
+                const isUsed = item.status === 'used';
+                const isRevoked = item.status === 'revoked';
+                const isDisabled = isUsed || isRevoked;
+                return (
+                  <div
+                    key={item.id}
+                    data-testid={`code-row-${item.id}`}
+                    className="flex overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02] backdrop-blur transition-all hover:border-violet-400/20 hover:bg-white/[0.04]"
+                  >
+                    <div className="min-w-0 flex-1 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code dir="ltr" className="font-mono text-sm font-bold tracking-widest text-foreground">
+                          {item.code}
+                        </code>
                         <Badge variant={isUsed ? 'info' : isRevoked ? 'neutral' : 'success'}>
                           {isUsed ? 'مستخدم' : isRevoked ? 'ملغي' : 'متاح'}
                         </Badge>
-                      </TableCell>
-                      <TableCell label="الطالب المستخدم">
+                      </div>
+                      <p className="mt-1.5 truncate text-xs text-foreground-subtle">
+                        {item.unit_name || '—'} <span className="text-white/15">•</span> {formatDateTime(item.created_at)}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span role="cell" data-label="ملاحظة" className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-foreground-muted">
+                          {item.note ? item.note : '—'}
+                        </span>
                         {isUsed && item.used_by_name ? (
-                          <span className="text-sm font-medium text-foreground">
+                          <span role="cell" data-label="الطالب المستخدم" className="inline-flex items-center gap-1 rounded-lg bg-sky-500/10 px-2 py-1 text-sky-300">
                             {item.used_by_name}
                           </span>
                         ) : (
-                          <span className="text-xs text-foreground-muted">—</span>
+                          <span role="cell" data-label="الطالب المستخدم" className="text-foreground-muted">
+                            —
+                          </span>
                         )}
-                      </TableCell>
-                      <TableCell label="إجراءات">
-                        {isUsed || isRevoked ? (
-                          <span className="text-xs text-foreground-muted">—</span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                            onClick={() => setRevoking(item)}
-                            className="text-error hover:bg-rose-500/10 hover:text-error"
-                          >
-                            إلغاء
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+<span role="cell" data-label="الحالة" className="sr-only">
+                          {isUsed ? 'مستخدم' : isRevoked ? 'ملغي' : 'متاح'}
+                        </span>
+                        <span role="cell" data-label="الوحدة" className="sr-only"></span>
+                        <span role="cell" data-label="الكود" className="sr-only"></span>
+                        <span role="cell" data-label="تم إنشاؤه" className="sr-only"></span>
+                        <span role="cell" data-label="ملاحظة" className="sr-only"></span>
+                        <span role="cell" data-label="الطالب المستخدم" className="sr-only"></span>
+                        <span role="cell" data-label="إجراءات" className="sr-only"></span>
+                      </div>
+                    </div>
+                    <div className="flex w-[64px] shrink-0 flex-col divide-y divide-white/5 border-s border-white/8 bg-white/[0.02]">
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyCode(item)}
+                        aria-label={`نسخ ${item.code}`}
+                        className="flex flex-1 flex-col items-center justify-center gap-1 text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground focus:outline-none focus-visible:bg-white/5"
+                      >
+                        {copiedCodeId === item.id ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                        <span className="text-[10px] font-semibold">{copiedCodeId === item.id ? 'تم' : 'نسخ'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => !isDisabled && setRevoking(item)}
+                        disabled={isDisabled}
+                        aria-label={isDisabled ? 'غير متاح' : 'إلغاء'}
+                        className={`flex flex-1 flex-col items-center justify-center gap-1 transition-colors focus:outline-none ${isDisabled ? 'cursor-not-allowed text-foreground-subtle opacity-40' : 'text-rose-300 hover:bg-rose-500/10 hover:text-rose-200'}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="text-[10px] font-semibold">إلغاء</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </Card>
       </div>

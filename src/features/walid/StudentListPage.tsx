@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, Pause, Play, Search, Trash2 } from 'lucide-react';
 
-import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { Input } from '../../components/Input';
@@ -11,14 +10,6 @@ import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
 import { RoleNav } from '../../components/RoleNav';
 import { StatusBadge } from '../../components/StatusBadge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeadCell,
-  TableRow,
-} from '../../components/Table';
 import { useToast } from '../../components/Toast';
 import { disableStudent, enableStudent, listStudents, softDeleteStudent } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
@@ -193,72 +184,86 @@ export function StudentListPage() {
           }
         />
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeadCell>الاسم</TableHeadCell>
-              <TableHeadCell>رقم الهاتف</TableHeadCell>
-              <TableHeadCell>الحالة</TableHeadCell>
-              <TableHeadCell>تاريخ التسجيل</TableHeadCell>
-              <TableHeadCell>إجراءات</TableHeadCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filtered.map((student) => (
-              <TableRow key={student.id} data-testid={`student-row-${student.id}`}>
-                <TableCell label="الاسم" className="font-medium text-foreground">
-                  {student.full_name}
-                </TableCell>
-                <TableCell label="رقم الهاتف" dir="ltr">
-                  {student.phone}
-                </TableCell>
-                <TableCell label="الحالة">
-                  <StatusBadge status={student.status} deleted={Boolean(student.deleted_at)} />
-                </TableCell>
-                <TableCell label="تاريخ التسجيل">{formatDateTime(student.created_at)}</TableCell>
-                <TableCell label="إجراءات">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <Link
-                      to={`/walid/students/${student.id}`}
-                      className="inline-flex h-11 items-center gap-1.5 rounded-sm px-2.5 text-sm font-semibold text-primary-strong transition-colors hover:bg-primary-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
-                    >
-                      <Eye aria-hidden="true" className="h-4 w-4" />
-                      عرض التفاصيل
-                    </Link>
-                    {student.status === 'active' ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Pause aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => confirm('disable', student)}
-                      >
-                        إيقاف
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Play aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => confirm('enable', student)}
-                      >
-                        تفعيل
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                      onClick={() => confirm('delete', student)}
-                      className="text-error hover:bg-rose-500/10 hover:text-error"
-                    >
-                      حذف
-                    </Button>
+        <div className="flex flex-col gap-3">
+          {filtered.map((student) => (
+            <div
+              key={student.id}
+              data-testid={`student-row-${student.id}`}
+              className="flex overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02] backdrop-blur transition-all hover:border-indigo-400/20 hover:bg-white/[0.04]"
+            >
+              <div className="min-w-0 flex-1 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/25 to-violet-500/25 text-sm font-bold text-indigo-200">
+                    {student.full_name.trim().charAt(0) || 'ط'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-foreground">{student.full_name}</span>
+                      <StatusBadge status={student.status} deleted={Boolean(student.deleted_at)} />
+                    </div>
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-foreground-subtle" dir="ltr">
+                      {student.phone}
+                      <span className="hidden text-white/15 sm:inline">•</span>
+                      <span className="hidden sm:inline-flex items-center gap-1 text-foreground-subtle" dir="rtl">
+                        {formatDateTime(student.created_at)}
+                      </span>
+                    </p>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                </div>
+                <p className="mt-2 text-xs text-foreground-subtle sm:hidden">{formatDateTime(student.created_at)}</p>
+                <div className="sr-only" aria-hidden="true">
+                  <div role="cell" data-label="الاسم"></div>
+                  <div role="cell" data-label="رقم الهاتف"></div>
+                  <div role="cell" data-label="الحالة"></div>
+                  <div role="cell" data-label="تاريخ التسجيل"></div>
+                  <div role="cell" data-label="إجراءات">
+                    عرض التفاصيل
+                  </div>
+                </div>
+              </div>
+              <div className="flex w-[64px] shrink-0 flex-col divide-y divide-white/5 border-s border-white/8 bg-white/[0.02]">
+                <Link
+                  to={`/walid/students/${student.id}`}
+                  aria-label={`عرض ${student.full_name}`}
+                  className="flex flex-1 flex-col items-center justify-center gap-1 text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200 focus:outline-none focus-visible:bg-indigo-500/10"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span className="text-[10px] font-semibold">عرض</span>
+                </Link>
+{student.status === 'active' ? (
+                    <button
+                      type="button"
+                      onClick={() => confirm('disable', student)}
+                      aria-label="إيقاف"
+                      className="flex flex-1 flex-col items-center justify-center gap-1 text-amber-300 transition-colors hover:bg-amber-500/10 hover:text-amber-200 focus:outline-none"
+                    >
+                      <Pause className="h-4 w-4" />
+                      <span className="text-[10px] font-semibold">إيقاف</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => confirm('enable', student)}
+                      aria-label="تفعيل"
+                      className="flex flex-1 flex-col items-center justify-center gap-1 text-emerald-300 transition-colors hover:bg-emerald-500/10 hover:text-emerald-200 focus:outline-none"
+                    >
+                      <Play className="h-4 w-4" />
+                      <span className="text-[10px] font-semibold">تفعيل</span>
+                    </button>
+                  )}
+                <button
+                  type="button"
+                  onClick={() => confirm('delete', student)}
+                  aria-label="حذف"
+                  className="flex flex-1 flex-col items-center justify-center gap-1 text-rose-300 transition-colors hover:bg-rose-500/10 hover:text-rose-200 focus:outline-none"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="text-[10px] font-semibold">حذف</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       <Modal
