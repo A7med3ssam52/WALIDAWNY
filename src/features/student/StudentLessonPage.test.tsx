@@ -676,4 +676,45 @@ describe('StudentLessonPage', () => {
     expect(screen.queryByText('سبورة الدرس')).not.toBeInTheDocument();
     expect(screen.queryByText('تعذر تحميل الدرس')).not.toBeInTheDocument();
   });
+
+  it('shows toggle-complete button when not completed and marks complete on click', async () => {
+    mockFunctions();
+    seedLessonPage();
+    renderApp('/student/lessons/lesson-1');
+
+    const btn = await screen.findByTestId('toggle-complete-btn');
+    expect(btn).toHaveTextContent('وضع علامة مكتمل');
+    expect(btn).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: true }));
+    expect(await screen.findByText('أكملت هذا الدرس ✓')).toBeInTheDocument();
+    expect(screen.getByTestId('toggle-complete-btn')).toHaveTextContent('إلغاء الإكمال');
+  });
+
+  it('shows unmark button when already completed and can toggle back', async () => {
+    mockFunctions();
+    seedLessonPage();
+    mockState.progress.push(makeProgress({ lesson_id: 'lesson-1', is_completed: true, percent_completed: 100 }));
+    renderApp('/student/lessons/lesson-1');
+
+    const btn = await screen.findByTestId('toggle-complete-btn');
+    expect(btn).toHaveTextContent('إلغاء الإكمال');
+    expect(btn).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('lesson-completed-badge')).toBeInTheDocument();
+
+    fireEvent.click(btn);
+    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: false }));
+    await waitFor(() => expect(screen.getByTestId('toggle-complete-btn')).toHaveTextContent('وضع علامة مكتمل'));
+    expect(screen.queryByTestId('lesson-completed-badge')).not.toBeInTheDocument();
+  });
+
+  it('does not show toggle button before progress is loaded', async () => {
+    mockFunctions();
+    seedLessonPage();
+    // gate: before lesson load, button not visible
+    renderApp('/student/lessons/lesson-1');
+    // Initially skeleton, then after load button appears
+    expect(await screen.findByTestId('toggle-complete-btn')).toBeInTheDocument();
+  });
 });

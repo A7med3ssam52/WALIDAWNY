@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, EyeOff, Gift, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -285,92 +285,121 @@ export function CurriculumUnitsPage() {
           ) : units.length === 0 ? (
             <EmptyState title="لا توجد وحدات بعد" description="أنشئ أول وحدة في هذا الصف." />
           ) : (
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-3">
               {units.map((unit) => (
                 <li
                   key={unit.id}
                   data-testid={`unit-row-${unit.id}`}
-                  className="glass-soft flex flex-col gap-3 rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-indigo-400/20 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                  className="glass-soft group flex flex-col overflow-hidden rounded-2xl border border-white/8 transition-all duration-200 hover:border-indigo-400/20 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.18)]"
                 >
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                  <div className="flex min-w-0 items-center gap-3 px-4 py-3.5">
                     <OrderChip order={unit.sort_order} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground sm:flex-none">
-                      {unit.name}
-                    </span>
-                    <UnitStatusBadge status={unit.status} />
-                    {unit.is_free ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-300">مجاني</span>
-                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-[14px] font-semibold leading-5 text-foreground">
+                          {unit.name}
+                        </span>
+                        <UnitStatusBadge status={unit.status} />
+                        {unit.is_free ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
+                            <Gift aria-hidden="true" className="h-3 w-3" />
+                            مجاني
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
+                  <div className="flex flex-col gap-2 border-t border-white/[0.06] bg-white/[0.02] px-2.5 py-2.5 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-3">
                     <Link
                       to={`/walid/curriculum/${gradeId}/${unit.id}`}
-                      className="col-span-2 inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-primary-soft px-3 text-sm font-semibold text-primary-strong transition-colors hover:bg-primary-soft/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:col-span-1 sm:h-9 sm:justify-start sm:bg-transparent sm:px-2.5 sm:hover:bg-primary-soft"
+                      className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-4 text-sm font-bold text-white shadow-[0_4px_14px_-4px_rgba(99,102,241,0.5)] transition-all duration-200 hover:brightness-[1.07] hover:shadow-[0_6px_20px_-6px_rgba(99,102,241,0.6)] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-9 sm:w-auto sm:px-3.5 sm:text-[13px]"
                     >
-                      <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0" />
+                      <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
                       فتح الدروس
                     </Link>
-                    {unit.status === 'published' ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<EyeOff aria-hidden="true" className="h-4 w-4" />}
-                        onClick={() => void handleToggleUnitStatus(unit)}
-                        disabled={togglingUnitId === unit.id}
-                        className="w-full justify-center whitespace-nowrap text-warning hover:bg-amber-500/10 hover:text-warning sm:w-auto"
-                      >
-                        {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void handleToggleUnitStatus(unit)}
-                        disabled={togglingUnitId === unit.id}
-                        className="w-full justify-center whitespace-nowrap text-primary-strong hover:bg-primary-soft hover:text-primary-strong sm:w-auto"
-                      >
-                        {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
-                      onClick={() => openEditUnit(unit)}
-                      className="w-full justify-center whitespace-nowrap sm:w-auto"
-                    >
-                      تعديل
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={unit.is_free ? 'secondary' : 'ghost'}
-                      onClick={() => void handleToggleFree(unit)}
-                      disabled={freeTogglingId === unit.id}
-                      className={`w-full justify-center whitespace-nowrap sm:w-auto ${unit.is_free ? 'text-emerald-300' : ''}`}
-                    >
-                      {freeTogglingId === unit.id ? (
-                        'جاري...'
-                      ) : unit.is_free ? (
-                        <>
-                          <span className="sm:hidden">إلغاء</span>
-                          <span className="hidden sm:inline">إلغاء المجانية</span>
-                        </>
+                    <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
+                      {unit.status === 'published' ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
+                          onClick={() => void handleToggleUnitStatus(unit)}
+                          disabled={togglingUnitId === unit.id}
+                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                        >
+                          {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
+                        </Button>
                       ) : (
-                        <>
-                          <span className="sm:hidden">مجاني</span>
-                          <span className="hidden sm:inline">اجعله مجاني</span>
-                        </>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void handleToggleUnitStatus(unit)}
+                          disabled={togglingUnitId === unit.id}
+                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                        >
+                          {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
+                        </Button>
                       )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                      onClick={() => setDeletingUnit({ unit })}
-                      className="col-span-2 w-full justify-center whitespace-nowrap text-error hover:bg-rose-500/10 hover:text-error sm:col-span-1 sm:w-auto"
-                    >
-                      حذف
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
+                        onClick={() => openEditUnit(unit)}
+                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                      >
+                        تعديل
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Gift aria-hidden="true" className="h-3.5 w-3.5" />}
+                        onClick={() => void handleToggleFree(unit)}
+                        disabled={freeTogglingId === unit.id}
+                        aria-label={
+                          freeTogglingId === unit.id
+                            ? 'جاري'
+                            : unit.is_free
+                              ? 'إلغاء المجانية'
+                              : 'اجعله مجاني'
+                        }
+                        className={`h-9 justify-center whitespace-nowrap rounded-xl border px-0 text-xs font-semibold sm:h-8 sm:w-auto sm:px-3 sm:text-xs ${
+                          unit.is_free
+                            ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
+                            : 'border-white/8 bg-white/[0.03] text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground'
+                        }`}
+                      >
+                        {freeTogglingId === unit.id ? (
+                          'جاري...'
+                        ) : unit.is_free ? (
+                          <>
+                            <span aria-hidden="true" className="sm:hidden">
+                              إلغاء
+                            </span>
+                            <span aria-hidden="true" className="hidden sm:inline">
+                              إلغاء المجانية
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span aria-hidden="true" className="sm:hidden">
+                              مجاني
+                            </span>
+                            <span aria-hidden="true" className="hidden sm:inline">
+                              اجعله مجاني
+                            </span>
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Trash2 aria-hidden="true" className="h-3.5 w-3.5" />}
+                        onClick={() => setDeletingUnit({ unit })}
+                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-rose-400/10 bg-rose-500/5 px-0 text-xs font-semibold text-rose-300 hover:border-rose-400/20 hover:bg-rose-500/10 hover:text-rose-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                      >
+                        حذف
+                      </Button>
+                    </div>
                   </div>
                 </li>
               ))}

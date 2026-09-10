@@ -972,6 +972,20 @@ export async function upsertProgress(
   return data as Progress;
 }
 
+export async function toggleLessonCompleted(
+  lessonId: string,
+  completed: boolean,
+): Promise<Progress> {
+  const { data, error } = await getSupabaseClient().rpc('toggle_lesson_completed', {
+    p_lesson_id: lessonId,
+    p_completed: completed,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as Progress;
+}
+
 export async function getMyProgress(lessonId: string): Promise<Progress | null> {
   const userId = await currentUserId();
   if (!userId) {
@@ -2020,4 +2034,34 @@ export async function getMostActiveStudents(filters: {
     throw error;
   }
   return (data ?? []) as MostActiveStudent[];
+}
+
+export async function getDailyActiveStudents(input: {
+  date: string;
+  limit?: number;
+  offset?: number;
+}): Promise<import('../types/database').DailyActiveStudent[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_daily_active_students', {
+    p_date: input.date,
+    p_limit: input.limit ?? 50,
+    p_offset: input.offset ?? 0,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as import('../types/database').DailyActiveStudent[];
+}
+
+export async function getPresenceDailyCounts(input: {
+  from?: string | null;
+  to?: string | null;
+} = {}): Promise<import('../types/database').PresenceDailyCount[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_presence_daily_counts', {
+    p_from: input.from ?? null,
+    p_to: input.to ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as import('../types/database').PresenceDailyCount[];
 }

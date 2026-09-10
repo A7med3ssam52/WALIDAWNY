@@ -24,7 +24,16 @@ const seededStats = makeDashboardStats({
     pdfs: 32,
     pdfs_ready: 27,
   },
-  engagement: { students_with_progress: 18, completed_lessons: 120, avg_percent: 61.5 },
+  engagement: {
+    students_with_progress: 18,
+    completed_lessons: 120,
+    avg_percent: 61.5,
+    participation_rate: 42.8,
+    completion_rate: 35.2,
+    active_last_7d: 12,
+    inactive_students: 24,
+    distribution: { q1: 5, q2: 8, q3: 10, q4: 18 },
+  },
   by_grade: [
     { grade_name: 'الصف الأول', students: 20, purchases: 15, revenue: 5000 },
     { grade_name: 'الصف الثاني', students: 22, purchases: 14, revenue: 4500 },
@@ -41,6 +50,37 @@ const seededStats = makeDashboardStats({
       total_price: 350,
       purchased_at: '2026-08-10T10:00:00Z',
     },
+  ],
+  recent_completions: [
+    {
+      student_name: 'سارة أحمد',
+      lesson_title: 'الدرس الأول',
+      unit_name: 'الوحدة الأولى',
+      completed_at: '2026-08-09T15:00:00Z',
+    },
+  ],
+  top_active: [
+    {
+      student_id: 'student-1',
+      full_name: 'أحمد محمد',
+      grade_name: 'الصف الأول',
+      completed_lessons: 12,
+      avg_percent: 85.5,
+      total_lessons: 20,
+    },
+    {
+      student_id: 'student-2',
+      full_name: 'محمد علي',
+      grade_name: 'الصف الثاني',
+      completed_lessons: 8,
+      avg_percent: 72.3,
+      total_lessons: 15,
+    },
+  ],
+  daily_completions: [
+    { day: '2026-08-08', count: 3 },
+    { day: '2026-08-09', count: 7 },
+    { day: '2026-08-10', count: 2 },
   ],
 });
 
@@ -112,6 +152,19 @@ describe('WalidDashboardPage', () => {
     expect(screen.getAllByText('18').length).toBeGreaterThan(0);
     expect(screen.getAllByText('120').length).toBeGreaterThan(0);
     expect(screen.getByText('%61.5')).toBeInTheDocument();
+    expect(screen.getByText('42.8%')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+  });
+
+  it('renders enhanced engagement sections', async () => {
+    renderApp('/walid/dashboard');
+
+    expect(await screen.findByText('توزيع التقدم')).toBeInTheDocument();
+    expect(screen.getByText('نشاط آخر 7 أيام')).toBeInTheDocument();
+    expect(screen.getByText('الطلاب الأكثر نشاطاً')).toBeInTheDocument();
+    expect(screen.getByText('آخر الدروس المكتملة')).toBeInTheDocument();
+    expect(screen.getByText('سارة أحمد')).toBeInTheDocument();
+    expect(screen.getByText('محمد علي')).toBeInTheDocument();
   });
 
   it('shows empty states when there is no data yet', async () => {

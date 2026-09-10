@@ -392,6 +392,16 @@ export interface DashboardEngagementStats {
   students_with_progress: number;
   completed_lessons: number;
   avg_percent: number;
+  participation_rate?: number;
+  completion_rate?: number;
+  active_last_7d?: number;
+  inactive_students?: number;
+  distribution?: {
+    q1: number;
+    q2: number;
+    q3: number;
+    q4: number;
+  };
 }
 
 export interface DashboardByGradeRow {
@@ -413,6 +423,27 @@ export interface DashboardRecentPurchase {
   unit_name: string;
   total_price: number;
   purchased_at: string;
+}
+
+export interface DashboardRecentCompletion {
+  student_name: string;
+  lesson_title: string;
+  unit_name: string;
+  completed_at: string;
+}
+
+export interface DashboardTopActiveStudent {
+  student_id: string;
+  full_name: string;
+  grade_name: string | null;
+  completed_lessons: number;
+  avg_percent: number;
+  total_lessons: number;
+}
+
+export interface DashboardDailyCompletion {
+  day: string;
+  count: number;
 }
 
 export interface FinancialSummary {
@@ -509,6 +540,9 @@ export interface DashboardStats {
   by_grade: DashboardByGradeRow[];
   top_units: DashboardTopUnit[];
   recent_purchases: DashboardRecentPurchase[];
+  recent_completions?: DashboardRecentCompletion[];
+  top_active?: DashboardTopActiveStudent[];
+  daily_completions?: DashboardDailyCompletion[];
 }
 
 export type StudentSession = {
@@ -566,6 +600,17 @@ export type MostActiveStudent = {
   total_seconds: number;
   total_hours: number;
   last_seen_at: string | null;
+};
+
+export type DailyActiveStudent = MostActiveStudent & {
+  first_seen_at: string | null;
+};
+
+export type PresenceDailyCount = {
+  day: string;
+  active_students: number;
+  total_sessions: number;
+  total_seconds: number;
 };
 
 export interface Database {
@@ -812,6 +857,10 @@ export interface Database {
         };
         Returns: Progress;
       };
+      toggle_lesson_completed: {
+        Args: { p_lesson_id: string; p_completed: boolean };
+        Returns: Progress;
+      };
       mark_notification_read: { Args: { p_notification_id: string }; Returns: void };
       mark_all_notifications_read: { Args: never; Returns: void };
       get_dashboard_stats: { Args: never; Returns: DashboardStats };
@@ -922,6 +971,14 @@ export interface Database {
       get_most_active_students: {
         Args: { p_from?: string | null; p_to?: string | null; p_limit?: number | null };
         Returns: MostActiveStudent[];
+      };
+      get_daily_active_students: {
+        Args: { p_date: string; p_limit?: number | null; p_offset?: number | null };
+        Returns: DailyActiveStudent[];
+      };
+      get_presence_daily_counts: {
+        Args: { p_from?: string | null; p_to?: string | null };
+        Returns: PresenceDailyCount[];
       };
       close_stale_sessions: { Args: never; Returns: number };
       cleanup_old_presence_events: { Args: never; Returns: number };

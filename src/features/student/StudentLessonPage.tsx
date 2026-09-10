@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
+  CheckCircle2,
   ChevronDown,
+  Clock3,
   Download,
   Eye,
   EyeOff,
@@ -13,6 +15,7 @@ import {
   ExternalLink,
   Send,
   Receipt,
+  XCircle,
 } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
@@ -45,6 +48,7 @@ import {
   listLessonsForUnit,
   listLessonVideos,
   redeemUnitCode,
+  toggleLessonCompleted,
   upsertProgress,
 } from '../../data/rpc';
 import { buildWhatsAppLink, formatPrice } from '../../lib/format';
@@ -129,6 +133,7 @@ export function StudentLessonPage() {
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [togglingComplete, setTogglingComplete] = useState(false);
   const lastSaveRef = useRef(0);
   const savingRef = useRef(false);
   const lastPositionRef = useRef(0);
@@ -424,6 +429,29 @@ export function StudentLessonPage() {
     void saveProgress(lastPositionRef.current, 100);
   }, [saveProgress]);
 
+  const handleToggleComplete = useCallback(async () => {
+    if (!lesson || togglingComplete) return;
+    const nextCompleted = !(progress?.is_completed ?? false);
+    setTogglingComplete(true);
+    try {
+      const updated = await toggleLessonCompleted(lesson.id, nextCompleted);
+      setProgress(updated);
+      showToast(
+        nextCompleted ? 'تم وضع علامة مكتمل ✓' : 'تم إلغاء علامة مكتمل',
+        nextCompleted ? 'success' : 'info',
+      );
+    } catch (err) {
+      const code = errorCode(err);
+      if (code === 'progress_stale_video') {
+        showToast('حدث تحديث للفيديو، يرجى تحديث الصفحة', 'error');
+      } else {
+        showToast('تعذر تحديث حالة الدرس', 'error');
+      }
+    } finally {
+      setTogglingComplete(false);
+    }
+  }, [lesson, progress?.is_completed, togglingComplete, showToast]);
+
   const handleRedeem = async (code: string): Promise<boolean> => {
     setRedeemError(null);
     setRedeemBusy(true);
@@ -662,6 +690,82 @@ export function StudentLessonPage() {
 
         {lesson.description ? (
           <p className="text-sm text-foreground-muted">{lesson.description}</p>
+        ) : null}
+
+        {/* Manual completion toggle — student can mark/unmark lesson as completed */}
+        {progressLoaded ? (
+          <Card className="conic-ring spotlight-card !p-0 overflow-hidden">
+            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <span
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${
+                    progress?.is_completed
+                      ? 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400'
+                      : 'bg-white/5 text-foreground-muted ring-white/10'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {progress?.is_completed ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
+                    <Clock3 className="h-5 w-5" />
+                  )}
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    {progress?.is_completed ? 'أكملت هذا الدرس ✓' : 'لم تكمل هذا الدرس بعد'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-foreground-muted">
+                    {progress?.is_completed
+                      ? 'يمكنك إلغاء العلامة إذا أردت المراجعة مرة أخرى'
+                      : 'اضغط لوضع علامة مكتمل حتى بدون مشاهدة كاملة'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleToggleComplete()}
+                disabled={togglingComplete}
+                data-testid="toggle-complete-btn"
+                aria-pressed={progress?.is_completed ?? false}
+                className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong disabled:opacity-50 disabled:cursor-not-allowed ${
+                  progress?.is_completed
+                    ? 'border border-amber-500/20 bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_4px_16px_rgba(16,185,129,0.3)]'
+                }`}
+              >
+                {togglingComplete ? (
+                  <Spinner />
+                ) : progress?.is_completed ? (
+                  <XCircle className="h-4 w-4" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                {progress?.is_completed ? 'إلغاء الإكمال' : 'وضع علامة مكتمل'}
+              </button>
+            </div>
+            {!progress?.is_completed && progress && Number(progress.percent_completed) > 0 ? (
+              <div className="border-t border-white/5 bg-white/[0.02] px-4 py-2.5">
+                <div className="flex items-center justify-between text-xs text-foreground-muted">
+                  <span>تقدمك الحالي</span>
+                  <span dir="ltr" className="font-mono font-semibold text-foreground">
+                    {Math.round(Number(progress.percent_completed))}%
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.round(Number(progress.percent_completed)))}%` }}
+                    role="progressbar"
+                    aria-valuenow={Math.round(Number(progress.percent_completed))}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    data-testid="lesson-progress-bar"
+                  />
+                </div>
+              </div>
+            ) : null}
+          </Card>
         ) : null}
 
         {/* === Course-style single player + playlist dropdown === */}

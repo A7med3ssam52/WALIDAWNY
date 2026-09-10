@@ -327,7 +327,7 @@ export function makeNotification(overrides: Partial<AnyRecord> = {}): AnyRecord 
 }
 
 export function makeDashboardStats(overrides: Partial<AnyRecord> = {}): AnyRecord {
-  return {
+  const base = {
     students: { total: 0, active: 0, disabled: 0, deleted: 0, new_this_month: 0 },
     purchases: { total: 0, staff_revenue_this_month: 0, platform_fee_total: 0 },
     content: {
@@ -340,12 +340,30 @@ export function makeDashboardStats(overrides: Partial<AnyRecord> = {}): AnyRecor
       pdfs: 0,
       pdfs_ready: 0,
     },
-    engagement: { students_with_progress: 0, completed_lessons: 0, avg_percent: 0 },
+    engagement: {
+      students_with_progress: 0,
+      completed_lessons: 0,
+      avg_percent: 0,
+      participation_rate: 0,
+      completion_rate: 0,
+      active_last_7d: 0,
+      inactive_students: 0,
+      distribution: { q1: 0, q2: 0, q3: 0, q4: 0 },
+    },
     by_grade: [],
     top_units: [],
     recent_purchases: [],
-    ...overrides,
-  };
+    recent_completions: [],
+    top_active: [],
+    daily_completions: [],
+  } as AnyRecord;
+  // Deep-merge engagement if overridden partially
+  if (overrides.engagement && typeof overrides.engagement === 'object') {
+    (base.engagement as AnyRecord) = { ...(base.engagement as AnyRecord), ...(overrides.engagement as AnyRecord) };
+    const { engagement: _e, ...rest } = overrides;
+    return { ...base, ...rest, engagement: base.engagement };
+  }
+  return { ...base, ...overrides };
 }
 
 export function makeFinancialReports(overrides: Partial<AnyRecord> = {}): AnyRecord {
@@ -754,6 +772,50 @@ function createMockClient() {
 
   const applyLearningRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     const uid = currentUserId();
+    if (fn === 'toggle_lesson_completed') {
+      const lessonId = String(args?.p_lesson_id ?? '');
+      const completed = Boolean(args?.p_completed);
+      if (!uid) return error('access_denied');
+      let existing = state.progress.find((item) => item.student_id === uid && item.lesson_id === lessonId);
+      if (completed) {
+        const updated = makeProgress({
+          ...existing,
+          id: existing?.id ?? `progress-created-${++state.idSeq}`,
+          student_id: uid,
+          lesson_id: lessonId,
+          position_seconds: existing ? Number(existing.position_seconds ?? 0) : 0,
+          percent_completed: 100,
+          is_completed: true,
+          last_watched_at: nowIso(),
+          updated_at: nowIso(),
+        });
+        if (existing) Object.assign(existing, updated);
+        else {
+          state.progress.push(updated);
+          existing = updated;
+        }
+        return { data: existing, error: null };
+      } else {
+        if (!existing) {
+          const created = makeProgress({
+            id: `progress-created-${++state.idSeq}`,
+            student_id: uid,
+            lesson_id: lessonId,
+            position_seconds: 0,
+            percent_completed: 0,
+            is_completed: false,
+            last_watched_at: nowIso(),
+            updated_at: nowIso(),
+          });
+          state.progress.push(created);
+          return { data: created, error: null };
+        }
+        existing.is_completed = false;
+        existing.last_watched_at = nowIso();
+        existing.updated_at = nowIso();
+        return { data: existing, error: null };
+      }
+    }
     if (fn === 'upsert_progress') {
       const lessonId = String(args?.p_lesson_id ?? '');
       const position = Number(args?.p_position_seconds ?? 0);
