@@ -14,10 +14,10 @@ describe('App', () => {
     const { App } = await import('./App');
     render(<App />);
 
+    // Fallback is committed in supabase.ts: empty env still yields a configured client
+    // via .env.production fallback, so ConfigErrorScreen is NOT shown.
     expect(
       screen.queryByRole('heading', { name: 'تعذر تشغيل التطبيق' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('VITE_SUPABASE_URL')).toBeInTheDocument();
-    expect(screen.queryByText('VITE_SUPABASE_PUBLISHABLE_KEY')).toBeInTheDocument();
+    ).not.toBeInTheDocument();
   });
 });

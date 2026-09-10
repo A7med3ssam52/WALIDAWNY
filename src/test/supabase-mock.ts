@@ -360,7 +360,8 @@ export function makeDashboardStats(overrides: Partial<AnyRecord> = {}): AnyRecor
   // Deep-merge engagement if overridden partially
   if (overrides.engagement && typeof overrides.engagement === 'object') {
     (base.engagement as AnyRecord) = { ...(base.engagement as AnyRecord), ...(overrides.engagement as AnyRecord) };
-    const { engagement: _e, ...rest } = overrides;
+    const { engagement: _ignored, ...rest } = overrides as AnyRecord;
+    void _ignored;
     return { ...base, ...rest, engagement: base.engagement };
   }
   return { ...base, ...overrides };
@@ -1147,7 +1148,7 @@ function createMockClient() {
       if (Boolean(unit.is_free) && base !== 0) {
         return error('unit_is_free');
       }
-      const fee = Boolean(unit.is_free) ? 0 : state.platformFee;
+      const fee = unit.is_free ? 0 : state.platformFee;
       const existing = state.unitPricing.find((item) => item.unit_id === unitId);
       if (existing) {
         existing.base_price = base;
@@ -1178,7 +1179,7 @@ function createMockClient() {
       state.platformFee = fee;
       state.unitPricing.forEach((item) => {
         const unit = state.units.find((u) => u.id === item.unit_id);
-        if (Boolean(unit?.is_free)) {
+        if (unit?.is_free) {
           item.platform_fee = 0;
           item.total_price = Number(item.base_price ?? 0);
         } else {
@@ -1229,7 +1230,7 @@ function createMockClient() {
   const enrichUnitPricing = (item: AnyRecord): AnyRecord => {
     const unit = state.units.find((candidate) => candidate.id === item.unit_id);
     const grade = unit ? state.grades.find((candidate) => candidate.id === unit.grade_id) : null;
-    const isFree = Boolean(unit?.is_free);
+    const isFree = !!unit?.is_free;
     return {
       ...item,
       base_price: isFree ? 0 : item.base_price,

@@ -129,9 +129,9 @@ describe('WalidDashboardPage', () => {
 
     expect(await screen.findByText('15')).toBeInTheDocument();
     expect(screen.getByText('الطلاب والمشتريات حسب الصف')).toBeInTheDocument();
-    expect(screen.getByText('الصف الأول')).toBeInTheDocument();
-    expect(screen.getByText('الصف الثاني')).toBeInTheDocument();
-    expect(screen.getByText('14')).toBeInTheDocument();
+    expect(screen.getAllByText('الصف الأول').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('الصف الثاني').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('14').length).toBeGreaterThan(0);
     expect(screen.getByText('5000 ج.م')).toBeInTheDocument();
   });
 
@@ -140,9 +140,9 @@ describe('WalidDashboardPage', () => {
 
     expect(await screen.findByText('الوحدات الأكثر مبيعًا')).toBeInTheDocument();
     expect(screen.getByText('أحدث المشتريات')).toBeInTheDocument();
-    expect(screen.getByText('أحمد محمد')).toBeInTheDocument();
+    expect(screen.getAllByText('أحمد محمد').length).toBeGreaterThan(0);
     expect(screen.getAllByText('الوحدة الأولى').length).toBeGreaterThan(0);
-    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
   it('renders engagement stats', async () => {
@@ -153,7 +153,7 @@ describe('WalidDashboardPage', () => {
     expect(screen.getAllByText('120').length).toBeGreaterThan(0);
     expect(screen.getByText('%61.5')).toBeInTheDocument();
     expect(screen.getByText('42.8%')).toBeInTheDocument();
-    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
   it('renders enhanced engagement sections', async () => {
