@@ -421,18 +421,18 @@ REVOKE EXECUTE ON FUNCTION public.close_stale_sessions() FROM PUBLIC, anon, auth
 -- ---------------------------------------------------------------------
 -- pg_cron job — close stale sessions every 5 minutes (guarded)
 -- ---------------------------------------------------------------------
-DO $$
+DO $outer$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
         PERFORM cron.schedule(
             'close-stale-presence-sessions',
             '*/5 * * * *',
-            $$SELECT public.close_stale_sessions();$$
+            'SELECT public.close_stale_sessions();'
         );
     END IF;
 EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'pg_cron not available — close_stale_sessions must be called externally';
-END $$;
+END $outer$;
 
 -- ---------------------------------------------------------------------
 -- Retention helper — delete old activity events (call manually or via cron)
