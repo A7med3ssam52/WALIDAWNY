@@ -699,7 +699,12 @@ export function LessonAssetsPage() {
   };
 
   const handleUpload = async () => {
-    if (!lessonId || !file) {
+    if (!lessonId) {
+      setUploadError('يجب اختيار الدرس أولاً');
+      return;
+    }
+    if (!file) {
+      setUploadError('لا يوجد ملف مختار');
       return;
     }
     setStage('requesting');
