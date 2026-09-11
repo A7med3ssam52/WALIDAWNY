@@ -1,7 +1,7 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0065, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0068, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
@@ -13011,3 +13011,251 @@ REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
 
 COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Fixed in 0063: restore 0058 revenue fields (staff_revenue_this_month/platform_fee_total) + engagement distribution + include assistant.';
+
+-- =====================================================================
+-- >>> included from migrations\0066_fix_trial_rls.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0066_fix_trial_rls
+-- Restores cross-grade trial lesson visibility that was lost in
+-- 0060/0064 (they overwrote lessons/units RLS without the trial OR
+-- branch from 0047). Trial lessons (any number per unit) must be
+-- visible to ANY active student, regardless of grade, as long as
+-- lesson+unit+grade are published/active.
+-- Also adds is_assistant to staff branch.
+-- =====================================================================
+
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                JOIN public.profiles p ON p.grade_id = u.grade_id
+                WHERE p.id = auth.uid()
+                  AND u.grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+                  AND u.status = 'published'
+                  AND u.deleted_at IS NULL
+            )
+        )
+        OR (
+            public.is_student()
+            AND is_trial = true
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT id FROM public.units
+                WHERE status = 'published' AND deleted_at IS NULL
+                  AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
+CREATE POLICY units_select_staff_or_published_own_grade ON public.units
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND grade_id IN (
+                SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid()
+            )
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND status = 'published'
+            AND deleted_at IS NULL
+        )
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND EXISTS (
+                SELECT 1 FROM public.lessons l
+                WHERE l.unit_id = units.id
+                  AND l.is_trial = true
+                  AND l.status = 'published'
+                  AND l.deleted_at IS NULL
+            )
+        )
+    );
+
+-- Ensure can_access_lesson still has assistant + trial bypass (0064 version is correct except COALESCE, keep it)
+-- Re-apply 0047's can_access with assistant (avoid COALESCE mismatch, keep strict grade check)
+CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+BEGIN
+    IF v_uid IS NULL THEN
+        RETURN false;
+    END IF;
+    IF public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() THEN
+        RETURN EXISTS (SELECT 1 FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL);
+    END IF;
+    RETURN EXISTS (
+        SELECT 1
+        FROM public.lessons l
+        JOIN public.units u ON u.id = l.unit_id
+        JOIN public.grades g ON g.id = u.grade_id
+        WHERE l.id = p_lesson_id
+          AND l.deleted_at IS NULL AND l.status = 'published'
+          AND u.deleted_at IS NULL AND u.status = 'published'
+          AND g.is_active AND g.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM public.profiles p
+              WHERE p.id = v_uid AND p.deleted_at IS NULL AND p.status = 'active'
+          )
+          AND (
+              l.is_trial
+              OR (
+                  EXISTS (
+                      SELECT 1 FROM public.unit_purchases up
+                      WHERE up.student_id = v_uid
+                        AND up.unit_id = u.id
+                        AND up.status = 'active'
+                  )
+                  AND u.grade_id = (SELECT grade_id FROM public.profiles WHERE id = v_uid)
+              )
+          )
+    );
+END $$;
+
+COMMENT ON FUNCTION public.can_access_lesson(uuid) IS 'Lesson access: staff see any live lesson; students need published lesson+unit+active grade; trial lessons (any number per unit) are open to any active student, non-trial require active purchase in own grade (strict grade match).';
+
+-- =====================================================================
+-- >>> included from migrations\0067_fix_trial_rls_recursion.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0067_fix_trial_rls_recursion
+-- Fixes infinite recursion introduced in 0066: lessons and units
+-- policies were querying each other (lessons trial -> units, units trial -> lessons).
+-- Remove trial branch from units policy; keep it only in lessons.
+-- Trial lessons are fetched via SECURITY DEFINER getTrialLessons(), not via units RLS.
+-- Keep lessons trial branch but make it SECURITY DEFINER-safe via direct check
+-- without joining profiles to units (avoid recursion).
+-- =====================================================================
+
+DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
+CREATE POLICY units_select_staff_or_published_own_grade ON public.units
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND grade_id IN (SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid())
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND status = 'published'
+            AND deleted_at IS NULL
+        )
+    );
+
+-- Keep lessons trial branch but ensure it does not cause recursion via profiles join
+-- Use direct subquery without joining profiles to units (simpler)
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                WHERE u.grade_id = (SELECT grade_id FROM public.profiles WHERE id = auth.uid())
+                  AND u.grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+                  AND u.status = 'published'
+                  AND u.deleted_at IS NULL
+            )
+        )
+        OR (
+            public.is_student()
+            AND is_trial = true
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND EXISTS (
+                SELECT 1 FROM public.profiles p
+                WHERE p.id = auth.uid() AND p.status = 'active' AND p.deleted_at IS NULL
+            )
+            AND unit_id IN (
+                SELECT id FROM public.units
+                WHERE status = 'published' AND deleted_at IS NULL
+                  AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            )
+        )
+    );
+
+-- =====================================================================
+-- >>> included from migrations\0068_fix_trial_rls_bypass.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0068_fix_trial_rls_bypass
+-- Fix trial lesson visibility for cross-grade students.
+-- 0066/0067 introduced trial branch but it queried units which is
+-- RLS-protected, so grade1 student cannot see grade3 unit -> trial
+-- lesson remains hidden (RLS evaluates subquery through units RLS).
+-- Use SECURITY DEFINER helper to bypass RLS for the unit check.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.is_unit_published_active(p_unit_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.units u
+        WHERE u.id = p_unit_id
+          AND u.status = 'published'
+          AND u.deleted_at IS NULL
+          AND u.grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+    );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_unit_published_active(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_unit_published_active(uuid) TO authenticated, anon;
+
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                WHERE u.grade_id = (SELECT grade_id FROM public.profiles WHERE id = auth.uid())
+                  AND u.grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+                  AND u.status = 'published'
+                  AND u.deleted_at IS NULL
+            )
+        )
+        OR (
+            public.is_student()
+            AND is_trial = true
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND public.is_unit_published_active(unit_id)
+            AND EXISTS (
+                SELECT 1 FROM public.profiles p
+                WHERE p.id = auth.uid() AND p.status = 'active' AND p.deleted_at IS NULL
+            )
+        )
+    );
