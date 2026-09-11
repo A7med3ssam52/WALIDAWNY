@@ -1,7 +1,7 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0062, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0065, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
@@ -12528,3 +12528,486 @@ BEGIN
         END IF;
     END LOOP;
 END $$;
+
+-- =====================================================================
+-- >>> included from migrations\0063_fix_dashboard_revenue.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0063_fix_dashboard_revenue
+-- Fixes revenue fields regression introduced in 0061:
+-- 0061 overwrote get_dashboard_stats with old shape
+--   purchases: { total, total_revenue, revenue_this_month }
+-- but frontend (WalidDashboardPage.tsx + DashboardPurchasesStats)
+-- expects   { total, staff_revenue_this_month, platform_fee_total }
+-- and engagement fields (participation_rate etc) from 0058.
+-- This migration restores 0058's full shape + adds is_assistant to
+-- the permission check (so assistant can view dashboard).
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_stats jsonb;
+    v_total_students int;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT count(*) INTO v_total_students FROM public.profiles WHERE deleted_at IS NULL AND role = 'student';
+
+    SELECT jsonb_build_object(
+        'students', jsonb_build_object(
+            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
+            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
+            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student'),
+            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL AND role = 'student'),
+            'new_this_month', (SELECT count(*) FROM public.profiles
+                               WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
+        ),
+        'purchases', jsonb_build_object(
+            'total',                    (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+            'staff_revenue_this_month', (SELECT COALESCE(sum(base_price), 0) FROM public.unit_purchases
+                                         WHERE status = 'active' AND purchased_at >= date_trunc('month', now())),
+            'platform_fee_total',       (SELECT COALESCE(sum(platform_fee), 0) FROM public.unit_purchases
+                                         WHERE status = 'active')
+        ),
+        'content', jsonb_build_object(
+            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
+            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
+            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
+            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
+            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
+            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
+            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
+            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
+        ),
+        'engagement', jsonb_build_object(
+            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
+            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
+            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress),
+            'participation_rate',     (SELECT CASE WHEN v_total_students = 0 THEN 0 ELSE round((count(DISTINCT student_id)::numeric / v_total_students * 100), 1) END FROM public.progress),
+            'completion_rate',        (SELECT CASE WHEN count(*) = 0 THEN 0 ELSE round((count(*) FILTER (WHERE is_completed)::numeric / count(*) * 100), 1) END FROM public.progress),
+            'active_last_7d',         (SELECT count(DISTINCT student_id) FROM public.progress WHERE last_watched_at >= now() - interval '7 days'),
+            'inactive_students',      (SELECT count(*) FROM public.profiles p WHERE p.role='student' AND p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.progress pr WHERE pr.student_id=p.id)),
+            'distribution', jsonb_build_object(
+                'q1', (SELECT count(*) FROM public.progress WHERE percent_completed >= 0 AND percent_completed < 25),
+                'q2', (SELECT count(*) FROM public.progress WHERE percent_completed >= 25 AND percent_completed < 50),
+                'q3', (SELECT count(*) FROM public.progress WHERE percent_completed >= 50 AND percent_completed < 75),
+                'q4', (SELECT count(*) FROM public.progress WHERE percent_completed >= 75 AND percent_completed <= 100)
+            )
+        ),
+        'by_grade', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'grade_name', r.grade_name,
+                'students', r.students,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.sort_order)
+            FROM (
+                SELECT g.name AS grade_name, g.sort_order,
+                       count(DISTINCT p.id) AS students,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.grades g
+                LEFT JOIN public.profiles p
+                       ON p.grade_id = g.id AND p.deleted_at IS NULL AND p.role = 'student'
+                LEFT JOIN public.unit_purchases up
+                       ON up.student_id = p.id AND up.status = 'active'
+                WHERE g.deleted_at IS NULL
+                GROUP BY g.id, g.name, g.sort_order
+            ) r
+        ), '[]'::jsonb),
+        'top_units', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'unit_name', r.unit_name,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.revenue DESC)
+            FROM (
+                SELECT u.name AS unit_name,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up
+                JOIN public.units u ON u.id = up.unit_id
+                WHERE up.status = 'active'
+                GROUP BY u.id, u.name
+                ORDER BY revenue DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_purchases', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', r.student_name,
+                'grade_name', r.grade_name,
+                'unit_name', r.unit_name,
+                'total_price', r.total_price,
+                'purchased_at', r.purchased_at
+            ) ORDER BY r.purchased_at DESC)
+            FROM (
+                SELECT p.full_name AS student_name,
+                       g.name AS grade_name,
+                       u.name AS unit_name,
+                       up.total_price,
+                       up.purchased_at
+                FROM public.unit_purchases up
+                JOIN public.profiles p ON p.id = up.student_id
+                JOIN public.units u ON u.id = up.unit_id
+                LEFT JOIN public.grades g ON g.id = u.grade_id
+                WHERE up.status = 'active'
+                ORDER BY up.purchased_at DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_completions', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', r.student_name,
+                'lesson_title', r.lesson_title,
+                'unit_name', r.unit_name,
+                'completed_at', r.completed_at
+            ) ORDER BY r.completed_at DESC)
+            FROM (
+                SELECT p.full_name AS student_name,
+                       l.title AS lesson_title,
+                       u.name AS unit_name,
+                       pr.last_watched_at AS completed_at
+                FROM public.progress pr
+                JOIN public.profiles p ON p.id = pr.student_id
+                JOIN public.lessons l ON l.id = pr.lesson_id
+                JOIN public.units u ON u.id = l.unit_id
+                WHERE pr.is_completed = true
+                ORDER BY pr.last_watched_at DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'top_active', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_id', r.student_id,
+                'full_name', r.full_name,
+                'grade_name', r.grade_name,
+                'completed_lessons', r.completed_lessons,
+                'avg_percent', r.avg_percent,
+                'total_lessons', r.total_lessons
+            ) ORDER BY r.completed_lessons DESC, r.avg_percent DESC)
+            FROM (
+                SELECT pr.student_id,
+                       p.full_name,
+                       g.name AS grade_name,
+                       count(*) FILTER (WHERE pr.is_completed) AS completed_lessons,
+                       round(avg(pr.percent_completed), 1) AS avg_percent,
+                       count(*) AS total_lessons
+                FROM public.progress pr
+                JOIN public.profiles p ON p.id = pr.student_id
+                LEFT JOIN public.grades g ON g.id = p.grade_id
+                WHERE p.deleted_at IS NULL AND p.role='student'
+                GROUP BY pr.student_id, p.full_name, g.name
+                ORDER BY count(*) FILTER (WHERE pr.is_completed) DESC, avg(pr.percent_completed) DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'daily_completions', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'day', r.day,
+                'count', r.count
+            ) ORDER BY r.day ASC)
+            FROM (
+                SELECT (pr.last_watched_at::date)::text AS day,
+                       count(*) AS count
+                FROM public.progress pr
+                WHERE pr.is_completed = true
+                  AND pr.last_watched_at >= CURRENT_DATE - 6
+                GROUP BY pr.last_watched_at::date
+                ORDER BY day ASC
+            ) r
+        ), '[]'::jsonb)
+    ) INTO v_stats;
+
+    RETURN v_stats;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
+
+COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Fixed in 0063: restore 0058 revenue fields (staff_revenue_this_month/platform_fee_total) + engagement distribution + include assistant.';
+
+-- =====================================================================
+-- >>> included from migrations\0064_assistant_exams_only.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0063_assistant_exams_only
+-- Restricts assistant to: exams (full CRUD) + curriculum READ-ONLY.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_uid uuid := auth.uid(); v_grade_id uuid;
+BEGIN
+    IF v_uid IS NULL THEN RETURN false; END IF;
+    IF public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() THEN
+        RETURN EXISTS (SELECT 1 FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL);
+    END IF;
+    SELECT grade_id INTO v_grade_id FROM public.profiles WHERE id = v_uid LIMIT 1;
+    RETURN EXISTS (
+        SELECT 1 FROM public.lessons l JOIN public.units u ON u.id = l.unit_id JOIN public.grades g ON g.id = u.grade_id
+        WHERE l.id = p_lesson_id AND l.deleted_at IS NULL AND l.status = 'published' AND u.deleted_at IS NULL AND u.status = 'published' AND g.is_active AND g.deleted_at IS NULL AND EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = v_uid AND p.deleted_at IS NULL AND p.status = 'active') AND (l.is_trial OR (EXISTS (SELECT 1 FROM public.unit_purchases up WHERE up.student_id = v_uid AND up.unit_id = u.id AND up.status = 'active') AND u.grade_id = COALESCE(v_grade_id, u.grade_id)))
+    );
+END $$;
+
+DROP POLICY IF EXISTS profiles_select_own_or_staff ON public.profiles;
+CREATE POLICY profiles_select_own_or_staff ON public.profiles FOR SELECT USING ((id = auth.uid()) OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS grades_select_staff_or_active_students ON public.grades;
+CREATE POLICY grades_select_staff_or_active_students ON public.grades FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND deleted_at IS NULL AND is_active));
+DROP POLICY IF EXISTS grades_insert_staff ON public.grades; CREATE POLICY grades_insert_staff ON public.grades FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS grades_update_staff ON public.grades; CREATE POLICY grades_update_staff ON public.grades FOR UPDATE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS grades_delete_staff ON public.grades; CREATE POLICY grades_delete_staff ON public.grades FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
+CREATE POLICY units_select_staff_or_published_own_grade ON public.units FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND grade_id IN (SELECT grade_id FROM public.profiles WHERE id = (select auth.uid())) AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL) AND status = 'published' AND deleted_at IS NULL));
+DROP POLICY IF EXISTS units_insert_staff ON public.units; CREATE POLICY units_insert_staff ON public.units FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS units_update_staff ON public.units; CREATE POLICY units_update_staff ON public.units FOR UPDATE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS units_delete_staff ON public.units; CREATE POLICY units_delete_staff ON public.units FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND status = 'published' AND deleted_at IS NULL AND unit_id IN (SELECT id FROM public.units WHERE grade_id = (SELECT grade_id FROM public.profiles WHERE id = (select auth.uid())) AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL) AND status = 'published' AND deleted_at IS NULL)));
+DROP POLICY IF EXISTS lessons_insert_staff ON public.lessons; CREATE POLICY lessons_insert_staff ON public.lessons FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS lessons_update_staff ON public.lessons; CREATE POLICY lessons_update_staff ON public.lessons FOR UPDATE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS lessons_delete_staff ON public.lessons; CREATE POLICY lessons_delete_staff ON public.lessons FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS lesson_videos_select_gated ON public.lesson_videos; CREATE POLICY lesson_videos_select_gated ON public.lesson_videos FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND public.can_access_lesson(lesson_id) AND status = 'ready' AND deleted_at IS NULL));
+DROP POLICY IF EXISTS lesson_pdfs_select_gated ON public.lesson_pdfs; CREATE POLICY lesson_pdfs_select_gated ON public.lesson_pdfs FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND public.can_access_lesson(lesson_id) AND is_ready AND is_primary));
+DROP POLICY IF EXISTS lesson_boards_select_gated ON public.lesson_boards; CREATE POLICY lesson_boards_select_gated ON public.lesson_boards FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR (public.is_student() AND public.can_access_lesson(lesson_id) AND is_ready AND deleted_at IS NULL));
+
+DROP POLICY IF EXISTS unit_pricing_select_staff_or_active_students ON public.unit_pricing; CREATE POLICY unit_pricing_select_staff_or_active_students ON public.unit_pricing FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR (public.is_student() AND is_active AND unit_id IN (SELECT u.id FROM public.units u WHERE u.status = 'published' AND u.deleted_at IS NULL AND u.grade_id = (SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid()) AND u.grade_id IN (SELECT g.id FROM public.grades g WHERE g.is_active AND g.deleted_at IS NULL))));
+DROP POLICY IF EXISTS unit_codes_select_staff ON public.unit_codes; CREATE POLICY unit_codes_select_staff ON public.unit_codes FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS unit_purchases_select_own_or_staff ON public.unit_purchases; CREATE POLICY unit_purchases_select_own_or_staff ON public.unit_purchases FOR SELECT USING (student_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+DROP POLICY IF EXISTS progress_select_own_or_staff ON public.progress; CREATE POLICY progress_select_own_or_staff ON public.progress FOR SELECT USING ((student_id = (select auth.uid()) AND public.is_student()) OR public.is_mr_walid() OR public.is_admin() OR public.is_teacher());
+DROP POLICY IF EXISTS app_settings_select_staff ON public.app_settings; CREATE POLICY app_settings_select_staff ON public.app_settings FOR SELECT USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS announcements_teacher_select ON public.announcements; CREATE POLICY announcements_teacher_select ON public.announcements FOR SELECT USING (public.get_current_role() IN ('teacher','mr_walid'));
+DROP POLICY IF EXISTS announcements_teacher_write ON public.announcements; CREATE POLICY announcements_teacher_write ON public.announcements FOR INSERT WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin'));
+DROP POLICY IF EXISTS announcements_teacher_update ON public.announcements; CREATE POLICY announcements_teacher_update ON public.announcements FOR UPDATE USING (public.get_current_role() IN ('teacher','mr_walid','admin')) WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin'));
+DROP POLICY IF EXISTS announcements_teacher_delete ON public.announcements; CREATE POLICY announcements_teacher_delete ON public.announcements FOR DELETE USING (public.get_current_role() IN ('teacher','mr_walid','admin'));
+ALTER TABLE public.announcements ALTER COLUMN target_roles SET DEFAULT '{"student","teacher","mr_walid","admin"}';
+
+DROP POLICY IF EXISTS lesson_comments_select_gated ON public.lesson_comments; CREATE POLICY lesson_comments_select_gated ON public.lesson_comments FOR SELECT USING ((public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR author_id = auth.uid() OR public.can_access_lesson(lesson_id)) AND (status = 'visible' OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR author_id = auth.uid()));
+DROP POLICY IF EXISTS lesson_comments_insert_gated ON public.lesson_comments; CREATE POLICY lesson_comments_insert_gated ON public.lesson_comments FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.can_access_lesson(lesson_id));
+DROP POLICY IF EXISTS lesson_comments_update_own_or_staff ON public.lesson_comments; CREATE POLICY lesson_comments_update_own_or_staff ON public.lesson_comments FOR UPDATE USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) WITH CHECK (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+DROP POLICY IF EXISTS lesson_comments_delete_own_or_staff ON public.lesson_comments; CREATE POLICY lesson_comments_delete_own_or_staff ON public.lesson_comments FOR DELETE USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher());
+
+-- =====================================================================
+-- >>> included from migrations\0065_fix_dashboard_revenue.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0063_fix_dashboard_revenue
+-- Fixes revenue fields regression introduced in 0061:
+-- 0061 overwrote get_dashboard_stats with old shape
+--   purchases: { total, total_revenue, revenue_this_month }
+-- but frontend (WalidDashboardPage.tsx + DashboardPurchasesStats)
+-- expects   { total, staff_revenue_this_month, platform_fee_total }
+-- and engagement fields (participation_rate etc) from 0058.
+-- This migration restores 0058's full shape + adds is_assistant to
+-- the permission check (so assistant can view dashboard).
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_stats jsonb;
+    v_total_students int;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+
+    SELECT count(*) INTO v_total_students FROM public.profiles WHERE deleted_at IS NULL AND role = 'student';
+
+    SELECT jsonb_build_object(
+        'students', jsonb_build_object(
+            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
+            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
+            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student'),
+            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL AND role = 'student'),
+            'new_this_month', (SELECT count(*) FROM public.profiles
+                               WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
+        ),
+        'purchases', jsonb_build_object(
+            'total',                    (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+            'staff_revenue_this_month', (SELECT COALESCE(sum(base_price), 0) FROM public.unit_purchases
+                                         WHERE status = 'active' AND purchased_at >= date_trunc('month', now())),
+            'platform_fee_total',       (SELECT COALESCE(sum(platform_fee), 0) FROM public.unit_purchases
+                                         WHERE status = 'active')
+        ),
+        'content', jsonb_build_object(
+            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
+            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
+            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
+            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
+            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
+            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
+            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
+            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
+        ),
+        'engagement', jsonb_build_object(
+            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
+            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
+            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress),
+            'participation_rate',     (SELECT CASE WHEN v_total_students = 0 THEN 0 ELSE round((count(DISTINCT student_id)::numeric / v_total_students * 100), 1) END FROM public.progress),
+            'completion_rate',        (SELECT CASE WHEN count(*) = 0 THEN 0 ELSE round((count(*) FILTER (WHERE is_completed)::numeric / count(*) * 100), 1) END FROM public.progress),
+            'active_last_7d',         (SELECT count(DISTINCT student_id) FROM public.progress WHERE last_watched_at >= now() - interval '7 days'),
+            'inactive_students',      (SELECT count(*) FROM public.profiles p WHERE p.role='student' AND p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.progress pr WHERE pr.student_id=p.id)),
+            'distribution', jsonb_build_object(
+                'q1', (SELECT count(*) FROM public.progress WHERE percent_completed >= 0 AND percent_completed < 25),
+                'q2', (SELECT count(*) FROM public.progress WHERE percent_completed >= 25 AND percent_completed < 50),
+                'q3', (SELECT count(*) FROM public.progress WHERE percent_completed >= 50 AND percent_completed < 75),
+                'q4', (SELECT count(*) FROM public.progress WHERE percent_completed >= 75 AND percent_completed <= 100)
+            )
+        ),
+        'by_grade', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'grade_name', r.grade_name,
+                'students', r.students,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.sort_order)
+            FROM (
+                SELECT g.name AS grade_name, g.sort_order,
+                       count(DISTINCT p.id) AS students,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.grades g
+                LEFT JOIN public.profiles p
+                       ON p.grade_id = g.id AND p.deleted_at IS NULL AND p.role = 'student'
+                LEFT JOIN public.unit_purchases up
+                       ON up.student_id = p.id AND up.status = 'active'
+                WHERE g.deleted_at IS NULL
+                GROUP BY g.id, g.name, g.sort_order
+            ) r
+        ), '[]'::jsonb),
+        'top_units', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'unit_name', r.unit_name,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.revenue DESC)
+            FROM (
+                SELECT u.name AS unit_name,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up
+                JOIN public.units u ON u.id = up.unit_id
+                WHERE up.status = 'active'
+                GROUP BY u.id, u.name
+                ORDER BY revenue DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_purchases', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', r.student_name,
+                'grade_name', r.grade_name,
+                'unit_name', r.unit_name,
+                'total_price', r.total_price,
+                'purchased_at', r.purchased_at
+            ) ORDER BY r.purchased_at DESC)
+            FROM (
+                SELECT p.full_name AS student_name,
+                       g.name AS grade_name,
+                       u.name AS unit_name,
+                       up.total_price,
+                       up.purchased_at
+                FROM public.unit_purchases up
+                JOIN public.profiles p ON p.id = up.student_id
+                JOIN public.units u ON u.id = up.unit_id
+                LEFT JOIN public.grades g ON g.id = u.grade_id
+                WHERE up.status = 'active'
+                ORDER BY up.purchased_at DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_completions', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', r.student_name,
+                'lesson_title', r.lesson_title,
+                'unit_name', r.unit_name,
+                'completed_at', r.completed_at
+            ) ORDER BY r.completed_at DESC)
+            FROM (
+                SELECT p.full_name AS student_name,
+                       l.title AS lesson_title,
+                       u.name AS unit_name,
+                       pr.last_watched_at AS completed_at
+                FROM public.progress pr
+                JOIN public.profiles p ON p.id = pr.student_id
+                JOIN public.lessons l ON l.id = pr.lesson_id
+                JOIN public.units u ON u.id = l.unit_id
+                WHERE pr.is_completed = true
+                ORDER BY pr.last_watched_at DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'top_active', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_id', r.student_id,
+                'full_name', r.full_name,
+                'grade_name', r.grade_name,
+                'completed_lessons', r.completed_lessons,
+                'avg_percent', r.avg_percent,
+                'total_lessons', r.total_lessons
+            ) ORDER BY r.completed_lessons DESC, r.avg_percent DESC)
+            FROM (
+                SELECT pr.student_id,
+                       p.full_name,
+                       g.name AS grade_name,
+                       count(*) FILTER (WHERE pr.is_completed) AS completed_lessons,
+                       round(avg(pr.percent_completed), 1) AS avg_percent,
+                       count(*) AS total_lessons
+                FROM public.progress pr
+                JOIN public.profiles p ON p.id = pr.student_id
+                LEFT JOIN public.grades g ON g.id = p.grade_id
+                WHERE p.deleted_at IS NULL AND p.role='student'
+                GROUP BY pr.student_id, p.full_name, g.name
+                ORDER BY count(*) FILTER (WHERE pr.is_completed) DESC, avg(pr.percent_completed) DESC
+                LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'daily_completions', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'day', r.day,
+                'count', r.count
+            ) ORDER BY r.day ASC)
+            FROM (
+                SELECT (pr.last_watched_at::date)::text AS day,
+                       count(*) AS count
+                FROM public.progress pr
+                WHERE pr.is_completed = true
+                  AND pr.last_watched_at >= CURRENT_DATE - 6
+                GROUP BY pr.last_watched_at::date
+                ORDER BY day ASC
+            ) r
+        ), '[]'::jsonb)
+    ) INTO v_stats;
+
+    RETURN v_stats;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
+
+COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Fixed in 0063: restore 0058 revenue fields (staff_revenue_this_month/platform_fee_total) + engagement distribution + include assistant.';
