@@ -1,7 +1,7 @@
 import { getSupabaseClient } from './supabase';
 
 export type AnnouncementVariant = 'info' | 'warning' | 'success' | 'error';
-export type UserRole = 'student' | 'teacher' | 'mr_walid' | 'admin';
+export type UserRole = 'student' | 'teacher' | 'mr_walid' | 'admin' | 'assistant';
 
 export interface Announcement {
   id: string;
@@ -61,6 +61,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   teacher: 'مدرس',
   mr_walid: 'الأستاذ وليد',
   admin: 'مشرف',
+  assistant: 'مساعد',
 };
 
 export function getVariantLabel(variant: AnnouncementVariant): string {
@@ -125,7 +126,7 @@ export async function createAnnouncement(input: CreateAnnouncementInput): Promis
     p_link_url: input.link_url ?? null,
     p_link_label: input.link_label ?? null,
     p_variant: input.variant ?? 'info',
-    p_target_roles: input.target_roles ?? ['student', 'teacher', 'mr_walid', 'admin'],
+    p_target_roles: input.target_roles ?? ['student', 'teacher', 'mr_walid', 'admin', 'assistant'],
     p_hide_on_paths: input.hide_on_paths ?? [],
     p_starts_at: input.starts_at ?? new Date().toISOString(),
     p_ends_at: input.ends_at ?? null,

@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
 
+import { useAuth } from '../features/auth/AuthContext';
 import { Badge } from './Badge';
 
-const items: Array<{ to: string; label: string; badge?: string }> = [
+const allItems: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/dashboard', label: 'الرئيسية' },
   { to: '/walid/reports', label: 'التقارير' },
   { to: '/walid/students', label: 'الطلاب' },
@@ -14,7 +15,14 @@ const items: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/announcements', label: 'الإعلانات', badge: 'جديد' },
 ];
 
+const assistantItems: Array<{ to: string; label: string; badge?: string }> = [
+  { to: '/walid/curriculum', label: 'المنهج' },
+  { to: '/walid/exams', label: 'الإختبارات' },
+];
+
 export function StaffNav() {
+  const { role } = useAuth();
+  const items = role === 'assistant' ? assistantItems : allItems;
   return (
     <nav aria-label="التنقل الرئيسي" className="flex flex-col gap-1 p-3">
       {items.map((item) => (

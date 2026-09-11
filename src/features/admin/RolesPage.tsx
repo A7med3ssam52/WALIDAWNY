@@ -28,6 +28,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   teacher: 'مدرس',
   mr_walid: 'الأستاذ وليد',
   admin: 'مشرف',
+  assistant: 'مساعد',
 };
 
 const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
@@ -35,11 +36,18 @@ const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
   { value: 'teacher', label: 'مدرس' },
   { value: 'mr_walid', label: 'الأستاذ وليد' },
   { value: 'admin', label: 'مشرف' },
+  { value: 'assistant', label: 'مساعد' },
 ];
 
 function RoleBadge({ role }: { role: UserRole }) {
   const variant: BadgeVariant =
-    role === 'admin' ? 'success' : role === 'mr_walid' ? 'warning' : role === 'teacher' ? 'info' : 'neutral';
+    role === 'admin'
+      ? 'success'
+      : role === 'mr_walid'
+        ? 'warning'
+        : role === 'teacher' || role === 'assistant'
+          ? 'info'
+          : 'neutral';
   return (
     <Badge variant={variant} data-testid={`role-badge-${role}`}>
       {ROLE_LABELS[role]}
@@ -100,7 +108,7 @@ export function RolesPage() {
   return (
     <LayoutShell
       title="الأدوار والصلاحيات"
-      subtitle="إدارة أدوار المستخدمين (الأستاذ / المشرف / طالب)"
+      subtitle="إدارة أدوار المستخدمين (الأستاذ / المشرف / مساعد / طالب)"
       variant="sidebar"
       nav={<AdminNav />}
     >

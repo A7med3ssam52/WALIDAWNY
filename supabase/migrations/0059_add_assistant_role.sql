@@ -40,7 +40,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT COALESCE((SELECT role = 'assistant' FROM public.profiles WHERE id = auth.uid()), false);
+    SELECT COALESCE((SELECT role::text = 'assistant' FROM public.profiles WHERE id = auth.uid()), false);
 $$;
 
 COMMENT ON FUNCTION public.is_assistant() IS 'Check if authenticated user has the assistant role. Used in RLS policies.';

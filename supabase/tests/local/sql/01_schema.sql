@@ -37,10 +37,10 @@ SELECT tests.assert(
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
-            ARRAY['student','mr_walid','admin','teacher']::text[]
+            ARRAY['student','mr_walid','admin','teacher','assistant']::text[]
      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
      WHERE t.typname = 'user_role'),
-    'user_role members are student,mr_walid,admin,teacher');
+    'user_role members are student,mr_walid,admin,teacher,assistant (0059)');
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =

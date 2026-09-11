@@ -64,6 +64,7 @@ const roleHome: Record<UserRole, string> = {
   teacher: '/walid/dashboard',
   mr_walid: '/walid/students',
   admin: '/admin/dashboard',
+  assistant: '/walid/exams',
 };
 
 export function RoleGuard({ allow }: { allow: UserRole[] }) {

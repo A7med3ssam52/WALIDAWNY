@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'teacher' | 'mr_walid' | 'admin';
+export type UserRole = 'student' | 'teacher' | 'mr_walid' | 'admin' | 'assistant';
 
 export type AccountStatus = 'active' | 'disabled';
 

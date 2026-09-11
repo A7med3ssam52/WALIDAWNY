@@ -33,7 +33,7 @@ All schema lives in `supabase/migrations/*.sql` (ordered) + consolidated `supaba
 ## 3. Enums (BP §3.2)
 
 ```sql
-CREATE TYPE public.user_role         AS ENUM ('student','mr_walid','admin','teacher');
+CREATE TYPE public.user_role         AS ENUM ('student','mr_walid','admin','teacher','assistant'); -- 0059 adds assistant via ALTER TYPE ... ADD VALUE
 CREATE TYPE public.account_status    AS ENUM ('active','disabled');
 CREATE TYPE public.code_status       AS ENUM ('available','used','revoked');
 CREATE TYPE public.content_status    AS ENUM ('draft','published','hidden');
@@ -459,7 +459,7 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `block_sign_in_for_inactive_accounts()` | trigger on `auth.users` BEFORE UPDATE OF `last_sign_in_at` | SECURITY DEFINER. Raises `account_inactive_or_deleted` when `profiles.status <> 'active'` OR `deleted_at IS NOT NULL` (A34) |
 | `set_updated_at()` | trigger (BEFORE UPDATE on all tables with `updated_at`) | Sets `updated_at = now()` |
 | `get_current_role()` | RETURNS `user_role` | From `auth.uid()` |
-| `is_student()` / `is_mr_walid()` / `is_admin()` / `is_teacher()` | RETURNS boolean | STABLE SECURITY DEFINER; `is_student()` requires `status='active' AND deleted_at IS NULL` |
+| `is_student()` / `is_mr_walid()` / `is_admin()` / `is_teacher()` / `is_assistant()` | RETURNS boolean | STABLE SECURITY DEFINER; `is_student()` requires `status='active' AND deleted_at IS NULL`; `is_assistant()` added 0059, parity with teacher via 0060 |
 | `get_public_settings()` | RETURNS jsonb | SECURITY DEFINER, `SET search_path = public` (LOW-15); GRANT EXECUTE TO `anon`+`authenticated`; returns ONLY `whatsapp_number`, `whatsapp_default_message`, `platform_name` |
 | `list_active_grades()` | RETURNS SETOF grades | SECURITY DEFINER, pinned search_path; returns ONLY id/name/sort_order of active, non-deleted grades; granted to `anon` + `authenticated` (the ONLY anon surface for grade data) |
 
@@ -475,28 +475,28 @@ LEFT JOIN profiles p ON p.id = a.actor_id;
 | `mark_notification_read` | `(p_notification_id uuid)` | SECURITY DEFINER; own rows only |
 | `mark_all_notifications_read` | `()` | SECURITY DEFINER; own rows only |
 
-### 6.4 Staff (admin/mr_walid/teacher — client-callable, SECURITY DEFINER + audit unless noted)
+### 6.4 Staff (admin/mr_walid/teacher/assistant — client-callable, SECURITY DEFINER + audit unless noted; 0060 adds assistant parity)
 
 | Function | Signature | Notes |
 |---|---|---|
 | `set_user_role` | `(p_user_id uuid, p_role user_role)` | admin-only; THE ONLY path that mutates role; audit `user.role_change` |
 | `set_role_by_email` | `(p_email text, p_role user_role)` | admin-only (0023); audit |
-| `set_student_grade` | `(p_student_id uuid, p_grade_id uuid)` | staff (admin/mr_walid/teacher); audit |
+| `set_student_grade` | `(p_student_id uuid, p_grade_id uuid)` | staff (admin/mr_walid/teacher/assistant); audit |
 | `disable_student` / `enable_student` | `(p_student_id uuid)` | disable also revokes `auth.sessions` via service role where feasible (spike-verified Phase 1 — LOW-18); fallback = sign-in gate + RLS + EF checks **[BINDING B10]**; audit |
 | `soft_delete_student` / `restore_student` | `(p_student_id uuid)` | delete also revokes sessions (as above); restore sets `status='active'`, `deleted_at=NULL` (A10); audit |
-| `update_student_profile` | `(p_student_id uuid, p_full_name text, p_phone text, p_guardian_phone text, p_address text)` | **[BINDING B3 — new]** mr_walid/admin; SECURITY DEFINER; audited; strict 4-column whitelist (cannot touch role/grade/status/deleted_at/email) |
-| `list_trash` | `RETURNS SETOF profiles` | `deleted_at IS NOT NULL`; mr_walid/admin |
-| `set_unit_price` | `(p_unit_id uuid, p_base_price numeric)` | staff (admin/mr_walid/teacher) sets the BASE price only + audit (`unit_pricing.upsert`); platform fee is read from `app_settings`; upserts the per-unit pricing row |
+| `update_student_profile` | `(p_student_id uuid, p_full_name text, p_phone text, p_guardian_phone text, p_address text)` | **[BINDING B3 — new]** mr_walid/admin/teacher/assistant; SECURITY DEFINER; audited; strict 4-column whitelist (cannot touch role/grade/status/deleted_at/email) |
+| `list_trash` | `RETURNS SETOF profiles` | `deleted_at IS NOT NULL`; staff (admin/mr_walid/teacher/assistant) |
+| `set_unit_price` | `(p_unit_id uuid, p_base_price numeric)` | staff (admin only) sets the BASE price only + audit (`unit_pricing.upsert`); platform fee is read from `app_settings`; upserts the per-unit pricing row |
 | `set_platform_fee` | `(p_fee numeric)` | **owner (mr_walid) or admin** (0031/0033); sets ONE global fixed fee in `app_settings` and rewrites `platform_fee` on every `unit_pricing` row + audit |
 | `get_platform_fee` | `RETURNS numeric` | public read (anon + authenticated, 0031); landing page shows base + fee + total without auth |
-| `list_unit_pricing` | `RETURNS SETOF unit_pricing` | read-only, no audit; staff surface for per-unit prices |
+| `list_unit_pricing` | `RETURNS SETOF unit_pricing` | read-only, no audit; staff surface for per-unit prices (admin/mr_walid/teacher/assistant) |
 | `create_unit_codes_internal` | `(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes` | SECURITY DEFINER; called by Edge Function only — **no client grants** (EF entry point: `create_unit_codes_for_staff`; internal stays locked); validates count cap (≤500) + format (A22) |
-| `create_unit_codes_for_staff` | `(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes` | SECURITY DEFINER; staff-guarded EF entry point (`is_admin() OR is_mr_walid()` → `permission_denied`); delegates to `create_unit_codes_internal`; granted to `authenticated` |
-| `list_codes_by_unit` | `(p_unit_id uuid) RETURNS SETOF unit_codes` | read-only; staff (admin/mr_walid) |
+| `create_unit_codes_for_staff` | `(p_unit_pricing_id uuid, p_count int, p_note text) RETURNS SETOF unit_codes` | SECURITY DEFINER; staff-guarded EF entry point (`is_admin() OR is_mr_walid() OR is_teacher() OR is_assistant()` → `permission_denied`); delegates to `create_unit_codes_internal`; granted to `authenticated` |
+| `list_codes_by_unit` | `(p_unit_id uuid) RETURNS SETOF unit_codes` | read-only; staff (admin/mr_walid/teacher/assistant) |
 | `revoke_unit_code` | `(p_code_id uuid)` | available/used → `revoked`; audit; does not cancel the created purchase |
-| `list_all_unit_purchases` | `(p_student_id uuid) RETURNS SETOF unit_purchases` | read-only; staff view of a student's purchase history |
-| `unit_purchase_stats` | `RETURNS jsonb` | read-only, no audit; staff purchase aggregates |
-| `set_lesson_trial` | `(p_lesson_id uuid, p_is_trial boolean)` | staff (admin/mr_walid/teacher); atomically clears any prior trial in the unit then sets the target; audited (`unit.trial_set`); `lesson_not_found` if missing |
+| `list_all_unit_purchases` | `(p_student_id uuid) RETURNS SETOF unit_purchases` | read-only; staff view of a student's purchase history (admin/mr_walid/teacher/assistant) |
+| `unit_purchase_stats` | `RETURNS jsonb` | read-only, no audit; staff purchase aggregates (admin/mr_walid/teacher/assistant) |
+| `set_lesson_trial` | `(p_lesson_id uuid, p_is_trial boolean)` | staff (admin/mr_walid/teacher/assistant); atomically clears any prior trial in the unit then sets the target; audited (`unit.trial_set`); `lesson_not_found` if missing |
 | `create_unit` / `update_unit` / `delete_unit` (soft) / `restore_unit` | `(...)` | SECURITY DEFINER + audit |
 | `create_lesson` / `update_lesson` / `publish_lesson` / `hide_lesson` / `soft_delete_lesson` / `restore_lesson` | `(...)` | SECURITY DEFINER + audit; publish sets `published_at` + `notify_new_content` (LOW-17) |
 | `create_grade` / `update_grade` / `delete_grade` (soft) / `restore_grade` | `(p_grade_id uuid)` | SECURITY DEFINER + audit; set/clear `grades.deleted_at`; units/lessons remain intact, unreachable to students (deactivated or soft-deleted grades block access — [BINDING B8]) |
@@ -523,7 +523,7 @@ Phase 6/7 add: `grade_exam_attempt` (staff, essay grading → `final_score` + `e
 | `set_video_status` | `(video_id uuid, new_status video_status, ...)` | internal, **no client grants** (MED-6); validates legal transitions, audits, performs `is_primary` promotion/demotion (MED-10); there is no separate public variant |
 | `audit_log` | `(action text, entity_type text, entity_id uuid, metadata jsonb)` | internal, **no client grants**; called by RPCs/triggers |
 | `notify_new_content` | `(p_lesson_id uuid)` | SECURITY DEFINER; deduped; targets **active purchasers of the lesson's grade only**; bulk fan-out acceptable at current scale (LOW-19) |
-| `can_access_lesson` | `(p_lesson_id uuid) RETURNS boolean` | SECURITY DEFINER STABLE (see SECURITY.md §4): staff see any live lesson; students need published lesson+unit in own **active** grade + active profile + (trial lesson OR active `unit_purchases`) + **[BINDING B8]** `AND g.is_active` |
+| `can_access_lesson` | `(p_lesson_id uuid) RETURNS boolean` | SECURITY DEFINER STABLE (see SECURITY.md §4): staff (admin/mr_walid/teacher/assistant) see any live lesson; students need published lesson+unit in own **active** grade + active profile + (trial lesson OR active `unit_purchases`) + **[BINDING B8]** `AND g.is_active` |
 
 ---
 
@@ -549,7 +549,7 @@ Phase 6/7 add: `grade_exam_attempt` (staff, essay grading → `final_score` + `e
 |---|---|---|
 | `pdfs` | **private** | No public SELECT. Uploads: mr_walid/admin only via Edge Function-signed upload URL. Reads: signed URL from `get-pdf-signed-url` after `can_access_lesson` |
 | `audit-exports` | **private** | Admin-only; CSV exports written by Edge Function, returned via short-lived signed URL |
-| `boards` | **private** | No public SELECT. Uploads: staff (mr_walid/admin/teacher) via `upload-board` EF signed upload URL (image/jpeg|png|webp, ≤10 MiB). Reads: student via `get-board-signed-urls` after `can_access_lesson`; staff preview bypasses gate. Path convention: `{lesson_id}/{uuid}.{ext}`. Row-backed INSERT policy mirrors PDF pattern. |
+| `boards` | **private** | No public SELECT. Uploads: staff (mr_walid/admin/teacher/assistant) via `upload-board` EF signed upload URL (image/jpeg|png|webp, ≤10 MiB). Reads: student via `get-board-signed-urls` after `can_access_lesson`; staff preview bypasses gate. Path convention: `{lesson_id}/{uuid}.{ext}`. Row-backed INSERT policy mirrors PDF pattern. |
 
 Storage RLS: no anonymous policies; all object access goes through signed URLs issued by Edge Functions (SECURITY.md §9).
 

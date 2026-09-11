@@ -8,6 +8,7 @@ import { DirectionalArrow } from '../../components/DirectionalArrow';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
 import { Input } from '../../components/Input';
+import { useAuth } from '../auth/AuthContext';
 import { LayoutShell } from '../../components/LayoutShell';
 import { Modal } from '../../components/Modal';
 import { RoleNav } from '../../components/RoleNav';
@@ -35,6 +36,8 @@ type PendingUnitDelete = { unit: Unit } | null;
 export function CurriculumUnitsPage() {
   const { gradeId } = useParams<{ gradeId: string }>();
   const { showToast } = useToast();
+  const { role } = useAuth();
+  const isAssistant = role === 'assistant';
 
   const [grade, setGrade] = useState<Grade | null | undefined>(undefined);
   const [gradeError, setGradeError] = useState(false);
@@ -273,9 +276,11 @@ export function CurriculumUnitsPage() {
           title="وحدات الصف"
           subtitle={`${grade.name} — اختر وحدة للانتقال إلى دروسها`}
           actions={
-            <Button icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={openCreate} className="w-full sm:w-auto">
-              <span className="hidden sm:inline">إضافة وحدة</span>
-            </Button>
+            isAssistant ? undefined : (
+              <Button icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={openCreate} className="w-full sm:w-auto">
+                <span className="hidden sm:inline">إضافة وحدة</span>
+              </Button>
+            )
           }
         >
           {unitsError ? (
@@ -317,44 +322,45 @@ export function CurriculumUnitsPage() {
                       <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
                       فتح الدروس
                     </Link>
-                    <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
-                      {unit.status === 'published' ? (
+                    {!isAssistant ? (
+                      <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
+                        {unit.status === 'published' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
+                            onClick={() => void handleToggleUnitStatus(unit)}
+                            disabled={togglingUnitId === unit.id}
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          >
+                            {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void handleToggleUnitStatus(unit)}
+                            disabled={togglingUnitId === unit.id}
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          >
+                            {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
-                          icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
-                          onClick={() => void handleToggleUnitStatus(unit)}
-                          disabled={togglingUnitId === unit.id}
-                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
+                          onClick={() => openEditUnit(unit)}
+                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
                         >
-                          {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
+                          تعديل
                         </Button>
-                      ) : (
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => void handleToggleUnitStatus(unit)}
-                          disabled={togglingUnitId === unit.id}
-                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                        >
-                          {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
-                        onClick={() => openEditUnit(unit)}
-                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                      >
-                        تعديل
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Gift aria-hidden="true" className="h-3.5 w-3.5" />}
-                        onClick={() => void handleToggleFree(unit)}
-                        disabled={freeTogglingId === unit.id}
+                          icon={<Gift aria-hidden="true" className="h-3.5 w-3.5" />}
+                          onClick={() => void handleToggleFree(unit)}
+                          disabled={freeTogglingId === unit.id}
                         aria-label={
                           freeTogglingId === unit.id
                             ? 'جاري'
@@ -399,50 +405,53 @@ export function CurriculumUnitsPage() {
                       >
                         حذف
                       </Button>
-                    </div>
+                      </div>
+                      ) : null}
                   </div>
                 </li>
               ))}
             </ul>
           )}
 
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setShowDeletedUnits((prev) => !prev)}
-              className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1"
-            >
-              {showDeletedUnits ? 'إخفاء المحذوفة' : `عرض المحذوفة (${deletedUnits?.length ?? 0})`}
-            </button>
-            {showDeletedUnits ? (
-              deletedUnits === null ? (
-                <ListSkeleton rows={1} />
-              ) : deletedUnits.length === 0 ? (
-                <p className="mt-2 text-sm text-foreground-subtle">لا توجد وحدات محذوفة.</p>
-              ) : (
-                <ul className="mt-2 flex flex-col gap-2">
-                  {deletedUnits.map((unit) => (
-                    <li
-                      key={unit.id}
-                      data-testid={`deleted-unit-row-${unit.id}`}
-                      className="glass-soft flex items-center justify-between gap-3 rounded-xl border border-white/8 p-3"
-                    >
-                      <span className="truncate text-sm text-foreground-muted">{unit.name}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void handleRestoreUnit(unit)}
-                        disabled={restoringUnitId === unit.id}
-                        className="shrink-0 text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
+          {!isAssistant ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShowDeletedUnits((prev) => !prev)}
+                className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1"
+              >
+                {showDeletedUnits ? 'إخفاء المحذوفة' : `عرض المحذوفة (${deletedUnits?.length ?? 0})`}
+              </button>
+              {showDeletedUnits ? (
+                deletedUnits === null ? (
+                  <ListSkeleton rows={1} />
+                ) : deletedUnits.length === 0 ? (
+                  <p className="mt-2 text-sm text-foreground-subtle">لا توجد وحدات محذوفة.</p>
+                ) : (
+                  <ul className="mt-2 flex flex-col gap-2">
+                    {deletedUnits.map((unit) => (
+                      <li
+                        key={unit.id}
+                        data-testid={`deleted-unit-row-${unit.id}`}
+                        className="glass-soft flex items-center justify-between gap-3 rounded-xl border border-white/8 p-3"
                       >
-                        {restoringUnitId === unit.id ? 'جاري الاستعادة...' : 'استعادة'}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : null}
-          </div>
+                        <span className="truncate text-sm text-foreground-muted">{unit.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void handleRestoreUnit(unit)}
+                          disabled={restoringUnitId === unit.id}
+                          className="shrink-0 text-primary-strong hover:bg-primary-soft hover:text-primary-strong"
+                        >
+                          {restoringUnitId === unit.id ? 'جاري الاستعادة...' : 'استعادة'}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : null}
+            </div>
+          ) : null}
         </Card>
       )}
 

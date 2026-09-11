@@ -129,6 +129,7 @@ export function AppRoutes() {
             </Route>
           </Route>
           <Route path="/preview/cards" element={<CardsPreviewPage />} />
+          {/* Staff full access: mr_walid / admin / teacher */}
           <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
             <Route index element={<Navigate to="/walid/dashboard" replace />} />
             <Route path="dashboard" element={<WalidDashboardPage />} />
@@ -147,6 +148,15 @@ export function AppRoutes() {
             <Route path="announcements" element={<WalidAnnouncementsListPage />} />
             <Route path="announcements/new" element={<WalidAnnouncementFormPage />} />
             <Route path="announcements/:id/edit" element={<WalidAnnouncementFormPage />} />
+          </Route>
+          {/* Assistant limited: curriculum (read-only) + exams only */}
+          <Route path="/walid" element={<RoleGuard allow={['assistant']} />}>
+            <Route index element={<Navigate to="/walid/exams" replace />} />
+            <Route path="curriculum" element={<CurriculumPage />} />
+            <Route path="curriculum/:gradeId" element={<CurriculumUnitsPage />} />
+            <Route path="curriculum/:gradeId/:unitId" element={<CurriculumLessonsPage />} />
+            <Route path="exams" element={<ExamsPage />} />
+            <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
           </Route>
           <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />

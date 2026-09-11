@@ -1,7 +1,7 @@
 -- =====================================================================
 -- supabase-full-schema.sql - consolidated Phase 1 schema
 -- ---------------------------------------------------------------------
--- Single-file snapshot of supabase/migrations/0001..0057, concatenated
+-- Single-file snapshot of supabase/migrations/0001..0062, concatenated
 -- in filename order. Apply ONCE to a fresh project; incremental changes
 -- always go into new numbered migration files (never edit this file).
 -- Statements from legacy migrations 0001-0026 that reference the removed
@@ -11254,521 +11254,10 @@ GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
 
 COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Extended in 0057: engagement now includes participation_rate, completion_rate, active_last_7d, inactive_students, distribution; plus recent_completions, top_active, daily_completions.';
 
--- 0056_presence_daily appended via migration push
 -- =====================================================================
--- 0056_presence_daily
--- Daily/period presence reporting â€” students active during a day/period
--- Fixes get_most_active_students to use overlapping interval (not just
--- started_at) and adds daily RPCs for admin ط³ط¬ظ„ ط§ظ„ط­ط¶ظˆط± ط§ظ„ظٹظˆظ…ظٹ.
--- RPCs:
---   get_daily_active_students(p_date, p_limit, p_offset)
---   get_presence_daily_counts(p_from, p_to)
--- Reference: presence daily history â€” ط§ظ„ظٹظˆظ… + ط§ظ„ط£ظٹط§ظ… ط§ظ„ط³ط§ط¨ظ‚ط©
+-- >>> included from migrations\0058_fix_dashboard_stats.sql
 -- =====================================================================
 
--- ---------------------------------------------------------------------
--- Fix get_most_active_students â€” use overlapping interval
--- Previously filtered only by s.started_at BETWEEN p_from AND p_to,
--- which missed sessions that started before p_from but were still active
--- during the period.
--- Now counts any session that OVERLAPS [p_from, p_to].
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_most_active_students(
-    p_from timestamptz DEFAULT NULL,
-    p_to timestamptz DEFAULT NULL,
-    p_limit integer DEFAULT 20
-)
-RETURNS TABLE (
-    student_id uuid,
-    full_name text,
-    phone text,
-    grade_name text,
-    total_sessions bigint,
-    total_seconds bigint,
-    total_hours numeric,
-    last_seen_at timestamptz
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    IF NOT public.is_admin() THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    RETURN QUERY
-    SELECT p.id AS student_id,
-           p.full_name,
-           p.phone,
-           g.name AS grade_name,
-           COUNT(s.id)::bigint AS total_sessions,
-           COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_seen_at) - s.started_at))::bigint), 0)::bigint AS total_seconds,
-           COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_seen_at) - s.started_at)))/3600, 2), 0) AS total_hours,
-           MAX(s.last_seen_at) AS last_seen_at
-    FROM public.profiles p
-    LEFT JOIN public.student_sessions s
-           ON s.student_id = p.id
-          AND (p_from IS NULL OR COALESCE(s.ended_at, s.last_seen_at) >= p_from)
-          AND (p_to IS NULL OR s.started_at <= p_to)
-    LEFT JOIN public.grades g ON g.id = p.grade_id
-    WHERE p.role = 'student' AND p.deleted_at IS NULL
-    GROUP BY p.id, p.full_name, p.phone, g.name
-    HAVING COUNT(s.id) > 0
-    ORDER BY total_seconds DESC, total_sessions DESC
-    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 20), 100));
-END $$;
-
-COMMENT ON FUNCTION public.get_most_active_students(timestamptz, timestamptz, integer) IS 'Admin-only: ranking by total online time in period (overlapping sessions). Fixed in 0056 from started_at-only filter.';
-
-REVOKE EXECUTE ON FUNCTION public.get_most_active_students(timestamptz, timestamptz, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_most_active_students(timestamptz, timestamptz, integer) TO authenticated;
-
--- ---------------------------------------------------------------------
--- Function: get_daily_active_students â€” students active on a single date
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_daily_active_students(
-    p_date date,
-    p_limit integer DEFAULT 50,
-    p_offset integer DEFAULT 0
-)
-RETURNS TABLE (
-    student_id uuid,
-    full_name text,
-    phone text,
-    grade_name text,
-    total_sessions bigint,
-    total_seconds bigint,
-    total_hours numeric,
-    first_seen_at timestamptz,
-    last_seen_at timestamptz
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_from timestamptz := p_date::timestamptz;
-    v_to   timestamptz := (p_date + 1)::timestamptz;
-BEGIN
-    IF NOT public.is_admin() THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    IF p_date IS NULL THEN
-        RAISE EXCEPTION 'invalid_date';
-    END IF;
-
-    RETURN QUERY
-    SELECT p.id AS student_id,
-           p.full_name,
-           p.phone,
-           g.name AS grade_name,
-           COUNT(s.id)::bigint AS total_sessions,
-           COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_seen_at) - s.started_at))::bigint), 0)::bigint AS total_seconds,
-           COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_seen_at) - s.started_at)))/3600, 2), 0) AS total_hours,
-           MIN(s.started_at) AS first_seen_at,
-           MAX(s.last_seen_at) AS last_seen_at
-    FROM public.profiles p
-    JOIN public.student_sessions s
-          ON s.student_id = p.id
-         AND s.started_at < v_to
-         AND COALESCE(s.ended_at, s.last_seen_at) >= v_from
-    LEFT JOIN public.grades g ON g.id = p.grade_id
-    WHERE p.role = 'student' AND p.deleted_at IS NULL
-    GROUP BY p.id, p.full_name, p.phone, g.name
-    HAVING COUNT(s.id) > 0
-    ORDER BY total_seconds DESC, last_seen_at DESC
-    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 50), 100))
-    OFFSET GREATEST(0, COALESCE(p_offset, 0));
-END $$;
-
-COMMENT ON FUNCTION public.get_daily_active_students(date, integer, integer) IS 'Admin-only: students active on a given calendar date (overlapping sessions).';
-
-REVOKE EXECUTE ON FUNCTION public.get_daily_active_students(date, integer, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_daily_active_students(date, integer, integer) TO authenticated;
-
--- ---------------------------------------------------------------------
--- Function: get_presence_daily_counts â€” per-day aggregates for chart
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_presence_daily_counts(
-    p_from date DEFAULT CURRENT_DATE - 6,
-    p_to   date DEFAULT CURRENT_DATE
-)
-RETURNS TABLE (
-    day date,
-    active_students bigint,
-    total_sessions bigint,
-    total_seconds bigint
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-    IF NOT public.is_admin() THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    IF p_from IS NULL OR p_to IS NULL OR p_from > p_to THEN
-        RAISE EXCEPTION 'invalid_range';
-    END IF;
-
-    RETURN QUERY
-    WITH days AS (
-        SELECT generate_series(p_from, p_to, '1 day'::interval)::date AS d
-    ),
-    per_day AS (
-        SELECT (s.started_at::date) AS d,
-               s.student_id,
-               COUNT(*) AS sessions,
-               SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, s.last_seen_at) - s.started_at))::bigint) AS secs
-        FROM public.student_sessions s
-        WHERE s.started_at::date BETWEEN p_from AND p_to
-        GROUP BY (s.started_at::date), s.student_id
-    )
-    SELECT days.d AS day,
-           COUNT(DISTINCT per_day.student_id)::bigint AS active_students,
-           COALESCE(SUM(per_day.sessions), 0)::bigint AS total_sessions,
-           COALESCE(SUM(per_day.secs), 0)::bigint AS total_seconds
-    FROM days
-    LEFT JOIN per_day ON per_day.d = days.d
-    GROUP BY days.d
-    ORDER BY days.d ASC;
-END $$;
-
-COMMENT ON FUNCTION public.get_presence_daily_counts(date, date) IS 'Admin-only: per-day active students / sessions / seconds for chart (last N days).';
-
-REVOKE EXECUTE ON FUNCTION public.get_presence_daily_counts(date, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_presence_daily_counts(date, date) TO authenticated;
-
--- ---------------------------------------------------------------------
--- Index helper for daily queries â€” rely on existing idx on started_at
--- (functional ::date index not IMMUTABLE for timestamptz, skipped)
--- ---------------------------------------------------------------------
--- no additional index needed (idx_student_sessions_student_time covers it)
-
--- 0057_engagement appended
--- =====================================================================
--- 0057_engagement_and_manual_completion
--- Phase: Engagement enhancement + Manual lesson completion (toggle)
--- - Extends get_dashboard_stats engagement with richer metrics
--- - Adds RPC toggle_lesson_completed for student manual completion
--- Reference: plan 2026-09 - ظ…ط´ط§ط±ظƒط© ط§ظ„ط·ظ„ط§ط¨ ظ…طھط·ظˆط±ط© + ط§ظ„ط·ط§ظ„ط¨ ظٹط¹ظ„ظ… ط§ظ„ط¯ط±ط³ ظ…ظƒطھظ…ظ„
--- =====================================================================
-
--- ---------------------------------------------------------------------
--- 1) Reversible manual completion RPC
--- Students can mark a lesson as completed/incomplete manually.
--- Unlike upsert_progress (monotonic GREATEST, irreversible is_completed),
--- this RPC allows toggling is_completed for manual control (user request:
--- "ظ‚ط§ط¨ظ„ ظ„ظ„ط¥ظ„ط؛ط§ط،"). Guard: is_student() + can_access_lesson().
--- When marking complete -> percent=100, is_completed=true, position kept
--- (or 0 if no progress yet). When unmarking -> is_completed=false,
--- percent stays as-is (or reset to 0 if was 100-only manual). New row
--- is created if none exists (for PDF-only lessons).
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.toggle_lesson_completed(
-    p_lesson_id uuid,
-    p_completed boolean
-)
-RETURNS public.progress
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_student uuid := auth.uid();
-    v_video uuid;
-    v_existing public.progress%ROWTYPE;
-    v_result public.progress%ROWTYPE;
-    v_pos int := 0;
-    v_pct numeric(5,2) := 0;
-BEGIN
-    IF NOT public.is_student() OR NOT public.can_access_lesson(p_lesson_id) THEN
-        RAISE EXCEPTION 'access_denied';
-    END IF;
-
-    -- Resolve current primary video (same as upsert_progress)
-    SELECT id INTO v_video
-    FROM public.lesson_videos
-    WHERE lesson_id = p_lesson_id
-      AND is_primary AND deleted_at IS NULL AND status = 'ready'
-    ORDER BY sort_order, id
-    LIMIT 1;
-
-    -- Stale-video guard (same as upsert_progress) when a primary exists
-    IF v_video IS NOT NULL THEN
-        IF EXISTS (
-            SELECT 1 FROM public.progress
-            WHERE student_id = v_student
-              AND lesson_id = p_lesson_id
-              AND video_id IS NOT NULL
-              AND video_id <> v_video
-        ) THEN
-            RAISE EXCEPTION 'progress_stale_video';
-        END IF;
-    END IF;
-
-    SELECT * INTO v_existing
-    FROM public.progress
-    WHERE student_id = v_student AND lesson_id = p_lesson_id;
-
-    IF p_completed THEN
-        v_pct := 100;
-        v_pos := COALESCE(v_existing.position_seconds, 0);
-        -- If progress was 0 and we have video duration, keep 0 (position not important for completion)
-
-        INSERT INTO public.progress AS p (
-            student_id, lesson_id, video_id, position_seconds,
-            percent_completed, is_completed, last_watched_at
-        )
-        VALUES (
-            v_student, p_lesson_id, COALESCE(v_video, v_existing.video_id), v_pos, v_pct,
-            true, now()
-        )
-        ON CONFLICT (student_id, lesson_id) DO UPDATE
-        SET percent_completed = 100,
-            is_completed = true,
-            position_seconds = EXCLUDED.position_seconds,
-            video_id = COALESCE(EXCLUDED.video_id, p.video_id, v_video),
-            last_watched_at = now()
-        RETURNING * INTO v_result;
-
-        PERFORM public.audit_log('progress.manual_complete', 'progress', v_result.id,
-            jsonb_build_object('lesson_id', p_lesson_id, 'completed', true));
-    ELSE
-        -- Unmark: set is_completed=false, keep percent (but if percent was 100 from manual, reduce to 90? No, keep 100 but not completed)
-        -- Decision: when unmarking, set percent to GREATEST(existing percent, 0) but is_completed=false
-        -- Keep position. If no existing row, nothing to unmark -> create not-completed row
-        IF v_existing.id IS NULL THEN
-            -- No progress yet, create a 0% not-completed row
-            INSERT INTO public.progress (
-                student_id, lesson_id, video_id, position_seconds,
-                percent_completed, is_completed, last_watched_at
-            )
-            VALUES (
-                v_student, p_lesson_id, v_video, 0, 0, false, now()
-            )
-            RETURNING * INTO v_result;
-        ELSE
-            UPDATE public.progress
-            SET is_completed = false,
-                -- Keep percent as-is (don't reset), but ensure not 100% completed illusion
-                -- If percent was 100 due to manual, keep 100 but not completed (user can re-toggle)
-                last_watched_at = now()
-            WHERE student_id = v_student AND lesson_id = p_lesson_id
-            RETURNING * INTO v_result;
-        END IF;
-
-        PERFORM public.audit_log('progress.manual_uncomplete', 'progress', v_result.id,
-            jsonb_build_object('lesson_id', p_lesson_id, 'completed', false));
-    END IF;
-
-    RETURN v_result;
-END $$;
-
-COMMENT ON FUNCTION public.toggle_lesson_completed(uuid, boolean) IS 'Student manual lesson completion toggle (reversible). Guard: is_student + can_access_lesson + stale-video check.';
-
-REVOKE EXECUTE ON FUNCTION public.toggle_lesson_completed(uuid, boolean) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.toggle_lesson_completed(uuid, boolean) TO authenticated;
-
--- ---------------------------------------------------------------------
--- 2) Extended get_dashboard_stats
--- Keeps all existing keys, adds richer engagement + new top-level arrays.
--- CREATE OR REPLACE keeps grants (REVOKE/GRANT re-asserted).
--- New structure:
---   engagement: {
---     students_with_progress, completed_lessons, avg_percent (existing)
---     participation_rate (0-100), completion_rate (0-100),
---     active_last_7d, distribution {q1,q2,q3,q4 counts},
---     inactive_students (count of students with zero progress)
---   }
---   recent_completions: [{student_name, lesson_title, unit_name, completed_at}]
---   top_active: [{student_id, full_name, grade_name, completed_lessons, avg_percent, total_lessons}]
---   daily_completions: [{day: date string YYYY-MM-DD, count}]
--- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_stats jsonb;
-    v_total_students int;
-BEGIN
-    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher()) THEN
-        RAISE EXCEPTION 'permission_denied';
-    END IF;
-
-    SELECT count(*) INTO v_total_students FROM public.profiles WHERE deleted_at IS NULL AND role = 'student';
-
-    SELECT jsonb_build_object(
-        'students', jsonb_build_object(
-            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
-            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
-            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student'),
-            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL AND role = 'student'),
-            'new_this_month', (SELECT count(*) FROM public.profiles
-                               WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
-        ),
-        'purchases', jsonb_build_object(
-            'total',                    (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
-            'staff_revenue_this_month', (SELECT COALESCE(sum(base_price), 0) FROM public.unit_purchases
-                                         WHERE status = 'active' AND purchased_at >= date_trunc('month', now())),
-            'platform_fee_total',       (SELECT COALESCE(sum(platform_fee), 0) FROM public.unit_purchases
-                                         WHERE status = 'active')
-        ),
-        'content', jsonb_build_object(
-            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
-            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
-            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
-            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
-            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
-            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
-            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
-            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
-        ),
-        'engagement', jsonb_build_object(
-            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
-            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
-            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress),
-            'participation_rate',     (SELECT CASE WHEN v_total_students = 0 THEN 0 ELSE round((count(DISTINCT student_id)::numeric / v_total_students * 100), 1) END FROM public.progress),
-            'completion_rate',        (SELECT CASE WHEN count(*) = 0 THEN 0 ELSE round((count(*) FILTER (WHERE is_completed)::numeric / count(*) * 100), 1) END FROM public.progress),
-            'active_last_7d',         (SELECT count(DISTINCT student_id) FROM public.progress WHERE last_watched_at >= now() - interval '7 days'),
-            'inactive_students',      (SELECT count(*) FROM public.profiles p WHERE p.role='student' AND p.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.progress pr WHERE pr.student_id=p.id)),
-            'distribution', jsonb_build_object(
-                'q1', (SELECT count(*) FROM public.progress WHERE percent_completed >= 0 AND percent_completed < 25),
-                'q2', (SELECT count(*) FROM public.progress WHERE percent_completed >= 25 AND percent_completed < 50),
-                'q3', (SELECT count(*) FROM public.progress WHERE percent_completed >= 50 AND percent_completed < 75),
-                'q4', (SELECT count(*) FROM public.progress WHERE percent_completed >= 75 AND percent_completed <= 100)
-            )
-        ),
-        'by_grade', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'grade_name', r.grade_name,
-                'students', r.students,
-                'purchases', r.purchases,
-                'revenue', r.revenue
-            ) ORDER BY r.sort_order)
-            FROM (
-                SELECT g.name AS grade_name, g.sort_order,
-                       count(DISTINCT p.id) AS students,
-                       count(DISTINCT up.id) AS purchases,
-                       COALESCE(sum(up.total_price), 0) AS revenue
-                FROM public.grades g
-                LEFT JOIN public.profiles p
-                       ON p.grade_id = g.id AND p.deleted_at IS NULL AND p.role = 'student'
-                LEFT JOIN public.unit_purchases up
-                       ON up.student_id = p.id AND up.status = 'active'
-                WHERE g.deleted_at IS NULL
-                GROUP BY g.id, g.name, g.sort_order
-            ) r
-        ), '[]'::jsonb),
-        'top_units', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'unit_name', r.unit_name,
-                'purchases', r.purchases,
-                'revenue', r.revenue
-            ) ORDER BY r.revenue DESC)
-            FROM (
-                SELECT u.name AS unit_name,
-                       count(DISTINCT up.id) AS purchases,
-                       COALESCE(sum(up.total_price), 0) AS revenue
-                FROM public.unit_purchases up
-                JOIN public.units u ON u.id = up.unit_id
-                WHERE up.status = 'active'
-                GROUP BY u.id, u.name
-                ORDER BY revenue DESC
-                LIMIT 5
-            ) r
-        ), '[]'::jsonb),
-        'recent_purchases', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'grade_name', g.name,
-                'unit_name', u.name,
-                'total_price', up.total_price,
-                'purchased_at', up.purchased_at
-            ) ORDER BY up.purchased_at DESC)
-            FROM public.unit_purchases up
-            JOIN public.profiles p ON p.id = up.student_id
-            JOIN public.units u ON u.id = up.unit_id
-            JOIN public.grades g ON g.id = u.grade_id
-            WHERE up.status = 'active'
-            LIMIT 5
-        ), '[]'::jsonb),
-        'recent_completions', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_name', p.full_name,
-                'lesson_title', l.title,
-                'unit_name', u.name,
-                'completed_at', pr.last_watched_at
-            ) ORDER BY pr.last_watched_at DESC)
-            FROM public.progress pr
-            JOIN public.profiles p ON p.id = pr.student_id
-            JOIN public.lessons l ON l.id = pr.lesson_id
-            JOIN public.units u ON u.id = l.unit_id
-            WHERE pr.is_completed = true
-            ORDER BY pr.last_watched_at DESC
-            LIMIT 5
-        ), '[]'::jsonb),
-        'top_active', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'student_id', r.student_id,
-                'full_name', r.full_name,
-                'grade_name', r.grade_name,
-                'completed_lessons', r.completed_lessons,
-                'avg_percent', r.avg_percent,
-                'total_lessons', r.total_lessons
-            ) ORDER BY r.completed_lessons DESC, r.avg_percent DESC)
-            FROM (
-                SELECT pr.student_id,
-                       p.full_name,
-                       g.name AS grade_name,
-                       count(*) FILTER (WHERE pr.is_completed) AS completed_lessons,
-                       round(avg(pr.percent_completed), 1) AS avg_percent,
-                       count(*) AS total_lessons
-                FROM public.progress pr
-                JOIN public.profiles p ON p.id = pr.student_id
-                LEFT JOIN public.grades g ON g.id = p.grade_id
-                WHERE p.deleted_at IS NULL AND p.role='student'
-                GROUP BY pr.student_id, p.full_name, g.name
-                ORDER BY count(*) FILTER (WHERE pr.is_completed) DESC, avg(pr.percent_completed) DESC
-                LIMIT 5
-            ) r
-        ), '[]'::jsonb),
-        'daily_completions', COALESCE((
-            SELECT jsonb_agg(jsonb_build_object(
-                'day', r.day,
-                'count', r.count
-            ) ORDER BY r.day ASC)
-            FROM (
-                SELECT (pr.last_watched_at::date)::text AS day,
-                       count(*) AS count
-                FROM public.progress pr
-                WHERE pr.is_completed = true
-                  AND pr.last_watched_at >= CURRENT_DATE - 6
-                GROUP BY pr.last_watched_at::date
-                ORDER BY day ASC
-            ) r
-        ), '[]'::jsonb)
-    ) INTO v_stats;
-
-    -- Ensure daily_completions always has 7 entries (fill missing days with 0)
-    -- Do it in plpgsql for simplicity if needed, but COALESCE above is enough for now
-    -- Frontend will fill gaps.
-
-    RETURN v_stats;
-END $$;
-
-REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
-
-COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Extended in 0057: engagement now includes participation_rate, completion_rate, active_last_7d, inactive_students, distribution; plus recent_completions, top_active, daily_completions.';
-
--- 0058_fix_dashboard_stats appended
 -- =====================================================================
 -- 0058_fix_dashboard_stats
 -- Fix 0057 bug: recent_purchases / recent_completions used
@@ -11966,3 +11455,1076 @@ REVOKE EXECUTE ON FUNCTION public.get_dashboard_stats() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_dashboard_stats() TO authenticated;
 
 COMMENT ON FUNCTION public.get_dashboard_stats() IS 'Fixed in 0058: recent_purchases/recent_completions now use subquery to avoid GROUP BY error.';
+
+-- =====================================================================
+-- >>> included from migrations\0059_add_assistant_role.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0059_add_assistant_role
+-- Adds the 'assistant' role for exam/test creation capabilities.
+-- This role can create exams and tests but has limited administrative
+-- privileges compared to 'teacher' and 'admin'.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Add 'assistant' to public.user_role (idempotent)
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_enum
+        WHERE enumtypid = 'public.user_role'::regtype
+          AND enumlabel = 'assistant'
+    ) THEN
+        ALTER TYPE public.user_role ADD VALUE 'assistant';
+    END IF;
+END$$;
+
+-- ---------------------------------------------------------------------
+-- set_role_by_email(p_email, p_role) extension
+-- Allows admin to assign the assistant role by email (same pattern as teacher)
+-- ---------------------------------------------------------------------
+-- Note: set_role_by_email function already exists and handles any valid
+-- user_role enum value, so no new function is needed.
+-- The admin can run: SELECT public.set_role_by_email('email', 'assistant');
+
+-- ---------------------------------------------------------------------
+-- is_assistant() helper function
+-- Returns true if the authenticated user has the assistant role.
+-- Used in RLS policies to grant assistant-level access.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.is_assistant()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE((SELECT role::text = 'assistant' FROM public.profiles WHERE id = auth.uid()), false);
+$$;
+
+COMMENT ON FUNCTION public.is_assistant() IS 'Check if authenticated user has the assistant role. Used in RLS policies.';
+
+-- ---------------------------------------------------------------------
+-- Grant execute to authenticated users (for RLS policy usage)
+-- ---------------------------------------------------------------------
+GRANT EXECUTE ON FUNCTION public.is_assistant() TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- Update RLS policies to include assistant role where appropriate.
+-- These policies grant assistants the ability to create and manage
+-- exams and tests, similar to teachers but with restricted access.
+-- ---------------------------------------------------------------------
+-- Example policy update for exams table:
+-- ALTER TABLE public.exams ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY "assistants_can_create_exams" ON public.exams
+--     FOR INSERT TO authenticated
+--     WITH CHECK (public.is_assistant() OR public.is_teacher() OR public.is_admin());
+--
+-- CREATE POLICY "assistants_can_view_own_exams" ON public.exams
+--     FOR SELECT TO authenticated
+--     USING (public.is_assistant() OR public.is_teacher() OR public.is_admin());
+--
+-- Note: Actual policy changes depend on the existing schema and should
+-- be added judiciously to avoid over-permissioning.
+
+-- =====================================================================
+-- >>> included from migrations\0060_assistant_full_access.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0060_assistant_full_access
+-- Completes the 'assistant' role (0059) — grants staff parity for assistant.
+-- Minimal RLS fix: every staff branch (`is_admin OR is_mr_walid OR is_teacher`)
+-- now also includes `OR is_assistant`. Announcements defaults updated.
+-- This file only touches RLS policies and can_access_lesson; RPC guards
+-- that are critical for assistant (announcements, exams, dashboard, boards,
+-- videos) are patched separately in small, targeted replacements to avoid
+-- return-type churn.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- is_assistant() already exists from 0059 — ensure grant
+-- ---------------------------------------------------------------------
+GRANT EXECUTE ON FUNCTION public.is_assistant() TO authenticated;
+
+-- ---------------------------------------------------------------------
+-- can_access_lesson: staff shortcut now includes assistant
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_access_lesson(p_lesson_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_uid uuid := auth.uid();
+BEGIN
+    IF v_uid IS NULL THEN
+        RETURN false;
+    END IF;
+    IF public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() THEN
+        RETURN EXISTS (SELECT 1 FROM public.lessons WHERE id = p_lesson_id AND deleted_at IS NULL);
+    END IF;
+    RETURN EXISTS (
+        SELECT 1
+        FROM public.lessons l
+        JOIN public.units u      ON u.id = l.unit_id
+        JOIN public.profiles p   ON p.id = v_uid
+        JOIN public.grades g     ON g.id = p.grade_id
+        WHERE l.id = p_lesson_id
+          AND l.deleted_at IS NULL AND l.status = 'published'
+          AND u.deleted_at IS NULL AND u.status = 'published'
+          AND g.is_active AND g.deleted_at IS NULL
+          AND p.deleted_at IS NULL AND p.status = 'active'
+          AND (l.is_trial OR EXISTS (
+              SELECT 1 FROM public.unit_purchases up
+              WHERE up.student_id = v_uid
+                AND up.unit_id = u.id
+                AND up.status = 'active'
+          ))
+    );
+END $$;
+
+-- ---------------------------------------------------------------------
+-- RLS: profiles
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS profiles_select_own_or_staff ON public.profiles;
+CREATE POLICY profiles_select_own_or_staff ON public.profiles
+    FOR SELECT
+    USING ((id = auth.uid() AND public.is_student()) OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: grades
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS grades_select_staff_or_active_students ON public.grades;
+CREATE POLICY grades_select_staff_or_active_students ON public.grades
+    FOR SELECT
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+           OR (public.is_student() AND deleted_at IS NULL AND is_active));
+
+DROP POLICY IF EXISTS grades_insert_staff ON public.grades;
+CREATE POLICY grades_insert_staff ON public.grades
+    FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS grades_update_staff ON public.grades;
+CREATE POLICY grades_update_staff ON public.grades
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS grades_delete_staff ON public.grades;
+CREATE POLICY grades_delete_staff ON public.grades
+    FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: unit_pricing / unit_codes / unit_purchases (0028)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS unit_pricing_select_staff_or_active_students ON public.unit_pricing;
+CREATE POLICY unit_pricing_select_staff_or_active_students ON public.unit_pricing
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND is_active
+            AND unit_id IN (
+                SELECT u.id FROM public.units u
+                WHERE u.status = 'published' AND u.deleted_at IS NULL
+                  AND u.grade_id = (SELECT p.grade_id FROM public.profiles p WHERE p.id = auth.uid())
+                  AND u.grade_id IN (SELECT g.id FROM public.grades g WHERE g.is_active AND g.deleted_at IS NULL)
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS unit_codes_select_staff ON public.unit_codes;
+CREATE POLICY unit_codes_select_staff ON public.unit_codes
+    FOR SELECT
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS unit_purchases_select_own_or_staff ON public.unit_purchases;
+CREATE POLICY unit_purchases_select_own_or_staff ON public.unit_purchases
+    FOR SELECT
+    USING (student_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: units
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS units_select_staff_or_published_own_grade ON public.units;
+CREATE POLICY units_select_staff_or_published_own_grade ON public.units
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND grade_id IN (SELECT grade_id FROM public.profiles WHERE id = (select auth.uid()))
+            AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+            AND status = 'published'
+            AND deleted_at IS NULL
+        )
+    );
+
+DROP POLICY IF EXISTS units_insert_staff ON public.units;
+CREATE POLICY units_insert_staff ON public.units
+    FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS units_update_staff ON public.units;
+CREATE POLICY units_update_staff ON public.units
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS units_delete_staff ON public.units;
+CREATE POLICY units_delete_staff ON public.units
+    FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: lessons
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lessons_select_staff_or_published_own_grade ON public.lessons;
+CREATE POLICY lessons_select_staff_or_published_own_grade ON public.lessons
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (
+            public.is_student()
+            AND status = 'published'
+            AND deleted_at IS NULL
+            AND unit_id IN (
+                SELECT id FROM public.units
+                WHERE grade_id = (SELECT grade_id FROM public.profiles WHERE id = (select auth.uid()))
+                  AND grade_id IN (SELECT id FROM public.grades WHERE is_active AND deleted_at IS NULL)
+                  AND status = 'published'
+                  AND deleted_at IS NULL
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS lessons_insert_staff ON public.lessons;
+CREATE POLICY lessons_insert_staff ON public.lessons
+    FOR INSERT WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS lessons_update_staff ON public.lessons;
+CREATE POLICY lessons_update_staff ON public.lessons
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+DROP POLICY IF EXISTS lessons_delete_staff ON public.lessons;
+CREATE POLICY lessons_delete_staff ON public.lessons
+    FOR DELETE USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: lesson_videos (0042 includes deleted_at filter + is_assistant)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lesson_videos_select_gated ON public.lesson_videos;
+CREATE POLICY lesson_videos_select_gated ON public.lesson_videos
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (public.is_student() AND public.can_access_lesson(lesson_id)
+            AND status = 'ready' AND deleted_at IS NULL)
+    );
+
+-- ---------------------------------------------------------------------
+-- RLS: lesson_pdfs
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lesson_pdfs_select_gated ON public.lesson_pdfs;
+CREATE POLICY lesson_pdfs_select_gated ON public.lesson_pdfs
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (public.is_student() AND public.can_access_lesson(lesson_id)
+            AND is_ready AND is_primary)
+    );
+
+-- ---------------------------------------------------------------------
+-- RLS: lesson_boards (0036)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lesson_boards_select_gated ON public.lesson_boards;
+CREATE POLICY lesson_boards_select_gated ON public.lesson_boards
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR (public.is_student() AND public.can_access_lesson(lesson_id)
+            AND is_ready AND deleted_at IS NULL)
+    );
+
+-- ---------------------------------------------------------------------
+-- RLS: progress
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS progress_select_own_or_staff ON public.progress;
+CREATE POLICY progress_select_own_or_staff ON public.progress
+    FOR SELECT
+    USING ((student_id = (select auth.uid()) AND public.is_student()) OR public.is_mr_walid() OR public.is_admin() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: app_settings
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS app_settings_select_staff ON public.app_settings;
+CREATE POLICY app_settings_select_staff ON public.app_settings
+    FOR SELECT
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: exams / exam_questions / exam_attempts / exam_answers (0029)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS exams_select_gated ON public.exams;
+CREATE POLICY exams_select_gated ON public.exams
+    FOR SELECT
+    USING (
+        deleted_at IS NULL
+        AND (
+            public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+            OR public.can_access_lesson(lesson_id)
+        )
+    );
+
+DROP POLICY IF EXISTS exams_insert_staff ON public.exams;
+CREATE POLICY exams_insert_staff ON public.exams
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exams_update_staff ON public.exams;
+CREATE POLICY exams_update_staff ON public.exams
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exams_delete_staff ON public.exams;
+CREATE POLICY exams_delete_staff ON public.exams
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_questions_select_gated ON public.exam_questions;
+CREATE POLICY exam_questions_select_gated ON public.exam_questions
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR EXISTS (
+            SELECT 1 FROM public.exams e
+            WHERE e.id = exam_id
+              AND e.deleted_at IS NULL
+              AND public.can_access_lesson(e.lesson_id)
+        )
+    );
+
+DROP POLICY IF EXISTS exam_questions_insert_staff ON public.exam_questions;
+CREATE POLICY exam_questions_insert_staff ON public.exam_questions
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_questions_update_staff ON public.exam_questions;
+CREATE POLICY exam_questions_update_staff ON public.exam_questions
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_questions_delete_staff ON public.exam_questions;
+CREATE POLICY exam_questions_delete_staff ON public.exam_questions
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_attempts_select_own_or_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_select_own_or_staff ON public.exam_attempts
+    FOR SELECT
+    USING (
+        student_id = auth.uid()
+        OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+    );
+
+DROP POLICY IF EXISTS exam_attempts_dml_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_dml_staff ON public.exam_attempts
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_attempts_update_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_update_staff ON public.exam_attempts
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_attempts_delete_staff ON public.exam_attempts;
+CREATE POLICY exam_attempts_delete_staff ON public.exam_attempts
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_answers_select_own_or_staff ON public.exam_answers;
+CREATE POLICY exam_answers_select_own_or_staff ON public.exam_answers
+    FOR SELECT
+    USING (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR attempt_id IN (
+            SELECT a.id FROM public.exam_attempts a
+            WHERE a.student_id = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS exam_answers_dml_staff ON public.exam_answers;
+CREATE POLICY exam_answers_dml_staff ON public.exam_answers
+    FOR INSERT
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_answers_update_staff ON public.exam_answers;
+CREATE POLICY exam_answers_update_staff ON public.exam_answers
+    FOR UPDATE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS exam_answers_delete_staff ON public.exam_answers;
+CREATE POLICY exam_answers_delete_staff ON public.exam_answers
+    FOR DELETE
+    USING (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: lesson_comments (0030)
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS lesson_comments_select_gated ON public.lesson_comments;
+CREATE POLICY lesson_comments_select_gated ON public.lesson_comments
+    FOR SELECT
+    USING (
+        (
+            public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+            OR author_id = auth.uid()
+            OR public.can_access_lesson(lesson_id)
+        )
+        AND (
+            status = 'visible'
+            OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+            OR author_id = auth.uid()
+        )
+    );
+
+DROP POLICY IF EXISTS lesson_comments_insert_gated ON public.lesson_comments;
+CREATE POLICY lesson_comments_insert_gated ON public.lesson_comments
+    FOR INSERT
+    WITH CHECK (
+        public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()
+        OR public.can_access_lesson(lesson_id)
+    );
+
+DROP POLICY IF EXISTS lesson_comments_update_own_or_staff ON public.lesson_comments;
+CREATE POLICY lesson_comments_update_own_or_staff ON public.lesson_comments
+    FOR UPDATE
+    USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant())
+    WITH CHECK (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+DROP POLICY IF EXISTS lesson_comments_delete_own_or_staff ON public.lesson_comments;
+CREATE POLICY lesson_comments_delete_own_or_staff ON public.lesson_comments
+    FOR DELETE
+    USING (author_id = auth.uid() OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant());
+
+-- ---------------------------------------------------------------------
+-- RLS: announcements (0049) — include assistant in every staff branch
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS announcements_teacher_select ON public.announcements;
+CREATE POLICY announcements_teacher_select ON public.announcements
+    FOR SELECT USING (public.get_current_role() IN ('teacher','mr_walid','assistant'));
+
+DROP POLICY IF EXISTS announcements_teacher_write ON public.announcements;
+CREATE POLICY announcements_teacher_write ON public.announcements
+    FOR INSERT WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin','assistant'));
+
+DROP POLICY IF EXISTS announcements_teacher_update ON public.announcements;
+CREATE POLICY announcements_teacher_update ON public.announcements
+    FOR UPDATE USING (public.get_current_role() IN ('teacher','mr_walid','admin','assistant'))
+    WITH CHECK (public.get_current_role() IN ('teacher','mr_walid','admin','assistant'));
+
+DROP POLICY IF EXISTS announcements_teacher_delete ON public.announcements;
+CREATE POLICY announcements_teacher_delete ON public.announcements
+    FOR DELETE USING (public.get_current_role() IN ('teacher','mr_walid','admin','assistant'));
+
+-- Update table default for target_roles to include assistant
+ALTER TABLE public.announcements ALTER COLUMN target_roles SET DEFAULT '{"student","teacher","mr_walid","admin","assistant"}';
+
+-- =====================================================================
+-- >>> included from migrations\0061_assistant_rpcs.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0061_assistant_rpcs
+-- Patch RPC guards to include assistant where teacher was allowed.
+-- Keeps signatures/return types identical to current definitions (post-0045).
+-- =====================================================================
+
+-- Announcements RPCs
+CREATE OR REPLACE FUNCTION public.list_announcements(p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
+RETURNS SETOF public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid','assistant')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+    RETURN QUERY SELECT a.* FROM public.announcements a ORDER BY a.created_at DESC LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 50), 100)) OFFSET GREATEST(0, COALESCE(p_offset, 0));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.get_announcement_by_id(p_id uuid)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_announcement public.announcements;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid','assistant')) THEN
+        RAISE EXCEPTION 'permission_denied';
+    END IF;
+    SELECT * INTO v_announcement FROM public.announcements WHERE id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
+    RETURN v_announcement;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.create_announcement(p_title text, p_body text, p_link_url text DEFAULT NULL, p_link_label text DEFAULT NULL, p_variant text DEFAULT 'info', p_target_roles text[] DEFAULT '{"student","teacher","mr_walid","admin","assistant"}', p_hide_on_paths text[] DEFAULT '{}', p_starts_at timestamptz DEFAULT now(), p_ends_at timestamptz DEFAULT NULL, p_is_active boolean DEFAULT true, p_dismissible boolean DEFAULT true)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_announcement public.announcements; v_user_id uuid := auth.uid();
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid','assistant')) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN RAISE EXCEPTION 'invalid_link_url'; END IF;
+    INSERT INTO public.announcements (title, body, link_url, link_label, variant, target_roles, hide_on_paths, starts_at, ends_at, is_active, dismissible, created_by) VALUES (p_title, p_body, p_link_url, p_link_label, p_variant, p_target_roles, p_hide_on_paths, p_starts_at, p_ends_at, p_is_active, p_dismissible, v_user_id) RETURNING * INTO v_announcement;
+    PERFORM public.audit_log('announcement.create', 'announcements', v_announcement.id, jsonb_build_object('title', p_title, 'variant', p_variant));
+    RETURN v_announcement;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.update_announcement(p_id uuid, p_title text DEFAULT NULL, p_body text DEFAULT NULL, p_link_url text DEFAULT NULL, p_link_label text DEFAULT NULL, p_variant text DEFAULT NULL, p_target_roles text[] DEFAULT NULL, p_hide_on_paths text[] DEFAULT NULL, p_starts_at timestamptz DEFAULT NULL, p_ends_at timestamptz DEFAULT NULL, p_is_active boolean DEFAULT NULL, p_dismissible boolean DEFAULT NULL)
+RETURNS public.announcements
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_announcement public.announcements; v_user_id uuid := auth.uid(); v_old jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid','assistant')) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT to_jsonb(a) INTO v_old FROM public.announcements a WHERE a.id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
+    IF p_link_url IS NOT NULL AND p_link_url !~ '^https://' THEN RAISE EXCEPTION 'invalid_link_url'; END IF;
+    UPDATE public.announcements SET title = COALESCE(p_title, title), body = COALESCE(p_body, body), link_url = p_link_url, link_label = p_link_label, variant = COALESCE(p_variant, variant), target_roles = COALESCE(p_target_roles, target_roles), hide_on_paths = COALESCE(p_hide_on_paths, hide_on_paths), starts_at = COALESCE(p_starts_at, starts_at), ends_at = p_ends_at, is_active = COALESCE(p_is_active, is_active), dismissible = COALESCE(p_dismissible, dismissible), updated_at = now() WHERE id = p_id RETURNING * INTO v_announcement;
+    PERFORM public.audit_log('announcement.update', 'announcements', v_announcement.id, jsonb_build_object('old', v_old, 'new', to_jsonb(v_announcement)));
+    RETURN v_announcement;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_announcement(p_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_user_id uuid := auth.uid(); v_title text;
+BEGIN
+    IF NOT (public.is_admin() OR public.get_current_role() IN ('teacher','mr_walid','assistant')) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT title INTO v_title FROM public.announcements WHERE id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'not_found'; END IF;
+    DELETE FROM public.announcements WHERE id = p_id;
+    PERFORM public.audit_log('announcement.delete', 'announcements', p_id, jsonb_build_object('title', v_title));
+END $$;
+
+-- get_dashboard_stats: include assistant
+CREATE OR REPLACE FUNCTION public.get_dashboard_stats()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_stats jsonb;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT jsonb_build_object(
+        'students', jsonb_build_object(
+            'total',        (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student'),
+            'active',       (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'active' AND role = 'student'),
+            'disabled',     (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND status = 'disabled' AND role = 'student'),
+            'deleted',      (SELECT count(*) FROM public.profiles WHERE deleted_at IS NOT NULL AND role = 'student'),
+            'new_this_month', (SELECT count(*) FROM public.profiles WHERE deleted_at IS NULL AND role = 'student' AND created_at >= date_trunc('month', now()))
+        ),
+        'purchases', jsonb_build_object(
+            'total',               (SELECT count(*) FROM public.unit_purchases WHERE status = 'active'),
+            'total_revenue',       (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases WHERE status = 'active'),
+            'revenue_this_month',  (SELECT COALESCE(sum(total_price), 0) FROM public.unit_purchases WHERE status = 'active' AND purchased_at >= date_trunc('month', now()))
+        ),
+        'content', jsonb_build_object(
+            'grades',           (SELECT count(*) FROM public.grades WHERE deleted_at IS NULL),
+            'units',            (SELECT count(*) FROM public.units WHERE deleted_at IS NULL),
+            'lessons',          (SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL),
+            'published_lessons',(SELECT count(*) FROM public.lessons WHERE deleted_at IS NULL AND status = 'published'),
+            'videos',           (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL),
+            'videos_ready',     (SELECT count(*) FROM public.lesson_videos WHERE deleted_at IS NULL AND status = 'ready'),
+            'pdfs',             (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL),
+            'pdfs_ready',       (SELECT count(*) FROM public.lesson_pdfs WHERE deleted_at IS NULL AND is_ready)
+        ),
+        'engagement', jsonb_build_object(
+            'students_with_progress', (SELECT count(DISTINCT student_id) FROM public.progress),
+            'completed_lessons',      (SELECT count(*) FROM public.progress WHERE is_completed),
+            'avg_percent',            (SELECT COALESCE(round(avg(percent_completed), 2), 0) FROM public.progress)
+        ),
+        'by_grade', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'grade_name', r.grade_name,
+                'students', r.students,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.sort_order)
+            FROM (
+                SELECT g.name AS grade_name, g.sort_order,
+                       count(DISTINCT p.id) AS students,
+                       count(DISTINCT up.id) AS purchases,
+                       COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.grades g
+                LEFT JOIN public.profiles p ON p.grade_id = g.id AND p.deleted_at IS NULL AND p.role = 'student'
+                LEFT JOIN public.unit_purchases up ON up.student_id = p.id AND up.status = 'active'
+                WHERE g.deleted_at IS NULL
+                GROUP BY g.id, g.name, g.sort_order
+            ) r
+        ), '[]'::jsonb),
+        'top_units', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'unit_name', r.unit_name,
+                'purchases', r.purchases,
+                'revenue', r.revenue
+            ) ORDER BY r.revenue DESC)
+            FROM (
+                SELECT u.name AS unit_name, count(DISTINCT up.id) AS purchases, COALESCE(sum(up.total_price), 0) AS revenue
+                FROM public.unit_purchases up JOIN public.units u ON u.id = up.unit_id WHERE up.status = 'active' GROUP BY u.id, u.name ORDER BY revenue DESC LIMIT 5
+            ) r
+        ), '[]'::jsonb),
+        'recent_purchases', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'student_name', p.full_name, 'grade_name', g.name, 'unit_name', u.name, 'total_price', up.total_price, 'purchased_at', up.purchased_at
+            ) ORDER BY up.purchased_at DESC)
+            FROM public.unit_purchases up JOIN public.profiles p ON p.id = up.student_id JOIN public.units u ON u.id = up.unit_id JOIN public.grades g ON g.id = u.grade_id WHERE up.status = 'active' LIMIT 5
+        ), '[]'::jsonb)
+    ) INTO v_stats;
+    RETURN v_stats;
+END $$;
+
+-- Exams: include assistant (0029 canonical, now with assistant)
+CREATE OR REPLACE FUNCTION public.list_exams(p_lesson_id uuid)
+RETURNS SETOF public.exams
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT e.* FROM public.exams e WHERE e.deleted_at IS NULL AND e.lesson_id = p_lesson_id AND (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR public.can_access_lesson(e.lesson_id)) ORDER BY e.sort_order, e.created_at;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_exam_questions(p_exam_id uuid)
+RETURNS SETOF public.exam_questions
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT q.id, q.exam_id, q.type, q.prompt, q.choices,
+           CASE WHEN (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN q.correct_index ELSE NULL END AS correct_index,
+           q.max_score, q.sort_order, q.prompt_image_path, q.choice_image_paths
+    FROM public.exam_questions q
+    JOIN public.exams e ON e.id = q.exam_id AND e.deleted_at IS NULL
+    WHERE q.exam_id = p_exam_id AND (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR public.can_access_lesson(e.lesson_id))
+    ORDER BY q.sort_order;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_my_exam_attempt(p_exam_id uuid)
+RETURNS SETOF public.exam_attempts
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT a.* FROM public.exam_attempts a JOIN public.exams e ON e.id = a.exam_id AND e.deleted_at IS NULL WHERE a.exam_id = p_exam_id AND a.student_id = auth.uid() AND (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR public.can_access_lesson(e.lesson_id));
+$$;
+
+CREATE OR REPLACE FUNCTION public.grade_exam_attempt(p_attempt_id uuid, p_scores jsonb)
+RETURNS public.exam_attempts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_attempt public.exam_attempts%ROWTYPE; v_manual numeric(5, 2) := 0;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT * INTO v_attempt FROM public.exam_attempts WHERE id = p_attempt_id;
+    IF v_attempt.id IS NULL THEN RAISE EXCEPTION 'attempt_not_found'; END IF;
+    IF v_attempt.status = 'graded' THEN RAISE EXCEPTION 'already_graded'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_to_recordset(COALESCE(p_scores, '[]'::jsonb)) AS r(question_id uuid, score numeric) LEFT JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = v_attempt.exam_id AND q.type = 'essay' WHERE q.id IS NULL OR r.score IS NULL OR r.score < 0) THEN RAISE EXCEPTION 'invalid_scores'; END IF;
+    UPDATE public.exam_answers a SET score = r.score FROM jsonb_to_recordset(COALESCE(p_scores, '[]'::jsonb)) AS r(question_id uuid, score numeric) WHERE a.attempt_id = v_attempt.id AND a.question_id = r.question_id;
+    SELECT COALESCE(sum(a.score), 0) INTO v_manual FROM public.exam_answers a JOIN public.exam_questions q ON q.id = a.question_id WHERE a.attempt_id = v_attempt.id AND q.type = 'essay';
+    UPDATE public.exam_attempts SET status = 'graded', manual_score = v_manual, final_score = COALESCE(auto_score, 0) + v_manual, graded_by = auth.uid(), graded_at = now() WHERE id = v_attempt.id RETURNING * INTO v_attempt;
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id) SELECT v_attempt.student_id, 'exam_graded', 'تم تصحيح الاختبار', e.title, 'exam_graded:' || v_attempt.id, 'exam_attempts', v_attempt.id FROM public.exams e WHERE e.id = v_attempt.exam_id ON CONFLICT (dedup_key) DO NOTHING;
+    PERFORM public.audit_log('exam.graded', 'exam_attempts', p_attempt_id, jsonb_build_object('final_score', v_attempt.final_score, 'graded_by', auth.uid()));
+    RETURN v_attempt;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_exam(p_exam_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_lesson uuid; v_deleted timestamptz;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT lesson_id, deleted_at INTO v_lesson, v_deleted FROM public.exams WHERE id = p_exam_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'exam_not_found'; END IF;
+    IF v_deleted IS NOT NULL THEN RAISE EXCEPTION 'exam_not_found'; END IF;
+    UPDATE public.exams SET deleted_at = now(), updated_at = now() WHERE id = p_exam_id;
+    BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN DELETE FROM storage.objects WHERE bucket_id = 'exam-images' AND name LIKE p_exam_id::text || '/%'; END IF; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.audit_log('exam.deleted', 'exams', p_exam_id, jsonb_build_object('lesson_id', v_lesson));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_exam_question(p_question_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_exam uuid; v_prompt text; v_choices jsonb; v_elem text; v_idx int;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT exam_id, prompt_image_path, choice_image_paths INTO v_exam, v_prompt, v_choices FROM public.exam_questions WHERE id = p_question_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'question_not_found'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.exams WHERE id = v_exam AND deleted_at IS NULL) THEN RAISE EXCEPTION 'exam_not_found'; END IF;
+    DELETE FROM public.exam_questions WHERE id = p_question_id;
+    BEGIN IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'objects') THEN IF v_prompt IS NOT NULL AND v_prompt <> '' THEN DELETE FROM storage.objects WHERE bucket_id = 'exam-images' AND name = v_prompt; END IF; IF v_choices IS NOT NULL AND jsonb_typeof(v_choices) = 'array' THEN FOR v_idx IN 0..jsonb_array_length(v_choices) - 1 LOOP v_elem := v_choices->>v_idx; IF v_elem IS NOT NULL AND v_elem <> '' THEN DELETE FROM storage.objects WHERE bucket_id = 'exam-images' AND name = v_elem; END IF; END LOOP; END IF; END IF; EXCEPTION WHEN OTHERS THEN NULL; END;
+    PERFORM public.audit_log('exam_question.deleted', 'exam_questions', p_question_id, jsonb_build_object('exam_id', v_exam));
+END $$;
+
+-- Submit fan-out includes assistant
+CREATE OR REPLACE FUNCTION public.submit_exam_attempt(p_exam_id uuid, p_answers jsonb)
+RETURNS public.exam_attempts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_uid uuid := auth.uid(); v_exam public.exams%ROWTYPE; v_attempt public.exam_attempts; v_auto numeric(5,2):=0; v_has_essays boolean;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'auth_required'; END IF;
+    IF NOT public.is_student() THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT * INTO v_exam FROM public.exams WHERE id = p_exam_id AND deleted_at IS NULL;
+    IF v_exam.id IS NULL THEN RAISE EXCEPTION 'exam_not_found'; END IF;
+    IF NOT public.can_access_lesson(v_exam.lesson_id) THEN RAISE EXCEPTION 'access_denied'; END IF;
+    IF EXISTS (SELECT 1 FROM public.exam_attempts WHERE exam_id = p_exam_id AND student_id = v_uid) THEN RAISE EXCEPTION 'attempt_already_exists'; END IF;
+    IF jsonb_typeof(p_answers) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'invalid_answers'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_to_recordset(p_answers) AS r(question_id uuid, choice_index integer, answer_text text) LEFT JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = p_exam_id WHERE q.id IS NULL) THEN RAISE EXCEPTION 'invalid_answers'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_to_recordset(p_answers) AS r(question_id uuid, choice_index integer, answer_text text) JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = p_exam_id WHERE (q.type = 'mcq' AND (r.choice_index IS NULL OR r.choice_index < 0 OR r.choice_index > jsonb_array_length(q.choices) -1)) OR (q.type = 'essay' AND length(btrim(COALESCE(r.answer_text, ''))) = 0)) THEN RAISE EXCEPTION 'invalid_answers'; END IF;
+    INSERT INTO public.exam_attempts (exam_id, student_id, status) VALUES (p_exam_id, v_uid, 'submitted') RETURNING * INTO v_attempt;
+    INSERT INTO public.exam_answers (attempt_id, question_id, choice_index, answer_text, score) SELECT v_attempt.id, q.id, r.choice_index, r.answer_text, CASE WHEN q.type='mcq' AND r.choice_index = q.correct_index THEN q.max_score ELSE NULL END FROM jsonb_to_recordset(p_answers) AS r(question_id uuid, choice_index integer, answer_text text) JOIN public.exam_questions q ON q.id = r.question_id AND q.exam_id = p_exam_id;
+    SELECT COALESCE(sum(score),0) INTO v_auto FROM public.exam_answers WHERE attempt_id = v_attempt.id;
+    SELECT EXISTS (SELECT 1 FROM public.exam_questions WHERE exam_id = p_exam_id AND type='essay') INTO v_has_essays;
+    UPDATE public.exam_attempts SET auto_score = v_auto WHERE id = v_attempt.id RETURNING * INTO v_attempt;
+    IF NOT v_has_essays THEN UPDATE public.exam_attempts SET status='graded', manual_score=0, final_score=v_auto, graded_at=now() WHERE id = v_attempt.id RETURNING * INTO v_attempt; INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id) VALUES (v_uid, 'exam_graded', 'تم تصحيح الاختبار', v_exam.title, 'exam_graded:' || v_attempt.id, 'exam_attempts', v_attempt.id) ON CONFLICT (dedup_key) DO NOTHING; END IF;
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id) SELECT u.id, 'exam_submitted', 'اختبار بانتظار المراجعة', v_exam.title, 'exam_submitted:' || u.id || ':' || v_attempt.id, 'exam_attempts', v_attempt.id FROM public.profiles u WHERE u.role IN ('admin', 'mr_walid', 'teacher', 'assistant') AND u.status='active' AND u.deleted_at IS NULL ON CONFLICT (dedup_key) DO NOTHING;
+    PERFORM public.audit_log('exam.submitted', 'exam_attempts', v_attempt.id, jsonb_build_object('exam_id', p_exam_id, 'auto_score', v_auto));
+    RETURN v_attempt;
+END $$;
+
+-- Comments: include assistant
+CREATE OR REPLACE FUNCTION public.add_lesson_comment(p_lesson_id uuid, p_body text, p_parent_id uuid DEFAULT NULL)
+RETURNS public.lesson_comments
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_uid uuid := auth.uid(); v_comment public.lesson_comments%ROWTYPE; v_lesson text; v_parent public.lesson_comments%ROWTYPE;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR public.can_access_lesson(p_lesson_id)) THEN RAISE EXCEPTION 'access_denied'; END IF;
+    IF length(btrim(COALESCE(p_body, ''))) = 0 OR length(btrim(COALESCE(p_body, ''))) > 1000 THEN RAISE EXCEPTION 'invalid_body'; END IF;
+    IF p_parent_id IS NOT NULL THEN SELECT * INTO v_parent FROM public.lesson_comments WHERE id = p_parent_id; IF v_parent.id IS NULL OR v_parent.status <> 'visible' OR v_parent.lesson_id <> p_lesson_id THEN RAISE EXCEPTION 'invalid_parent'; END IF; END IF;
+    SELECT title INTO v_lesson FROM public.lessons WHERE id = p_lesson_id;
+    INSERT INTO public.lesson_comments (lesson_id, author_id, parent_id, body) VALUES (p_lesson_id, v_uid, p_parent_id, btrim(p_body)) RETURNING * INTO v_comment;
+    INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id) SELECT u.id, 'comment_reply', 'تعليق جديد على الدرس', v_lesson, 'comment_reply:' || u.id || ':' || v_comment.id, 'lesson_comments', v_comment.id FROM public.profiles u WHERE u.role IN ('admin', 'mr_walid', 'teacher', 'assistant') AND u.status = 'active' AND u.deleted_at IS NULL AND u.id <> v_uid ON CONFLICT (dedup_key) DO NOTHING;
+    IF v_parent.id IS NOT NULL AND v_parent.author_id <> v_uid THEN INSERT INTO public.notifications (user_id, type, title, body, dedup_key, entity_type, entity_id) VALUES (v_parent.author_id, 'lesson_comment', 'تم الرد على تعليقك', v_lesson, 'lesson_comment:' || v_comment.id, 'lesson_comments', v_comment.id) ON CONFLICT (dedup_key) DO NOTHING; END IF;
+    RETURN v_comment;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_lesson_comment(p_comment_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_row public.lesson_comments%ROWTYPE;
+BEGIN
+    IF auth.uid() IS NULL THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT * INTO v_row FROM public.lesson_comments WHERE id = p_comment_id;
+    IF v_row.id IS NULL THEN RAISE EXCEPTION 'comment_not_found'; END IF;
+    IF v_row.author_id <> auth.uid() AND NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    DELETE FROM public.lesson_comments WHERE id = p_comment_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.list_lesson_comments(p_lesson_id uuid)
+RETURNS TABLE (id uuid, lesson_id uuid, author_id uuid, author_name text, parent_id uuid, body text, status text, created_at timestamptz)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant() OR public.can_access_lesson(p_lesson_id)) THEN RAISE EXCEPTION 'access_denied'; END IF;
+    RETURN QUERY SELECT c.id, c.lesson_id, c.author_id, COALESCE(p.full_name, ''), c.parent_id, c.body, c.status, c.created_at FROM public.lesson_comments c JOIN public.lessons l ON l.id = c.lesson_id LEFT JOIN public.profiles p ON p.id = c.author_id WHERE c.lesson_id = p_lesson_id AND (c.status = 'visible' OR public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) ORDER BY c.created_at, c.id;
+END $$;
+
+-- Boards/Videos/Youtube: include assistant
+CREATE OR REPLACE FUNCTION public.create_board_upload_record(p_lesson_id uuid, p_original_name text, p_size_bytes bigint DEFAULT NULL)
+RETURNS TABLE (id uuid, storage_path text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_id uuid; v_path text; v_name text; v_ext text; v_mime text; v_sort integer;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    IF p_size_bytes IS NOT NULL AND (p_size_bytes < 0 OR p_size_bytes > 10485760) THEN RAISE EXCEPTION 'invalid_board_size'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = p_lesson_id) THEN RAISE EXCEPTION 'lesson_not_found'; END IF;
+    IF EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = p_lesson_id AND l.deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'lesson_deleted'; END IF;
+    v_name := btrim(p_original_name); v_name := substring(v_name from '([^/\\]*)$'); v_ext := lower(substring(v_name from '\.([^.]+)$'));
+    IF v_name IS NULL OR v_name = '' OR length(v_name) > 255 OR v_ext IS NULL OR v_ext NOT IN ('jpg', 'jpeg', 'png', 'webp') THEN RAISE EXCEPTION 'invalid_file_extension'; END IF;
+    v_mime := CASE v_ext WHEN 'jpg' THEN 'image/jpeg' WHEN 'jpeg' THEN 'image/jpeg' WHEN 'png' THEN 'image/png' WHEN 'webp' THEN 'image/webp' END;
+    SELECT COALESCE(MAX(lb.sort_order), 0) + 1 INTO v_sort FROM public.lesson_boards lb WHERE lb.lesson_id = p_lesson_id AND lb.deleted_at IS NULL;
+    v_path := p_lesson_id::text || '/' || gen_random_uuid()::text || '.' || v_ext;
+    INSERT INTO public.lesson_boards (lesson_id, storage_path, original_name, size_bytes, mime_type, sort_order, is_ready) VALUES (p_lesson_id, v_path, v_name, p_size_bytes, v_mime, v_sort, false) RETURNING lesson_boards.id INTO v_id;
+    PERFORM public.audit_log('board.upload_started', 'lesson_board', v_id, jsonb_build_object('lesson_id', p_lesson_id, 'original_name', v_name, 'storage_path', v_path, 'size_bytes', p_size_bytes, 'mime_type', v_mime));
+    RETURN QUERY SELECT v_id, v_path;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.finalize_board_upload(p_board_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_lesson uuid; v_ready boolean;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT lb.lesson_id, lb.is_ready INTO v_lesson, v_ready FROM public.lesson_boards lb WHERE lb.id = p_board_id AND lb.deleted_at IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION 'board_not_found'; END IF;
+    IF v_ready THEN RAISE EXCEPTION 'board_already_ready'; END IF;
+    UPDATE public.lesson_boards SET is_ready = true WHERE id = p_board_id;
+    PERFORM public.audit_log('board.finalized', 'lesson_board', p_board_id, jsonb_build_object('lesson_id', v_lesson));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_board_upload_record(p_lesson_id uuid, p_board_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_lesson uuid;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT lb.lesson_id INTO v_lesson FROM public.lesson_boards lb WHERE lb.id = p_board_id AND lb.deleted_at IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION 'board_not_found'; END IF;
+    IF v_lesson <> p_lesson_id THEN RAISE EXCEPTION 'wrong_lesson'; END IF;
+    UPDATE public.lesson_boards SET deleted_at = now(), updated_at = now() WHERE id = p_board_id;
+    PERFORM public.audit_log('board.deleted', 'lesson_board', p_board_id, jsonb_build_object('lesson_id', p_lesson_id));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.reorder_boards(p_lesson_id uuid, p_board_ids uuid[])
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_expected integer; v_lesson uuid; v_ready boolean; v_i integer;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    IF p_board_ids IS NULL OR cardinality(p_board_ids) = 0 OR cardinality(p_board_ids) <> cardinality(ARRAY(SELECT DISTINCT unnest(p_board_ids))) THEN RAISE EXCEPTION 'validation_error'; END IF;
+    SELECT count(*) INTO v_expected FROM public.lesson_boards lb WHERE lb.lesson_id = p_lesson_id AND lb.deleted_at IS NULL AND lb.is_ready;
+    IF cardinality(p_board_ids) <> v_expected THEN RAISE EXCEPTION 'validation_error'; END IF;
+    FOR v_i IN 1..cardinality(p_board_ids) LOOP
+        SELECT lb.lesson_id, lb.is_ready INTO v_lesson, v_ready FROM public.lesson_boards lb WHERE lb.id = p_board_ids[v_i] AND lb.deleted_at IS NULL;
+        IF NOT FOUND THEN RAISE EXCEPTION 'board_not_found'; END IF;
+        IF v_lesson <> p_lesson_id THEN RAISE EXCEPTION 'wrong_lesson'; END IF;
+        IF NOT v_ready THEN RAISE EXCEPTION 'validation_error'; END IF;
+        UPDATE public.lesson_boards SET sort_order = v_i WHERE id = p_board_ids[v_i];
+    END LOOP;
+    PERFORM public.audit_log('board.reordered', 'lesson_board', NULL, jsonb_build_object('lesson_id', p_lesson_id, 'board_ids', to_jsonb(p_board_ids)));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.add_youtube_video(p_lesson_id uuid, p_youtube_url text, p_title text DEFAULT NULL)
+RETURNS TABLE (id uuid, is_primary boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_id uuid; v_primary boolean; v_youtube_id text; v_title text;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = p_lesson_id) THEN RAISE EXCEPTION 'lesson_not_found'; END IF;
+    IF EXISTS (SELECT 1 FROM public.lessons l WHERE l.id = p_lesson_id AND l.deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'lesson_deleted'; END IF;
+    v_youtube_id := public.youtube_video_id_from_url(btrim(p_youtube_url));
+    IF v_youtube_id IS NULL THEN RAISE EXCEPTION 'invalid_youtube_url'; END IF;
+    IF EXISTS (SELECT 1 FROM public.lesson_videos lv WHERE lv.youtube_video_id = v_youtube_id) THEN RAISE EXCEPTION 'youtube_video_duplicate'; END IF;
+    v_title := NULLIF(btrim(COALESCE(p_title, '')), ''); IF v_title IS NULL THEN v_title := 'فيديو يوتيوب'; END IF; v_title := left(v_title, 255);
+    v_primary := NOT EXISTS (SELECT 1 FROM public.lesson_videos lv WHERE lv.lesson_id = p_lesson_id AND lv.is_primary AND lv.deleted_at IS NULL);
+    BEGIN INSERT INTO public.lesson_videos (lesson_id, bunny_library_id, title, status, is_primary, sort_order, source, youtube_video_id) VALUES (p_lesson_id, 'youtube', v_title, 'ready', v_primary, 0, 'youtube', v_youtube_id) RETURNING lesson_videos.id INTO v_id; EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'youtube_video_duplicate'; END;
+    PERFORM public.audit_log('video.youtube_added', 'lesson_video', v_id, jsonb_build_object('lesson_id', p_lesson_id, 'youtube_video_id', v_youtube_id, 'is_primary', v_primary));
+    RETURN QUERY SELECT v_id, v_primary;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.delete_lesson_video(p_lesson_id uuid, p_video_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_lesson uuid; v_was_primary boolean;
+BEGIN
+    IF NOT (public.is_admin() OR public.is_mr_walid() OR public.is_teacher() OR public.is_assistant()) THEN RAISE EXCEPTION 'permission_denied'; END IF;
+    SELECT lv.lesson_id, lv.is_primary INTO v_lesson, v_was_primary FROM public.lesson_videos lv WHERE lv.id = p_video_id AND lv.deleted_at IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION 'video_not_found'; END IF;
+    IF v_lesson <> p_lesson_id THEN RAISE EXCEPTION 'wrong_lesson'; END IF;
+    UPDATE public.lesson_videos SET deleted_at = now() WHERE id = p_video_id;
+    IF v_was_primary THEN UPDATE public.lesson_videos SET is_primary = true WHERE id = (SELECT lv.id FROM public.lesson_videos lv WHERE lv.lesson_id = p_lesson_id AND lv.status = 'ready' AND lv.deleted_at IS NULL ORDER BY lv.created_at, lv.id LIMIT 1); END IF;
+    PERFORM public.audit_log('video.deleted', 'lesson_video', p_video_id, jsonb_build_object('lesson_id', p_lesson_id));
+END $$;
+
+-- =====================================================================
+-- >>> included from migrations\0062_fix_handle_new_user_grade.sql
+-- =====================================================================
+
+-- =====================================================================
+-- 0062_fix_handle_new_user_grade
+-- Fixes regression where handle_new_user() on remote still forced NULL
+-- grade_id (0004 definition) instead of the grade-aware v3 (0027).
+-- Re-applies the correct v3 definition and backfills any existing
+-- grade-less student profiles from auth.users raw_user_meta_data.
+--
+-- Root cause: remote DB showed 0004 version (INSERT ..., NULL) despite
+-- migration history marking 0027 as applied. This migration is
+-- idempotent and ensures the correct trigger is active for all future
+-- sign-ups, plus repairs the 2 affected 2026-09-10 accounts (and any
+-- other null-grade students) if their metadata contains a valid grade.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Re-seed default grades (idempotent) — ensures list_active_grades has data
+-- ---------------------------------------------------------------------
+INSERT INTO public.grades (name, sort_order)
+VALUES
+    ('الصف الأول الثانوي', 1),
+    ('الصف الثاني الثانوي', 2),
+    ('الصف الثالث الثانوي', 3)
+ON CONFLICT (name) DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- list_active_grades() — re-ensure (identical to 0027, idempotent)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.list_active_grades()
+RETURNS TABLE (id uuid, name text, sort_order integer)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+        SELECT g.id, g.name, g.sort_order
+        FROM public.grades g
+        WHERE g.is_active
+          AND g.deleted_at IS NULL
+        ORDER BY g.sort_order ASC, g.name ASC;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.list_active_grades() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.list_active_grades() TO anon, authenticated;
+
+COMMENT ON FUNCTION public.list_active_grades() IS
+'Anon-safe grade listing for the registration page: id/name/sort_order of active, non-deleted grades only.';
+
+-- ---------------------------------------------------------------------
+-- handle_new_user() v3 — grade-aware (0027 canonical)
+-- Replaces the 0004 forced-NULL version that was still on remote.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_meta jsonb := COALESCE(NEW.raw_user_meta_data, '{}'::jsonb);
+    v_full_name text;
+    v_phone text;
+    v_guardian_phone text;
+    v_address text;
+    v_grade_id_text text;
+    v_grade_id uuid;
+    v_is_seed boolean := COALESCE(v_meta ->> 'seed_account', '') = 'true';
+BEGIN
+    v_full_name      := NULLIF(btrim(v_meta ->> 'full_name'), '');
+    v_phone          := NULLIF(btrim(v_meta ->> 'phone'), '');
+    v_guardian_phone := NULLIF(btrim(v_meta ->> 'guardian_phone'), '');
+    v_address        := NULLIF(btrim(v_meta ->> 'address'), '');
+    v_grade_id_text  := NULLIF(btrim(v_meta ->> 'grade_id'), '');
+
+    IF v_full_name IS NULL OR v_phone IS NULL
+       OR v_guardian_phone IS NULL OR v_address IS NULL THEN
+        RAISE EXCEPTION 'profile_meta_required'
+            USING HINT = 'raw_user_meta_data must contain full_name, phone, guardian_phone and address';
+    END IF;
+
+    IF NOT v_is_seed THEN
+        IF v_grade_id_text IS NULL THEN
+            RAISE EXCEPTION 'grade_required'
+                USING HINT = 'raw_user_meta_data must contain grade_id';
+        END IF;
+        BEGIN
+            v_grade_id := v_grade_id_text::uuid;
+        EXCEPTION WHEN invalid_text_representation THEN
+            RAISE EXCEPTION 'invalid_grade_id'
+                USING HINT = 'grade_id must be a valid uuid';
+        END;
+        IF NOT EXISTS (
+            SELECT 1 FROM public.grades
+            WHERE id = v_grade_id AND is_active AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'grade_not_available'
+                USING HINT = 'grade_id must reference an active, non-deleted grade';
+        END IF;
+    END IF;
+
+    INSERT INTO public.profiles (id, full_name, phone, guardian_phone, address, grade_id)
+    VALUES (NEW.id, v_full_name, v_phone, v_guardian_phone, v_address, v_grade_id);
+
+    RETURN NEW;
+END $$;
+
+-- Ensure trigger attachment (idempotent)
+DROP TRIGGER IF EXISTS handle_new_user ON auth.users;
+CREATE TRIGGER handle_new_user
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ---------------------------------------------------------------------
+-- Backfill: fix any existing student profiles where grade_id IS NULL
+-- but auth.users metadata has a valid, active grade.
+-- Uses SECURITY DEFINER context via direct UPDATE (service_role / postgres).
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+    r record;
+    v_grade uuid;
+BEGIN
+    FOR r IN
+        SELECT p.id as profile_id, (u.raw_user_meta_data ->> 'grade_id') as meta_grade_text
+        FROM public.profiles p
+        JOIN auth.users u ON u.id = p.id
+        WHERE p.role = 'student'
+          AND p.grade_id IS NULL
+          AND NULLIF(btrim(u.raw_user_meta_data ->> 'grade_id'), '') IS NOT NULL
+    LOOP
+        BEGIN
+            v_grade := r.meta_grade_text::uuid;
+        EXCEPTION WHEN invalid_text_representation THEN
+            CONTINUE;
+        END;
+        IF EXISTS (SELECT 1 FROM public.grades g WHERE g.id = v_grade AND g.is_active AND g.deleted_at IS NULL) THEN
+            UPDATE public.profiles SET grade_id = v_grade, updated_at = now() WHERE id = r.profile_id AND grade_id IS NULL;
+            PERFORM public.audit_log('profile.backfill_grade', 'profiles', r.profile_id, jsonb_build_object('grade_id', v_grade, 'source', '0062_backfill'));
+        END IF;
+    END LOOP;
+END $$;

@@ -27,6 +27,7 @@ const ROLE_OPTIONS: Array<{ value: UserRole; label: string }> = [
   { value: 'teacher', label: 'مدرس' },
   { value: 'mr_walid', label: 'الأستاذ وليد' },
   { value: 'admin', label: 'مشرف' },
+  { value: 'assistant', label: 'مساعد' },
 ];
 
 interface FormData {

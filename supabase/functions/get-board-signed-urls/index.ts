@@ -54,7 +54,7 @@ import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 
 export const DEFAULT_TTL_SECONDS = 900; // 15 minutes
 export const BOARDS_BUCKET = 'boards';
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

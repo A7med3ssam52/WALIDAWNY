@@ -40,7 +40,7 @@ import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 export const MAX_EXAM_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MiB
 export const MAX_FILE_NAME_LENGTH = 255;
 export const EXAM_IMAGES_BUCKET = 'exam-images';
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FILE_NAME_RE = /^[\p{L}\p{N} _.\-]+$/u;
