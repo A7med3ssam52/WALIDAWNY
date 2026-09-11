@@ -677,7 +677,14 @@ export async function uploadPdfBytes(uploadUrl: string, file: Blob): Promise<voi
     throw codeError('network_error');
   }
   if (!response.ok) {
-    throw codeError(response.status >= 500 || response.status === 429 ? 'internal_error' : 'pdf_upload_failed');
+    const status = response.status;
+    if (status === 401) {
+      throw codeError('unauthorized');
+    }
+    if (status >= 500 || status === 429) {
+      throw codeError('internal_error');
+    }
+    throw codeError('pdf_upload_failed');
   }
 }
 
