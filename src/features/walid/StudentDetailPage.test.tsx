@@ -147,4 +147,36 @@ describe('StudentDetailPage', () => {
     });
     expect(await screen.findByRole('button', { name: 'تفعيل الطالب' })).toBeInTheDocument();
   });
+
+  it('shows the suspension reason for a disabled student and updates it', async () => {
+    mockState.profiles.push(
+      makeProfile({
+        id: 's9',
+        full_name: 'طالب موقوف',
+        phone: '01009999999',
+        status: 'disabled',
+        suspension_reason: 'مشاركة الحساب',
+      }),
+    );
+    const user = userEvent.setup();
+    renderApp('/walid/students/s9');
+
+    await screen.findByRole('heading', { name: 'طالب موقوف' });
+    expect(screen.getByText('مشاركة الحساب')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'تعديل السبب' }));
+    const field = screen.getByLabelText('سبب الإيقاف (إجباري)');
+    expect(field).toHaveValue('مشاركة الحساب');
+    await user.clear(field);
+    await user.type(field, 'مخالفة متكررة');
+    await user.click(screen.getByRole('button', { name: 'حفظ السبب' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('update_suspension_reason')).toEqual({
+        p_student_id: 's9',
+        p_reason: 'مخالفة متكررة',
+      });
+    });
+    expect(await screen.findByText('تم تحديث سبب الإيقاف')).toBeInTheDocument();
+  });
 });

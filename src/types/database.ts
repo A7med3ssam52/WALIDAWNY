@@ -748,6 +748,10 @@ export interface Database {
         Returns: void;
       };
       disable_student: { Args: { p_student_id: string; p_reason: string }; Returns: void };
+      update_suspension_reason: {
+        Args: { p_student_id: string; p_reason: string };
+        Returns: void;
+      };
       enable_student: { Args: { p_student_id: string }; Returns: void };
       soft_delete_student: { Args: { p_student_id: string }; Returns: void };
       restore_student: { Args: { p_student_id: string }; Returns: void };

@@ -133,6 +133,16 @@ export async function disableStudent(studentId: string, reason: string): Promise
   }
 }
 
+export async function updateSuspensionReason(studentId: string, reason: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('update_suspension_reason', {
+    p_student_id: studentId,
+    p_reason: reason,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
 export async function enableStudent(studentId: string): Promise<void> {
   const { error } = await getSupabaseClient().rpc('enable_student', { p_student_id: studentId });
   if (error) {

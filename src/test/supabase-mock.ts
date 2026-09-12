@@ -755,6 +755,8 @@ function createMockClient() {
     if (fn === 'disable_student') {
       profile.status = 'disabled';
       profile.suspension_reason = (args?.p_reason as string | undefined) ?? null;
+    } else if (fn === 'update_suspension_reason') {
+      profile.suspension_reason = (args?.p_reason as string | undefined) ?? null;
     } else if (fn === 'enable_student') {
       profile.status = 'active';
       profile.suspension_reason = null;

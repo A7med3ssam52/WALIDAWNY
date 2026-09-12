@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Pause, Play, Trash2, UserRoundCheck } from 'lucide-react';
+import { Pause, Pencil, Play, Trash2, UserRoundCheck } from 'lucide-react';
 
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -25,6 +25,7 @@ import {
   setStudentGrade,
   softDeleteStudent,
   updateStudentProfile,
+  updateSuspensionReason,
 } from '../../data/rpc';
 import { formatDateTime, formatPrice } from '../../lib/format';
 import { toCanonicalPhone, validateProfileForm, type ProfileFormValues } from '../../lib/validation';
@@ -116,6 +117,10 @@ export function StudentDetailPage() {
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [editingReason, setEditingReason] = useState(false);
+  const [editReason, setEditReason] = useState('');
+  const [editReasonError, setEditReasonError] = useState<string | null>(null);
+  const [savingReason, setSavingReason] = useState(false);
 
   const load = useCallback(async () => {
     if (!studentId) {
@@ -224,6 +229,36 @@ export function StudentDetailPage() {
     }
   };
 
+  const openReasonEditor = () => {
+    if (!student) {
+      return;
+    }
+    setEditReason(student.suspension_reason ?? '');
+    setEditReasonError(null);
+    setEditingReason(true);
+  };
+
+  const saveReason = async () => {
+    if (!student) {
+      return;
+    }
+    if (editReason.trim().length === 0) {
+      setEditReasonError('سبب الإيقاف مطلوب وسيظهر للطالب');
+      return;
+    }
+    setSavingReason(true);
+    try {
+      await updateSuspensionReason(student.id, editReason.trim());
+      showToast('تم تحديث سبب الإيقاف');
+      setEditingReason(false);
+      await load();
+    } catch {
+      showToast('تعذر تحديث سبب الإيقاف. حاول مرة أخرى', 'error');
+    } finally {
+      setSavingReason(false);
+    }
+  };
+
   if (loadError) {
     return (
       <LayoutShell title="بيانات الطالب">
@@ -283,6 +318,28 @@ export function StudentDetailPage() {
             ) : null}
           </div>
         </Card>
+
+        {!isDeleted && student.status === 'disabled' ? (
+          <Card
+            title="سبب الإيقاف"
+            subtitle="يظهر هذا السبب للطالب عند تسجيل الدخول"
+            actions={
+              <Button
+                variant="secondary"
+                icon={<Pencil aria-hidden="true" className="h-4 w-4" />}
+                onClick={openReasonEditor}
+              >
+                تعديل السبب
+              </Button>
+            }
+          >
+            <p className="text-sm leading-7 text-foreground">
+              {student.suspension_reason?.trim()
+                ? student.suspension_reason
+                : 'لا يوجد سبب مسجل — يظهر للطالب رسالة افتراضية.'}
+            </p>
+          </Card>
+        ) : null}
 
         <Card title="إجراءات الحساب">
           <div className="flex flex-wrap gap-3">
@@ -460,6 +517,37 @@ export function StudentDetailPage() {
             />
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={editingReason}
+        title="تعديل سبب الإيقاف"
+        description="سيظهر السبب الجديد للطالب عند تسجيل الدخول."
+        confirmLabel="حفظ السبب"
+        loading={savingReason}
+        onConfirm={() => void saveReason()}
+        onCancel={() => {
+          if (!savingReason) {
+            setEditingReason(false);
+          }
+        }}
+      >
+        <div className="mt-4">
+          <Textarea
+            label="سبب الإيقاف (إجباري)"
+            name="suspension-reason-edit"
+            placeholder="اكتب سبب الإيقاف — سيظهر للطالب"
+            value={editReason}
+            onChange={(event) => {
+              setEditReason(event.target.value);
+              if (editReasonError) {
+                setEditReasonError(null);
+              }
+            }}
+            error={editReasonError ?? undefined}
+            rows={3}
+          />
+        </div>
       </Modal>
     </LayoutShell>
   );
