@@ -95,6 +95,8 @@ const PDF_ERROR_MESSAGES: Record<string, string> = {
   account_inactive_or_deleted: 'الحساب غير نشط أو تم حذفه',
   access_denied: 'ليست لديك صلاحية',
   permission_denied: 'ليست لديك صلاحية',
+  forbidden: 'ليست لديك صلاحية',
+  wrong_lesson: 'الملف لا ينتمي لهذا الدرس',
   pdf_not_found: 'ملف PDF غير موجود',
   pdf_not_pending: 'الملف مكتمل ولا يمكن حذفه',
   pdf_upload_failed: 'فشل رفع الملف إلى التخزين. حاول مرة أخرى',
@@ -374,6 +376,7 @@ export function LessonAssetsPage() {
   const [deletePdf, setDeletePdf] = useState<LessonPdf | null>(null);
 
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const pdfFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadLesson = useCallback(async () => {
     if (!lessonId) {
@@ -684,8 +687,10 @@ export function LessonAssetsPage() {
       setFile(null);
       return;
     }
-    const isPdf = selected.name.toLowerCase().endsWith('.pdf');
-    if (!isPdf) {
+    const hasPdfExtension = selected.name.toLowerCase().endsWith('.pdf');
+    // Some platforms leave File.type empty for valid PDFs, so allow '' here.
+    const hasPdfType = selected.type === 'application/pdf' || selected.type === '';
+    if (!hasPdfExtension || !hasPdfType) {
       setFile(null);
       setUploadError('يجب اختيار ملف بصيغة PDF فقط');
       return;
@@ -709,8 +714,10 @@ export function LessonAssetsPage() {
     }
     setStage('requesting');
     setUploadError(null);
+    let reservedPdfId: string | null = null;
     try {
-      const session = await uploadPdf({ lessonId, fileName: file.name });
+      const session = await uploadPdf({ lessonId, fileName: file.name, fileSize: file.size });
+      reservedPdfId = session.pdf_id;
       setStage('uploading');
       await uploadPdfBytes(session.uploadUrl, file);
       setStage('finalizing');
@@ -718,10 +725,16 @@ export function LessonAssetsPage() {
       showToast('تم رفع ملف PDF بنجاح');
       await loadPdfs();
     } catch (err) {
+      if (lessonId && reservedPdfId) {
+        await deletePdfUpload(lessonId, reservedPdfId).catch(() => undefined);
+      }
       showToast(pdfErrorMessage(err), 'error');
     } finally {
       setStage('idle');
       setFile(null);
+      if (pdfFileInputRef.current) {
+        pdfFileInputRef.current.value = '';
+      }
     }
   };
 
@@ -1142,6 +1155,8 @@ export function LessonAssetsPage() {
                 name="pdf-file"
                 type="file"
                 accept=".pdf,application/pdf"
+                ref={pdfFileInputRef}
+                data-testid="pdf-upload-input"
                 onChange={(event) => handleFileChange(event)}
                 className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] file:transition-[filter] hover:file:brightness-110"
               />
@@ -1156,6 +1171,7 @@ export function LessonAssetsPage() {
                 loading={uploadBusy}
                 disabled={!file}
                 icon={<FileUp aria-hidden="true" className="h-4 w-4" />}
+                data-testid="pdf-upload-button"
                 onClick={() => void handleUpload()}
               >
                 رفع الملف
@@ -1163,6 +1179,11 @@ export function LessonAssetsPage() {
               {uploadBusy ? (
                 <span className="text-sm text-foreground-muted">
                   {STAGE_LABELS[stage as Exclude<UploadStage, 'idle'>]}
+                </span>
+              ) : null}
+              {file ? (
+                <span className="text-sm text-foreground-muted">
+                  {file.name} — {formatFileSize(file.size)}
                 </span>
               ) : null}
             </div>

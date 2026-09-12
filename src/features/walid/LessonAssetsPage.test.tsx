@@ -25,6 +25,8 @@ const TUS_ENDPOINT = 'https://video.bunnycdn.com/tusupload';
 const BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/upload-board';
 const DELETE_BOARD_EF_URL = 'https://test-project.supabase.co/functions/v1/delete-board';
 const DELETE_PDF_EF_URL = 'https://test-project.supabase.co/functions/v1/delete-pdf';
+const PDF_EF_URL = 'https://test-project.supabase.co/functions/v1/upload-pdf';
+const PDF_UPLOAD_URL = 'https://storage.test/pdfs/lesson-1/pdf-new-1.pdf';
 const BOARD_UPLOAD_URL = 'https://storage.test/boards/lesson-1/board-new-1.jpg';
 const BOARD_URL_1 =
   'https://example.supabase.co/storage/v1/object/sign/boards/lesson-1/board-1.jpg?token=b1';
@@ -1430,6 +1432,142 @@ describe('LessonAssetsPage — board section', () => {
     const modalContent = screen.getByTestId('board-preview-modal');
     expect(within(modalContent).getByRole('img')).toHaveAttribute('src', BOARD_URL_1);
     expect(within(modalContent).getByRole('img')).toHaveAttribute('alt', 'سبورة أولى.jpg');
+  });
+});
+
+describe('LessonAssetsPage — pdf upload', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    resetMockState();
+    setAuthenticatedWalid();
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    document.querySelectorAll('button[aria-label="إغلاق الإشعار"]').forEach((button) => {
+      fireEvent.click(button);
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('uploads a pdf end-to-end: session EF, PUT bytes, finalize RPC and success toast', async () => {
+    seedLesson();
+    mockState.lessonPdfs.push(
+      makePdf({
+        id: 'pdf-new-1',
+        lesson_id: 'lesson-1',
+        original_name: 'ملخص جديد.pdf',
+        is_ready: false,
+        is_primary: false,
+      }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-pdf')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            uploadUrl: PDF_UPLOAD_URL,
+            pdf_id: 'pdf-new-1',
+            storage_path: 'lesson-1/pdf-new-1.pdf',
+          }),
+        };
+      }
+      if (target === PDF_UPLOAD_URL) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-upload-input');
+
+    const pdfFile = new File(['fake-pdf-bytes'], 'ملخص جديد.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('pdf-upload-input'), {
+      target: { files: [pdfFile] },
+    });
+    fireEvent.click(screen.getByTestId('pdf-upload-button'));
+
+    await waitFor(() => {
+      expect(expectRpcCall('finalize_pdf_upload')).toEqual({ p_pdf_id: 'pdf-new-1' });
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      PDF_EF_URL,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+        body: JSON.stringify({
+          lesson_id: 'lesson-1',
+          file_name: 'ملخص جديد.pdf',
+          file_size: 14,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      PDF_UPLOAD_URL,
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({ 'Content-Type': 'application/pdf' }),
+      }),
+    );
+    expect(await screen.findByText('تم رفع ملف PDF بنجاح')).toBeInTheDocument();
+    const uploadedRow = await screen.findByTestId('pdf-row-pdf-new-1');
+    expect(within(uploadedRow).getByText('جاهز')).toBeInTheDocument();
+  });
+
+  it('maps a forbidden session rejection to the permission message instead of the generic one', async () => {
+    seedLesson();
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-pdf')) {
+        return {
+          ok: false,
+          status: 403,
+          json: async () => ({ error: { code: 'forbidden', message: 'Insufficient privileges.' } }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-upload-input');
+
+    const pdfFile = new File(['fake-pdf-bytes'], 'ملخص جديد.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('pdf-upload-input'), {
+      target: { files: [pdfFile] },
+    });
+    fireEvent.click(screen.getByTestId('pdf-upload-button'));
+
+    expect(await screen.findByText('ليست لديك صلاحية')).toBeInTheDocument();
+  });
+
+  it('maps a file_too_large session rejection to the size-limit message', async () => {
+    seedLesson();
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-pdf')) {
+        return {
+          ok: false,
+          status: 413,
+          json: async () => ({ error: { code: 'file_too_large', message: 'Too big.' } }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-upload-input');
+
+    const pdfFile = new File(['fake-pdf-bytes'], 'ملخص جديد.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('pdf-upload-input'), {
+      target: { files: [pdfFile] },
+    });
+    fireEvent.click(screen.getByTestId('pdf-upload-button'));
+
+    expect(
+      await screen.findByText('حجم الملف يتجاوز الحد المسموح (50 ميجابايت)'),
+    ).toBeInTheDocument();
   });
 });
 

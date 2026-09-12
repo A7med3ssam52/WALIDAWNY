@@ -649,10 +649,15 @@ export interface PdfUploadSession {
 export async function uploadPdf(input: {
   lessonId: string;
   fileName: string;
+  fileSize?: number;
 }): Promise<PdfUploadSession> {
   return invokeFunction<PdfUploadSession>('upload-pdf', {
     method: 'POST',
-    body: { lesson_id: input.lessonId, file_name: input.fileName },
+    body: {
+      lesson_id: input.lessonId,
+      file_name: input.fileName,
+      ...(input.fileSize !== undefined ? { file_size: input.fileSize } : {}),
+    },
   });
 }
 
