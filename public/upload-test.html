@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>اختبار اختيار الملفات (تشخيص مؤقت)</title>
+    <style>
+      body { font-family: system-ui, Tahoma, sans-serif; background: #0b0820; color: #fff; margin: 0; padding: 16px; }
+      h1 { font-size: 18px; }
+      p.hint { font-size: 13px; color: #b9b3d9; }
+      section { border: 1px solid #3b3560; border-radius: 12px; padding: 12px; margin: 12px 0; background: #141130; }
+      section h2 { font-size: 15px; margin: 0 0 8px; }
+      input[type="file"] { font-size: 14px; max-width: 100%; }
+      .out { margin-top: 8px; font-size: 14px; background: #0b0820; border-radius: 8px; padding: 8px; min-height: 20px; white-space: pre-wrap; word-break: break-all; }
+      .ok { color: #6ee7b7; }
+      .bad { color: #fda4af; }
+      .ua { font-size: 11px; color: #8f89b3; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <h1>اختبار اختيار الملفات (صفحة تشخيص مؤقتة)</h1>
+    <p class="hint">اختار ملف في كل حقل تحت، واكتب لنا اللي ظهر في المربع بتاعه.</p>
+    <p class="ua" id="ua"></p>
+
+    <section>
+      <h2>1) ملف PDF (بفلتر — الوضع القديم)</h2>
+      <input id="in1" type="file" accept=".pdf,application/pdf" />
+      <div class="out" id="out1">لم يتم الاختيار بعد</div>
+    </section>
+
+    <section>
+      <h2>2) ملف PDF (بدون فلتر — الوضع الجديد)</h2>
+      <input id="in2" type="file" />
+      <div class="out" id="out2">لم يتم الاختيار بعد</div>
+    </section>
+
+    <section>
+      <h2>3) صورة (للمقارنة)</h2>
+      <input id="in3" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" />
+      <div class="out" id="out3">لم يتم الاختيار بعد</div>
+    </section>
+
+    <script>
+      document.getElementById('ua').textContent = 'المتصفح: ' + navigator.userAgent;
+      function wire(inputId, outId) {
+        var input = document.getElementById(inputId);
+        var out = document.getElementById(outId);
+        var fires = 0;
+        input.addEventListener('change', function () {
+          fires += 1;
+          var files = input.files;
+          var n = files ? files.length : -1;
+          if (!files || files.length === 0) {
+            out.className = 'out bad';
+            out.textContent = 'محاولة ' + fires + ': القائمة فاضية (files=' + n + ') — المتصفح مرجعش ملف';
+            return;
+          }
+          var f = files[0];
+          out.className = 'out ok';
+          out.textContent = 'محاولة ' + fires + ': وصل ملف ✅\nالاسم: ' + f.name + '\nالنوع: ' + (f.type || '(فاضي)') + '\nالحجم: ' + f.size + ' بايت';
+        });
+      }
+      wire('in1', 'out1');
+      wire('in2', 'out2');
+      wire('in3', 'out3');
+    </script>
+  </body>
+</html>
