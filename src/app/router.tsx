@@ -36,6 +36,7 @@ const StudentPresenceGate = lazy(() =>
 
 // Preview — isolated, no impact on prod
 const CardsPreviewPage = lazy(() => import('../features/preview/CardsPreviewPage').then((m) => ({ default: m.CardsPreviewPage })));
+const StopPreviewPage = lazy(() => import('../features/preview/StopPreviewPage').then((m) => ({ default: m.StopPreviewPage })));
 
 // Walid / Teacher
 const WalidDashboardPage = lazy(() => import('../features/walid/WalidDashboardPage').then((m) => ({ default: m.WalidDashboardPage })));
@@ -129,6 +130,7 @@ export function AppRoutes() {
             </Route>
           </Route>
           <Route path="/preview/cards" element={<CardsPreviewPage />} />
+          <Route path="/preview/stop" element={<StopPreviewPage />} />
           {/* Staff full access: mr_walid / admin / teacher */}
           <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
             <Route index element={<Navigate to="/walid/dashboard" replace />} />
