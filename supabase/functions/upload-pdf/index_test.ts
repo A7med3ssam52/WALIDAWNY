@@ -175,11 +175,41 @@ Deno.test('upload-pdf: missing/empty/non-string file_name -> 422 invalid_file_na
 
 Deno.test('upload-pdf: illegal characters -> 422 invalid_file_name', async () => {
   const { dep } = deps(staffCfg());
-  for (const file_name of ['bad?name.pdf', 'col:on.pdf', 'star*name.pdf', 'ctrl\x01char.pdf']) {
+  for (
+    const file_name of [
+      'bad?name.pdf',
+      'col:on.pdf',
+      'star*name.pdf',
+      'ctrl\x01char.pdf',
+      'quote"name.pdf',
+      'less<than.pdf',
+      'greater>than.pdf',
+      'pipe|name.pdf',
+    ]
+  ) {
     const res = await handle(request({ lesson_id: LESSON_ID, file_name }), dep);
     await expectStatus(res, 422);
     const body = await res.json();
     assertEqual(body.error.code, 'invalid_file_name');
+  }
+});
+
+Deno.test('upload-pdf: everyday filename punctuation passes (parens/brackets/plus/commas)', async () => {
+  for (
+    const file_name of [
+      'ملخص (1).pdf',
+      'lesson [final] v2.pdf',
+      'unit-1+extra, part 2.pdf',
+      'مراجعة، نهائية (مهم).pdf',
+      "مذكرة الأستاذ's نسخة.pdf",
+      'file_name-1.2 (copy) [2024] {a}+b,c&d@e#f=g~h!i%j.pdf',
+    ]
+  ) {
+    const { dep } = deps(staffCfg());
+    const res = await handle(request({ lesson_id: LESSON_ID, file_name }), dep);
+    await expectStatus(res, 200);
+    const body = await res.json();
+    assertEqual(body.pdf_id, PDF_ID);
   }
 });
 

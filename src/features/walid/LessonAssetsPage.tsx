@@ -269,6 +269,21 @@ interface PreviewState {
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024;
 const MAX_BOARD_SIZE = 10 * 1024 * 1024;
+// Creating the signed upload URL must be fast; beyond this the request is
+// treated as a network failure so the user always gets feedback.
+const SESSION_TIMEOUT_MS = 30 * 1000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error('network_error')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+    }
+  });
+}
 const VIDEO_POLL_INTERVAL_MS = 4000;
 
 function isVideoActive(video: LessonVideo): boolean {
@@ -688,16 +703,27 @@ export function LessonAssetsPage() {
       return;
     }
     const hasPdfExtension = selected.name.toLowerCase().endsWith('.pdf');
-    // Some platforms leave File.type empty for valid PDFs, so allow '' here.
-    const hasPdfType = selected.type === 'application/pdf' || selected.type === '';
-    if (!hasPdfExtension || !hasPdfType) {
+    // Browsers usually report PDFs as application/pdf (or '' when the OS
+    // provides no type), but some Windows setups report generic
+    // application/octet-stream or a pdf-flavoured vendor type. Trust the
+    // extension first and only reject types that are definitively not PDF,
+    // otherwise valid files look "dead" with no actionable feedback.
+    const fileType = (selected.type || '').toLowerCase();
+    const isDefinitelyNotPdf =
+      fileType !== '' &&
+      fileType !== 'application/octet-stream' &&
+      !fileType.includes('pdf') &&
+      fileType !== 'application/acrobat';
+    if (!hasPdfExtension || isDefinitelyNotPdf) {
       setFile(null);
       setUploadError('يجب اختيار ملف بصيغة PDF فقط');
+      showToast('يجب اختيار ملف بصيغة PDF فقط', 'error');
       return;
     }
     if (selected.size > MAX_PDF_SIZE) {
       setFile(null);
       setUploadError('حجم الملف يتجاوز الحد المسموح (50 ميجابايت)');
+      showToast('حجم الملف يتجاوز الحد المسموح (50 ميجابايت)', 'error');
       return;
     }
     setFile(selected);
@@ -716,7 +742,12 @@ export function LessonAssetsPage() {
     setUploadError(null);
     let reservedPdfId: string | null = null;
     try {
-      const session = await uploadPdf({ lessonId, fileName: file.name, fileSize: file.size });
+      // The session call must be fast; without a timeout a hung network
+      // leaves the button spinning forever with no success/error feedback.
+      const session = await withTimeout(
+        uploadPdf({ lessonId, fileName: file.name, fileSize: file.size }),
+        SESSION_TIMEOUT_MS,
+      );
       reservedPdfId = session.pdf_id;
       setStage('uploading');
       await uploadPdfBytes(session.uploadUrl, file);

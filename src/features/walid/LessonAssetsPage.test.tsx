@@ -1569,6 +1569,71 @@ describe('LessonAssetsPage — pdf upload', () => {
       await screen.findByText('حجم الملف يتجاوز الحد المسموح (50 ميجابايت)'),
     ).toBeInTheDocument();
   });
+
+  it('accepts a .pdf file reported as application/octet-stream (Windows sniffing quirk)', async () => {
+    seedLesson();
+    mockState.lessonPdfs.push(
+      makePdf({
+        id: 'pdf-new-1',
+        lesson_id: 'lesson-1',
+        original_name: 'ملخص.pdf',
+        is_ready: false,
+        is_primary: false,
+      }),
+    );
+    fetchMock.mockImplementation(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/upload-pdf')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            uploadUrl: PDF_UPLOAD_URL,
+            pdf_id: 'pdf-new-1',
+            storage_path: 'lesson-1/pdf-new-1.pdf',
+          }),
+        };
+      }
+      if (target === PDF_UPLOAD_URL) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-upload-input');
+
+    const pdfFile = new File(['fake-pdf-bytes'], 'ملخص.pdf', {
+      type: 'application/octet-stream',
+    });
+    fireEvent.change(screen.getByTestId('pdf-upload-input'), {
+      target: { files: [pdfFile] },
+    });
+    expect(screen.getByTestId('pdf-upload-button')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('pdf-upload-button'));
+
+    expect(await screen.findByText('تم رفع ملف PDF بنجاح')).toBeInTheDocument();
+  });
+
+  it('rejects a definitively non-PDF file with inline error, toast, and no session call', async () => {
+    seedLesson();
+    renderApp('/walid/lessons/lesson-1');
+    await screen.findByTestId('pdf-upload-input');
+
+    const imageFile = new File(['fake-png-bytes'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('pdf-upload-input'), {
+      target: { files: [imageFile] },
+    });
+
+    // inline message under the input + error toast (same text twice)
+    expect(screen.getAllByText('يجب اختيار ملف بصيغة PDF فقط').length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(screen.getByTestId('pdf-upload-button')).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      PDF_EF_URL,
+      expect.anything(),
+    );
+  });
 });
 
 describe('LessonAssetsPage — pdf deletion', () => {

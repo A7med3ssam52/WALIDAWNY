@@ -32,9 +32,11 @@
 //
 // File-name/MIME/size policy (pragmatic, per ARCHITECTURE.md §8.2):
 //   * The EF validates the ORIGINAL filename: basename only (path
-//     separators stripped — '../x.pdf' becomes 'x.pdf'), a strict
+//     separators stripped — '../x.pdf' becomes 'x.pdf'), a pragmatic
 //     character allowlist (Arabic/Latin letters, digits, spaces, dots,
-//     hyphens, underscores; control chars rejected), max length 255,
+//     hyphens, underscores, plus everyday punctuation such as
+//     parentheses/brackets/plus/commas/quotes/&@#=~!% — Windows-forbidden
+//     : * ? " < > | and control chars stay rejected), max length 255,
 //     and a case-insensitive .pdf extension — the extension is the
 //     only content hint available BEFORE the bytes exist.
 //   * MIME: pinned to application/pdf — the signed upload URL is
@@ -83,8 +85,15 @@ export const UPLOAD_URL_TTL_SECONDS = 60; // platform default TTL for signed upl
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Arabic/Latin letters, digits, spaces, dots, hyphens, underscores.
-const FILE_NAME_RE = /^[\p{L}\p{N} _.\-]+$/u;
+// Arabic/Latin letters, digits, spaces, dots, hyphens, underscores, plus
+// everyday filename punctuation seen in real downloads on Windows/macOS
+// (parentheses from duplicate downloads like "name (1).pdf", brackets,
+// plus, commas incl. Arabic ، ؛, quotes, &, @, #, =, ~, !, %, semicolons).
+// Still rejected: path separators (stripped before this check), control
+// chars (separate check), and Windows-forbidden : * ? " < > | which double
+// as injection-hardening. The name is only stored as display text
+// (original_name); the storage path is always a server-generated UUID.
+const FILE_NAME_RE = /^[\p{L}\p{N} _.\-()[\]{}+',’‘;٬،؛&@#=~!%]+$/u;
 const PDF_EXT_RE = /\.pdf$/i;
 
 export type DbError = { message: string; code?: string; details?: string };
