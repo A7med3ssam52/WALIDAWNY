@@ -146,15 +146,9 @@ export function Design20OfficialLetter({ content, onClose }: AdDesignProps) {
             {content.link_label}
           </a>
         ) : null}
+        <AdSignature content={content} tone="paper" />
         {content.showSignature ? (
-          <div className="mt-5 flex items-end justify-between border-t-2 border-[#1d1a33]/10 pt-4" data-testid="ad-signature">
-            <div>
-              <p className="text-xs font-extrabold">{content.signatureName?.trim() || 'إدارة منصة وليد عوني'}</p>
-              <p className="mt-0.5 text-[11px] text-[#1d1a33]/60">{content.signatureTitle?.trim() || 'التوقيع الرسمي للإدارة'}</p>
-              <p className="mt-1 text-[11px] text-[#1d1a33]/50">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
-            </div>
-            <span dir="ltr" aria-hidden="true" className="font-display text-2xl italic text-[#1d1a33]/70">W. Awny</span>
-          </div>
+          <p className="mt-1 text-[11px] text-[#1d1a33]/50">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
         ) : null}
       </div>
       <div className="flex gap-2 bg-[#0e0b22] p-4">

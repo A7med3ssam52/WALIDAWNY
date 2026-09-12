@@ -45,6 +45,6 @@ export const DEFAULT_AD_CONTENT: AdContent = {
   link_label: 'عرض التفاصيل',
   variant: 'info',
   showSignature: true,
-  signatureName: 'إدارة منصة وليد عوني',
-  signatureTitle: 'التوقيع الرسمي للإدارة',
+  signatureName: 'الإدارة',
+  signatureTitle: '',
 };

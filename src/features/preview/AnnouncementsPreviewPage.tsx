@@ -217,7 +217,7 @@ export function AnnouncementsPreviewPage() {
         </div>
 
         {/* دليل الاستخدام */}
-        <Card title="كيف تستخدم تصميماً في الإنتاج؟" subtitle="انسخ هذا النمط داخل AnnouncementBanner أو أي صفحة إعلانات" className="mt-8">
+          <Card title="كيف تستخدم تصميماً في الإنتاج؟" subtitle="مكوّن AnnouncementModal يعرض التصميم المختار (الترويسة المتدرجة) تلقائياً" className="mt-8">
           <ol className="list-decimal space-y-2 ps-5 text-sm leading-7 text-foreground-muted">
             <li>اختر رقم التصميم من الأعلى (1–20) والنوع (نجاح / خطأ / تحذير / معلومات).</li>
             <li>استخدم <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs text-indigo-200">AdModalShell + AD_DESIGNS</code> لعرض إعلان Supabase داخل Modal.</li>

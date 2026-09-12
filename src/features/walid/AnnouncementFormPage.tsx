@@ -12,7 +12,10 @@ import { Select } from '../../components/Select';
 import { Textarea } from '../../components/Textarea';
 import { Toggle } from '../../components/Toggle';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/AuthContext';
 import { createAnnouncement, updateAnnouncement, getAnnouncementById } from '../../lib/announcements';
+import { ADMIN_DEFAULT_SIGNATURE, SIGNATURE_MAX_LENGTH, WALID_LOCKED_SIGNATURE, isSignatureLockedForRole, resolveAnnouncementSignature } from '../../lib/announcements';
+import { AdSignature } from '../../components/ads';
 import type { Announcement, CreateAnnouncementInput, AnnouncementVariant, UserRole } from '../../lib/announcements';
 
 const VARIANT_OPTIONS: Array<{ value: AnnouncementVariant; label: string }> = [
@@ -42,6 +45,7 @@ interface FormData {
   ends_at: string;
   is_active: boolean;
   dismissible: boolean;
+  signature_name: string;
 }
 
 const initialForm: FormData = {
@@ -56,6 +60,7 @@ const initialForm: FormData = {
   ends_at: '',
   is_active: true,
   dismissible: true,
+  signature_name: ADMIN_DEFAULT_SIGNATURE,
 };
 
 export function WalidAnnouncementFormPage() {
@@ -63,6 +68,8 @@ export function WalidAnnouncementFormPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
   const { showToast } = useToast();
+  const { role } = useAuth();
+  const signatureLocked = isSignatureLockedForRole(role);
 
   const [form, setForm] = useState<FormData>(initialForm);
   const [loadError, setLoadError] = useState(false);
@@ -87,6 +94,7 @@ export function WalidAnnouncementFormPage() {
         ends_at: ann.ends_at ? ann.ends_at.slice(0, 16) : '',
         is_active: ann.is_active,
         dismissible: ann.dismissible,
+        signature_name: ann.signature_name ?? ADMIN_DEFAULT_SIGNATURE,
       });
       setLoaded(true);
     } catch {
@@ -133,6 +141,7 @@ export function WalidAnnouncementFormPage() {
         ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
         is_active: form.is_active,
         dismissible: form.dismissible,
+        signature_name: resolveAnnouncementSignature(role, form.signature_name),
       };
 
       if (isEdit && id) {
@@ -201,6 +210,7 @@ export function WalidAnnouncementFormPage() {
     ends_at: form.ends_at || null,
     is_active: form.is_active,
     dismissible: form.dismissible,
+    signature_name: resolveAnnouncementSignature(role, form.signature_name),
     created_by: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -292,6 +302,19 @@ export function WalidAnnouncementFormPage() {
               placeholder="اقرأ المزيد"
             />
           </div>
+
+          <Input
+            label="التوقيع (يظهر بخط اليد أسفل الإعلان)"
+            name="signature_name"
+            value={signatureLocked ? WALID_LOCKED_SIGNATURE : form.signature_name}
+            onChange={(e) => handleChange('signature_name', e.target.value)}
+            required
+            maxLength={SIGNATURE_MAX_LENGTH}
+            placeholder={ADMIN_DEFAULT_SIGNATURE}
+            disabled={signatureLocked}
+            className="mt-2"
+            hint={signatureLocked ? 'التوقيع ثابت لحساب مستر وليد: م / وليد عوني.' : 'عربي فقط — بحد أقصى 60 حرفاً.'}
+          />
         </Card>
 
         <Card title="الاستهداف والجدولة">
@@ -441,6 +464,21 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
           ) : (
             <span className="mt-4 text-xs text-white/70">سيختفي تلقائياً عند انتهاء المدة</span>
           )}
+
+          <div className="mt-2 w-full">
+            <AdSignature
+              tone="light"
+              content={{
+                title: announcement.title,
+                body: announcement.body,
+                link_url: announcement.link_url,
+                link_label: announcement.link_label,
+                variant: announcement.variant,
+                showSignature: true,
+                signatureName: announcement.signature_name,
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>

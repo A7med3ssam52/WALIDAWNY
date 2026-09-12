@@ -16,6 +16,8 @@ export interface Announcement {
   ends_at: string | null;
   is_active: boolean;
   dismissible: boolean;
+  /** التوقيع العربي أسفل الإعلان — افتراضي 'الإدارة'، ومقفول لمستر وليد */
+  signature_name: string;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -33,6 +35,7 @@ export interface CreateAnnouncementInput {
   ends_at?: string | null;
   is_active?: boolean;
   dismissible?: boolean;
+  signature_name?: string;
 }
 
 export interface UpdateAnnouncementInput {
@@ -47,6 +50,28 @@ export interface UpdateAnnouncementInput {
   ends_at?: string | null;
   is_active?: boolean;
   dismissible?: boolean;
+  signature_name?: string | null;
+}
+
+/** التوقيع الافتراضي القابل للتعديل في فورم الأدمن */
+export const ADMIN_DEFAULT_SIGNATURE = 'الإدارة';
+/** التوقيع المقفول لحساب مستر وليد */
+export const WALID_LOCKED_SIGNATURE = 'م / وليد عوني';
+export const SIGNATURE_MAX_LENGTH = 60;
+
+/** مستر وليد توقيعه مقفول دائماً — باقي الأدوار قابلة للتعديل */
+export function isSignatureLockedForRole(role: UserRole | string | null | undefined): boolean {
+  return role === 'mr_walid';
+}
+
+/** يحسم التوقيع النهائي حسب الدور: مقفول لوليد، والباقي القيمة المدخلة أو الافتراضي */
+export function resolveAnnouncementSignature(
+  role: UserRole | string | null | undefined,
+  input?: string | null,
+): string {
+  if (isSignatureLockedForRole(role)) return WALID_LOCKED_SIGNATURE;
+  const trimmed = (input ?? '').trim();
+  return trimmed || ADMIN_DEFAULT_SIGNATURE;
 }
 
 const VARIANT_LABELS: Record<AnnouncementVariant, string> = {
@@ -132,6 +157,7 @@ export async function createAnnouncement(input: CreateAnnouncementInput): Promis
     p_ends_at: input.ends_at ?? null,
     p_is_active: input.is_active ?? true,
     p_dismissible: input.dismissible ?? true,
+    p_signature_name: input.signature_name?.trim() || ADMIN_DEFAULT_SIGNATURE,
   });
   if (error) throw error;
   return data as Announcement;
@@ -152,6 +178,7 @@ export async function updateAnnouncement(id: string, input: UpdateAnnouncementIn
     p_ends_at: input.ends_at ?? null,
     p_is_active: input.is_active ?? null,
     p_dismissible: input.dismissible ?? null,
+    p_signature_name: input.signature_name ?? null,
   });
   if (error) throw error;
   return data as Announcement;

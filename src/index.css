@@ -10,9 +10,10 @@
 @theme {
   /* ===== Aurora Night — dark, neon-glass design system ===== */
 
-  /* Fonts (Arabic-first: Changa display, Cairo strong, Tajawal body) */
+  /* Fonts (Arabic-first: Changa display, Cairo strong, Tajawal body, Aref Ruqaa signature) */
   --font-sans: 'Tajawal', 'Cairo', 'Segoe UI', 'Tahoma', system-ui, sans-serif;
   --font-display: 'Changa', 'Cairo', 'Tajawal', 'Segoe UI', 'Tahoma', system-ui, sans-serif;
+  --font-signature: 'Aref Ruqaa', 'Cairo', 'Tajawal', serif;
 
   /* Semantic color tokens — neon indigo/violet/cyan on deep space */
   --color-primary: #818cf8; /* indigo-400 */

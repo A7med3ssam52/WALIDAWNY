@@ -97,7 +97,6 @@ export function Design09GradientHeader({ content, onClose }: AdDesignProps) {
             <Icon className="h-6 w-6" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/80">{theme.label}</p>
             <h2 className="font-display text-lg font-extrabold text-white">{content.title}</h2>
           </div>
         </div>

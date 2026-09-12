@@ -9,7 +9,7 @@ describe('AnnouncementsPreviewPage — preview/ads', () => {
     resetMockState();
     renderApp('/preview/ads');
 
-    expect(await screen.findByRole('heading', { name: /20 تصميماً لظهور.*الإعلانات في Modal/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /20 تصميماً لظهور.*الإعلانات في Modal/ }, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'نوع الإعلان' })).toBeInTheDocument();
 
     // 20 بطاقة

@@ -5,7 +5,7 @@ import { ConfigErrorScreen } from '../features/auth/ConfigErrorScreen';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { BackgroundUploadBanner } from '../components/BackgroundUploadBanner';
 import { InstallPrompt } from '../components/InstallPrompt';
-import { AnnouncementBanner } from '../components/AnnouncementBanner';
+import { AnnouncementModal } from '../components/AnnouncementModal';
 import { Providers } from './providers';
 import { AppRoutes } from './router';
 
@@ -23,7 +23,7 @@ export function App() {
   return (
     <BrowserRouter>
       <Providers>
-        <AnnouncementBanner />
+        <AnnouncementModal />
         <AppRoutes />
         <BackgroundUploadBanner />
         <InstallPrompt />

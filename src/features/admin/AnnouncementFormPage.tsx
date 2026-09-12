@@ -13,6 +13,8 @@ import { Textarea } from '../../components/Textarea';
 import { Toggle } from '../../components/Toggle';
 import { useToast } from '../../components/Toast';
 import { createAnnouncement, updateAnnouncement, getAnnouncementById } from '../../lib/announcements';
+import { ADMIN_DEFAULT_SIGNATURE, SIGNATURE_MAX_LENGTH } from '../../lib/announcements';
+import { AdSignature } from '../../components/ads';
 import type { Announcement, CreateAnnouncementInput, AnnouncementVariant, UserRole } from '../../lib/announcements';
 
 const VARIANT_OPTIONS: Array<{ value: AnnouncementVariant; label: string }> = [
@@ -42,6 +44,7 @@ interface FormData {
   ends_at: string;
   is_active: boolean;
   dismissible: boolean;
+  signature_name: string;
 }
 
 const initialForm: FormData = {
@@ -56,6 +59,7 @@ const initialForm: FormData = {
   ends_at: '',
   is_active: true,
   dismissible: true,
+  signature_name: ADMIN_DEFAULT_SIGNATURE,
 };
 
 export function AnnouncementFormPage() {
@@ -87,6 +91,7 @@ export function AnnouncementFormPage() {
         ends_at: ann.ends_at ? ann.ends_at.slice(0, 16) : '',
         is_active: ann.is_active,
         dismissible: ann.dismissible,
+        signature_name: ann.signature_name ?? ADMIN_DEFAULT_SIGNATURE,
       });
       setLoaded(true);
     } catch {
@@ -133,6 +138,7 @@ export function AnnouncementFormPage() {
         ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
         is_active: form.is_active,
         dismissible: form.dismissible,
+        signature_name: form.signature_name.trim() || ADMIN_DEFAULT_SIGNATURE,
       };
 
       if (isEdit && id) {
@@ -201,6 +207,7 @@ export function AnnouncementFormPage() {
     ends_at: form.ends_at || null,
     is_active: form.is_active,
     dismissible: form.dismissible,
+    signature_name: form.signature_name.trim() || ADMIN_DEFAULT_SIGNATURE,
     created_by: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -292,6 +299,18 @@ export function AnnouncementFormPage() {
               placeholder="اقرأ المزيد"
             />
           </div>
+
+          <Input
+            label="التوقيع (يظهر بخط اليد أسفل الإعلان)"
+            name="signature_name"
+            value={form.signature_name}
+            onChange={(e) => handleChange('signature_name', e.target.value)}
+            required
+            maxLength={SIGNATURE_MAX_LENGTH}
+            placeholder={ADMIN_DEFAULT_SIGNATURE}
+            className="mt-2"
+            hint="عربي فقط — بحد أقصى 60 حرفاً."
+          />
         </Card>
 
         <Card title="الاستهداف والجدولة">
@@ -446,6 +465,18 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       )}
+
+      <AdSignature
+        content={{
+          title: announcement.title,
+          body: announcement.body,
+          link_url: announcement.link_url,
+          link_label: announcement.link_label,
+          variant: announcement.variant,
+          showSignature: true,
+          signatureName: announcement.signature_name,
+        }}
+      />
 
       <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 hidden md:block">
         <svg className="h-3 w-3 text-current" fill="currentColor" viewBox="0 0 10 6" aria-hidden="true">
