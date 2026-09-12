@@ -51,7 +51,7 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(screen.queryByText('محذوف')).not.toBeInTheDocument();
   });
 
-  it('disables a student after confirmation', async () => {
+  it('disables a student with a mandatory reason after confirmation', async () => {
     const user = userEvent.setup();
     renderApp('/walid/students');
 
@@ -61,8 +61,17 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'نعم، إيقاف' }));
 
+    expect(await screen.findByText('سبب الإيقاف مطلوب وسيظهر للطالب')).toBeInTheDocument();
+    expect(expectRpcCall('disable_student')).toBeUndefined();
+
+    await user.type(screen.getByLabelText('سبب الإيقاف (إجباري)'), 'مشاركة الحساب');
+    await user.click(screen.getByRole('button', { name: 'نعم، إيقاف' }));
+
     await waitFor(() => {
-      expect(expectRpcCall('disable_student')).toEqual({ p_student_id: 's1' });
+      expect(expectRpcCall('disable_student')).toEqual({
+        p_student_id: 's1',
+        p_reason: 'مشاركة الحساب',
+      });
     });
     await waitFor(() => {
       expect(within(screen.getByTestId('student-row-s1')).getByText('موقوف')).toBeInTheDocument();

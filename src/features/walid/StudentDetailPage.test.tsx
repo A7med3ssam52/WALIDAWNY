@@ -126,7 +126,7 @@ describe('StudentDetailPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('disables the student from the detail page', async () => {
+  it('disables the student with a mandatory reason from the detail page', async () => {
     const user = userEvent.setup();
     renderApp('/walid/students/s1');
 
@@ -134,8 +134,16 @@ describe('StudentDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'إيقاف الطالب' }));
     await user.click(screen.getByRole('button', { name: 'نعم، إيقاف' }));
 
+    expect(await screen.findByText('سبب الإيقاف مطلوب وسيظهر للطالب')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('سبب الإيقاف (إجباري)'), 'مخالفة السياسة');
+    await user.click(screen.getByRole('button', { name: 'نعم، إيقاف' }));
+
     await waitFor(() => {
-      expect(expectRpcCall('disable_student')).toEqual({ p_student_id: 's1' });
+      expect(expectRpcCall('disable_student')).toEqual({
+        p_student_id: 's1',
+        p_reason: 'مخالفة السياسة',
+      });
     });
     expect(await screen.findByRole('button', { name: 'تفعيل الطالب' })).toBeInTheDocument();
   });

@@ -143,6 +143,7 @@ export function makeProfile(overrides: Partial<AnyRecord> = {}): AnyRecord {
     grade_id: null,
     role: 'student',
     status: 'active',
+    suspension_reason: null,
     deleted_at: null,
     created_at: '2026-01-01T10:00:00.000Z',
     updated_at: '2026-01-01T10:00:00.000Z',
@@ -753,13 +754,16 @@ function createMockClient() {
     }
     if (fn === 'disable_student') {
       profile.status = 'disabled';
+      profile.suspension_reason = (args?.p_reason as string | undefined) ?? null;
     } else if (fn === 'enable_student') {
       profile.status = 'active';
+      profile.suspension_reason = null;
     } else if (fn === 'soft_delete_student') {
       profile.status = 'disabled';
       profile.deleted_at = nowIso();
     } else if (fn === 'restore_student') {
       profile.status = 'active';
+      profile.suspension_reason = null;
       profile.deleted_at = null;
     } else {
       return false;

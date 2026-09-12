@@ -20,7 +20,7 @@ function toLoginErrorMessage(error: unknown): string {
     message.includes('inactive') ||
     message.includes('deleted')
   ) {
-    return 'تم إيقاف هذا الحساب. يرجى التواصل مع إدارة المنصة';
+    return 'تم حذف هذا الحساب. يرجى التواصل مع إدارة المنصة';
   }
   if (message.includes('invalid login credentials') || message.includes('invalid_credentials')) {
     return 'بيانات الدخول غير صحيحة';

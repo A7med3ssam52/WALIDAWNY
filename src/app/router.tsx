@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { GuestOnly, ProtectedRoute, RoleGuard } from '../components/guards';
 import { Spinner } from '../components/Spinner';
+import { SuspendedAccountGate } from '../components/SuspendedAccountGate';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Public — lazy for code splitting (Landing excludes hls.js chunk)
@@ -33,10 +34,6 @@ const StudentNotificationsPage = lazy(() => import('../features/student/StudentN
 const StudentPresenceGate = lazy(() =>
   import('../features/student/StudentPresenceGate').then((m) => ({ default: m.StudentPresenceGate })),
 );
-
-// Preview — isolated, no impact on prod
-const CardsPreviewPage = lazy(() => import('../features/preview/CardsPreviewPage').then((m) => ({ default: m.CardsPreviewPage })));
-const StopPreviewPage = lazy(() => import('../features/preview/StopPreviewPage').then((m) => ({ default: m.StopPreviewPage })));
 
 // Walid / Teacher
 const WalidDashboardPage = lazy(() => import('../features/walid/WalidDashboardPage').then((m) => ({ default: m.WalidDashboardPage })));
@@ -118,19 +115,19 @@ export function AppRoutes() {
         {/* Protected */}
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<RoleGuard allow={['student']} />}>
-            <Route element={<StudentPresenceGate />}>
-              <Route index element={<Navigate to="/student/dashboard" replace />} />
-              <Route path="dashboard" element={<StudentDashboardPage />} />
-              <Route path="profile" element={<StudentProfilePage />} />
-              <Route path="password" element={<StudentChangePasswordPage />} />
-              <Route path="units" element={<UnitsPage />} />
-              <Route path="curriculum" element={<StudentCurriculumPage />} />
-              <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
-              <Route path="notifications" element={<StudentNotificationsPage />} />
+            <Route element={<SuspendedAccountGate />}>
+              <Route element={<StudentPresenceGate />}>
+                <Route index element={<Navigate to="/student/dashboard" replace />} />
+                <Route path="dashboard" element={<StudentDashboardPage />} />
+                <Route path="profile" element={<StudentProfilePage />} />
+                <Route path="password" element={<StudentChangePasswordPage />} />
+                <Route path="units" element={<UnitsPage />} />
+                <Route path="curriculum" element={<StudentCurriculumPage />} />
+                <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
+                <Route path="notifications" element={<StudentNotificationsPage />} />
+              </Route>
             </Route>
           </Route>
-          <Route path="/preview/cards" element={<CardsPreviewPage />} />
-          <Route path="/preview/stop" element={<StopPreviewPage />} />
           {/* Staff full access: mr_walid / admin / teacher */}
           <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
             <Route index element={<Navigate to="/walid/dashboard" replace />} />

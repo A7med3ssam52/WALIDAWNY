@@ -10,6 +10,7 @@ import { Modal } from '../../components/Modal';
 import { Skeleton } from '../../components/Skeleton';
 import { RoleNav } from '../../components/RoleNav';
 import { StatusBadge } from '../../components/StatusBadge';
+import { Textarea } from '../../components/Textarea';
 import { useToast } from '../../components/Toast';
 import { disableStudent, enableStudent, listStudents, softDeleteStudent } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
@@ -40,7 +41,7 @@ function modalCopy(pending: NonNullable<PendingAction>): {
   if (pending.kind === 'disable') {
     return {
       title: 'إيقاف الطالب',
-      description: `سيتم منع ${pending.student.full_name} من تسجيل الدخول حتى يتم إعادة تفعيله.`,
+      description: `سيتم إيقاف ${pending.student.full_name} وسيرى سبب الإيقاف عند تسجيل الدخول.`,
       label: 'نعم، إيقاف',
     };
   }
@@ -69,6 +70,8 @@ export function StudentListPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [pending, setPending] = useState<PendingAction>(null);
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(false);
@@ -100,14 +103,20 @@ export function StudentListPage() {
   });
 
   const confirm = (kind: 'disable' | 'enable' | 'delete', student: Profile) => {
+    setReason('');
+    setReasonError(null);
     setPending({ kind, student });
   };
 
   const runAction = async (action: NonNullable<PendingAction>) => {
+    if (action.kind === 'disable' && reason.trim().length === 0) {
+      setReasonError('سبب الإيقاف مطلوب وسيظهر للطالب');
+      return;
+    }
     setBusy(true);
     try {
       if (action.kind === 'disable') {
-        await disableStudent(action.student.id);
+        await disableStudent(action.student.id, reason.trim());
         showToast('تم إيقاف الطالب');
       } else if (action.kind === 'enable') {
         await enableStudent(action.student.id);
@@ -122,6 +131,8 @@ export function StudentListPage() {
     } finally {
       setBusy(false);
       setPending(null);
+      setReason('');
+      setReasonError(null);
     }
   };
 
@@ -281,9 +292,30 @@ export function StudentListPage() {
         onCancel={() => {
           if (!busy) {
             setPending(null);
+            setReason('');
+            setReasonError(null);
           }
         }}
-      />
+      >
+        {pending?.kind === 'disable' ? (
+          <div className="mt-4">
+            <Textarea
+              label="سبب الإيقاف (إجباري)"
+              name="suspension-reason"
+              placeholder="اكتب سبب الإيقاف — سيظهر للطالب"
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (reasonError) {
+                  setReasonError(null);
+                }
+              }}
+              error={reasonError ?? undefined}
+              rows={3}
+            />
+          </div>
+        ) : null}
+      </Modal>
     </LayoutShell>
   );
 }

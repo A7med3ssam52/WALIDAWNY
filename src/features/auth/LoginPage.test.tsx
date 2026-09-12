@@ -43,7 +43,7 @@ describe('LoginPage', () => {
     });
   });
 
-  it('shows an Arabic message for an inactive or deleted account', async () => {
+  it('shows an Arabic message for a deleted account', async () => {
     mockState.signInError = 'account_inactive_or_deleted';
     const user = userEvent.setup();
     renderApp('/login');
@@ -54,7 +54,7 @@ describe('LoginPage', () => {
     await waitFor(() => {
       const form = screen.getByLabelText('البريد الإلكتروني').closest('form');
       expect(within(form as HTMLElement).getByRole('alert')).toHaveTextContent(
-        'تم إيقاف هذا الحساب. يرجى التواصل مع إدارة المنصة',
+        'تم حذف هذا الحساب. يرجى التواصل مع إدارة المنصة',
       );
     });
   });

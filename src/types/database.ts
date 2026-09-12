@@ -11,6 +11,7 @@ export type Profile = {
   grade_id: string | null;
   role: UserRole;
   status: AccountStatus;
+  suspension_reason: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -746,7 +747,7 @@ export interface Database {
         Args: { p_student_id: string; p_grade_id: string | null };
         Returns: void;
       };
-      disable_student: { Args: { p_student_id: string }; Returns: void };
+      disable_student: { Args: { p_student_id: string; p_reason: string }; Returns: void };
       enable_student: { Args: { p_student_id: string }; Returns: void };
       soft_delete_student: { Args: { p_student_id: string }; Returns: void };
       restore_student: { Args: { p_student_id: string }; Returns: void };

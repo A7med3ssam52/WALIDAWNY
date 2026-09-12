@@ -13,6 +13,7 @@ import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
 import { RoleNav } from '../../components/RoleNav';
 import { PurchaseBadge, StatusBadge } from '../../components/StatusBadge';
+import { Textarea } from '../../components/Textarea';
 import { useToast } from '../../components/Toast';
 import {
   disableStudent,
@@ -51,7 +52,7 @@ function actionCopy(
   if (action === 'disable') {
     return {
       title: 'إيقاف الطالب',
-      description: `سيتم منع ${student.full_name} من تسجيل الدخول حتى يتم إعادة تفعيله.`,
+      description: `سيتم إيقاف ${student.full_name} وسيرى سبب الإيقاف عند تسجيل الدخول.`,
       label: 'نعم، إيقاف',
       danger: true,
     };
@@ -113,6 +114,8 @@ export function StudentDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!studentId) {
@@ -191,10 +194,14 @@ export function StudentDetailPage() {
     if (!student) {
       return;
     }
+    if (action === 'disable' && reason.trim().length === 0) {
+      setReasonError('سبب الإيقاف مطلوب وسيظهر للطالب');
+      return;
+    }
     setBusy(true);
     try {
       if (action === 'disable') {
-        await disableStudent(student.id);
+        await disableStudent(student.id, reason.trim());
         showToast('تم إيقاف الطالب');
       } else if (action === 'enable') {
         await enableStudent(student.id);
@@ -212,6 +219,8 @@ export function StudentDetailPage() {
     } finally {
       setBusy(false);
       setPendingAction(null);
+      setReason('');
+      setReasonError(null);
     }
   };
 
@@ -291,7 +300,11 @@ export function StudentDetailPage() {
                   <Button
                     variant="secondary"
                     icon={<Pause aria-hidden="true" className="h-4 w-4" />}
-                    onClick={() => setPendingAction('disable')}
+                    onClick={() => {
+                      setReason('');
+                      setReasonError(null);
+                      setPendingAction('disable');
+                    }}
                   >
                     إيقاف الطالب
                   </Button>
@@ -424,9 +437,30 @@ export function StudentDetailPage() {
         onCancel={() => {
           if (!busy) {
             setPendingAction(null);
+            setReason('');
+            setReasonError(null);
           }
         }}
-      />
+      >
+        {pendingAction === 'disable' ? (
+          <div className="mt-4">
+            <Textarea
+              label="سبب الإيقاف (إجباري)"
+              name="suspension-reason"
+              placeholder="اكتب سبب الإيقاف — سيظهر للطالب"
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                if (reasonError) {
+                  setReasonError(null);
+                }
+              }}
+              error={reasonError ?? undefined}
+              rows={3}
+            />
+          </div>
+        ) : null}
+      </Modal>
     </LayoutShell>
   );
 }

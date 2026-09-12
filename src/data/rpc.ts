@@ -123,8 +123,11 @@ export async function setStudentGrade(studentId: string, gradeId: string | null)
   }
 }
 
-export async function disableStudent(studentId: string): Promise<void> {
-  const { error } = await getSupabaseClient().rpc('disable_student', { p_student_id: studentId });
+export async function disableStudent(studentId: string, reason: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('disable_student', {
+    p_student_id: studentId,
+    p_reason: reason,
+  });
   if (error) {
     throw error;
   }
