@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { resetMockState } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
 
-describe('AdsPreviewPage — preview/ads', () => {
+describe('AnnouncementsPreviewPage — preview/ads', () => {
   it('تعرض الـ20 تصميماً مع لوحة التحكم والتوقيع', async () => {
     resetMockState();
     renderApp('/preview/ads');

@@ -42,7 +42,7 @@ const PLACEMENT_LABEL: Record<string, string> = {
  * - كل بطاقة تعرض مصغّراً حياً للتصميم + زر فتحه في Modal حقيقي
  * - عامة (public) وnoindex — للمعاينة الداخلية فقط
  */
-export function AdsPreviewPage() {
+export function AnnouncementsPreviewPage() {
   const [variant, setVariant] = useState<AdVariant>('info');
   const [title, setTitle] = useState(DEFAULT_AD_CONTENT.title);
   const [body, setBody] = useState(DEFAULT_AD_CONTENT.body);
