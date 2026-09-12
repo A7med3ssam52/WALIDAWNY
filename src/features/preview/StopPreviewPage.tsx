@@ -526,39 +526,22 @@ function ChatPopup() {
   );
 }
 
-// ---------- stage: fake app behind + unclosable overlay ----------
+// ---------- stage: unclosable popup preview (full height, no clipping frame) ----------
 function PreviewStage({ variant }: { variant: Variant }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#070513]">
-      {/* fake app background */}
-      <div aria-hidden="true" className="pointer-events-none select-none p-4 blur-[2px]">
-        <div className="h-8 w-2/3 rounded-lg bg-white/10" />
-        <div className="mt-2 h-4 w-1/2 rounded bg-white/5" />
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="h-20 rounded-xl bg-white/[0.06]" />
-          <div className="h-20 rounded-xl bg-white/[0.06]" />
-          <div className="h-20 rounded-xl bg-white/[0.06]" />
-          <div className="h-20 rounded-xl bg-white/[0.06]" />
-        </div>
-      </div>
-      {/* unclosable overlay — no onClick, no Escape, no X */}
-      <div className="absolute inset-0 flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
-        <div data-testid={`stop-variant-${variant}`} className="flex w-full justify-center">
-          {variant === 'shield' && <ShieldPopup />}
-          {variant === 'topbar' && <TopbarPopup />}
-          {variant === 'fullscreen' && <FullscreenPopup />}
-          {variant === 'bottomsheet' && (
-            <div className="flex w-full items-end justify-center self-stretch pt-10">
-              <BottomsheetPopup />
-            </div>
-          )}
-          {variant === 'ticket' && <TicketPopup />}
-          {variant === 'minimal' && <MinimalPopup />}
-          {variant === 'glow' && <GlowPopup />}
-          {variant === 'steps' && <StepsPopup />}
-          {variant === 'vault' && <VaultPopup />}
-          {variant === 'chat' && <ChatPopup />}
-        </div>
+    <div className="rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-sm sm:p-6">
+      {/* no onClick, no Escape, no X — static preview of the locked popup */}
+      <div data-testid={`stop-variant-${variant}`} className="flex w-full justify-center">
+        {variant === 'shield' && <ShieldPopup />}
+        {variant === 'topbar' && <TopbarPopup />}
+        {variant === 'fullscreen' && <FullscreenPopup />}
+        {variant === 'bottomsheet' && <BottomsheetPopup />}
+        {variant === 'ticket' && <TicketPopup />}
+        {variant === 'minimal' && <MinimalPopup />}
+        {variant === 'glow' && <GlowPopup />}
+        {variant === 'steps' && <StepsPopup />}
+        {variant === 'vault' && <VaultPopup />}
+        {variant === 'chat' && <ChatPopup />}
       </div>
     </div>
   );
