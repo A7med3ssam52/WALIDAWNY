@@ -1201,7 +1201,12 @@ export function LessonAssetsPage() {
                 id="pdf-file"
                 name="pdf-file"
                 type="file"
-                accept=".pdf,application/pdf"
+                // NOTE: no `accept` filter on purpose. In-app browsers
+                // (WhatsApp/Facebook/Telegram WebViews) resolve the PDF
+                // accept filter to a picker that returns an empty file list,
+                // making selection look dead with no feedback. Validation
+                // stays extension-first in handleFileChange (loud
+                // inline + toast errors) and strict server-side.
                 ref={pdfFileInputRef}
                 data-testid="pdf-upload-input"
                 onChange={(event) => handleFileChange(event)}
