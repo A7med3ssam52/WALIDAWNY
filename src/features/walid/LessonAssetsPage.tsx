@@ -226,6 +226,21 @@ function formatMib(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} م.ب`;
 }
 
+/**
+ * True when the page runs inside another app's embedded browser
+ * (WhatsApp/Facebook/Instagram/Telegram/...). Those WebViews frequently
+ * return an empty file list for non-image picks, which looks like a dead
+ * upload button. The PDF card shows an "open in Chrome" hint in that case.
+ */
+function isInAppBrowser(): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') {
+    return false;
+  }
+  return /FBAN|FBAV|FB_IAB|FB4A|Instagram|WhatsApp|Telegram|Twitter|Line\/|Snapchat|TikTok|Musical\.ly|Pinterest|WeChat|MicroMessenger|QQ|Weibo|; wv/i.test(
+    navigator.userAgent,
+  );
+}
+
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) {
     return '';
@@ -1193,6 +1208,12 @@ export function LessonAssetsPage() {
           subtitle={`صيغة PDF فقط، بحد أقصى 50 ميجابايت • إصدار ${__BUILD_ID__}`}
         >
           <div className="flex flex-col gap-3">
+            {isInAppBrowser() ? (
+              <p role="note" className="text-xs font-medium text-warning">
+                تتصفح من داخل تطبيق (واتساب/فيسبوك/تيليجرام). اختيار ملفات PDF قد
+                لا يعمل هنا — افتح الصفحة في متصفح كروم ثم أعد المحاولة.
+              </p>
+            ) : null}
             <div className="flex flex-col gap-1">
               <label htmlFor="pdf-file" className="text-sm font-medium text-secondary-foreground">
                 اختيار الملف
