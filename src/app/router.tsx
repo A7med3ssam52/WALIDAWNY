@@ -23,6 +23,9 @@ const NotFoundPage = lazy(() => import('../features/public/NotFoundPage').then((
 const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('../features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 
+// Preview — internal ad-modal gallery (public, noindex)
+const AdsPreviewPage = lazy(() => import('../features/preview/AdsPreviewPage').then((m) => ({ default: m.AdsPreviewPage })));
+
 // Student
 const StudentDashboardPage = lazy(() => import('../features/student/StudentDashboardPage').then((m) => ({ default: m.StudentDashboardPage })));
 const StudentProfilePage = lazy(() => import('../features/student/StudentProfilePage').then((m) => ({ default: m.StudentProfilePage })));
@@ -93,6 +96,9 @@ export function AppRoutes() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+
+        {/* Internal preview — ad modals gallery (noindex) */}
+        <Route path="/preview/ads" element={<AdsPreviewPage />} />
 
         {/* Auth — noindex */}
         <Route

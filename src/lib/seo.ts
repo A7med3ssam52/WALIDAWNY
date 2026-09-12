@@ -102,6 +102,7 @@ export function isNoIndexPath(pathname: string): boolean {
     pathname.startsWith('/student') ||
     pathname.startsWith('/walid') ||
     pathname.startsWith('/admin') ||
+    pathname.startsWith('/preview') ||
     pathname === '/login' ||
     pathname === '/register'
   );
