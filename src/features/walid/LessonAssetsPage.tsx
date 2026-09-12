@@ -66,6 +66,11 @@ import type {
   VideoStatus,
 } from '../../types/database';
 
+// Diagnostic build marker: proves which bundle is actually running in the
+// browser (upload issues turned out to be a stale cached bundle more than
+// once). Visible in the PDF card subtitle and in the devtools console.
+console.info('[walidawny] LessonAssetsPage chunk build:', __BUILD_ID__);
+
 const COMMENT_ERROR_MESSAGES: Record<string, string> = {
   comment_not_found: 'التعليق غير موجود',
   permission_denied: 'ليست لديك صلاحية',
@@ -714,6 +719,13 @@ export function LessonAssetsPage() {
       fileType !== 'application/octet-stream' &&
       !fileType.includes('pdf') &&
       fileType !== 'application/acrobat';
+    console.info('[walidawny] pdf selected:', {
+      name: selected.name,
+      type: selected.type,
+      size: selected.size,
+      hasPdfExtension,
+      isDefinitelyNotPdf,
+    });
     if (!hasPdfExtension || isDefinitelyNotPdf) {
       setFile(null);
       setUploadError('يجب اختيار ملف بصيغة PDF فقط');
@@ -759,6 +771,7 @@ export function LessonAssetsPage() {
       if (lessonId && reservedPdfId) {
         await deletePdfUpload(lessonId, reservedPdfId).catch(() => undefined);
       }
+      console.warn('[walidawny] pdf upload failed:', pdfErrorMessage(err), err);
       showToast(pdfErrorMessage(err), 'error');
     } finally {
       setStage('idle');
@@ -1175,7 +1188,10 @@ export function LessonAssetsPage() {
           )}
         </Card>
 
-        <Card title="رفع ملف PDF جديد" subtitle="صيغة PDF فقط، بحد أقصى 50 ميجابايت">
+        <Card
+          title="رفع ملف PDF جديد"
+          subtitle={`صيغة PDF فقط، بحد أقصى 50 ميجابايت • إصدار ${__BUILD_ID__}`}
+        >
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
               <label htmlFor="pdf-file" className="text-sm font-medium text-secondary-foreground">

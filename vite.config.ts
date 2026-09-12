@@ -31,13 +31,21 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  define:
-    mode === 'test'
+  define: {
+    // Build marker shown in the UI/console so a stale cached bundle can be
+    // told apart from the current deploy while debugging upload issues.
+    __BUILD_ID__: JSON.stringify(
+      `${new Date().toISOString().slice(0, 16).replace('T', ' ')}-${(
+        process.env.VERCEL_GIT_COMMIT_SHA ?? 'local'
+      ).slice(0, 7)}`,
+    ),
+    ...(mode === 'test'
       ? {
           'import.meta.env.VITE_SUPABASE_URL': '"https://test-project.supabase.co"',
           'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': '"test-publishable-key"',
         }
-      : {},
+      : {}),
+  },
   test: {
     environment: 'jsdom',
     globals: false,
