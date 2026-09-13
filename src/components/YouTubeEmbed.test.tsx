@@ -17,16 +17,21 @@ describe('YouTubeEmbed', () => {
     expect(frame).toHaveAttribute('allowfullscreen', '');
   });
 
-  it('renders with platform player chrome and visual blocking overlays', () => {
+  it('renders a clean 16:9 player with no covering overlays', () => {
     render(<YouTubeEmbed videoId="dQw4w9WgXcQ" />);
     expect(screen.getByTestId('youtube-embed-wrapper').className).toContain('glass-card');
-    const top = screen.getByTestId('youtube-overlay-top');
-    const bottom = screen.getByTestId('youtube-overlay-bottom');
-    expect(top).toBeInTheDocument();
-    expect(bottom).toBeInTheDocument();
-    // quick visual hide: overlays must have solid bg to actually hide branding, not just block clicks
-    expect(top.className).toContain('bg-black');
-    expect(bottom.className).toContain('bg-black');
+    // No overlay may cover the player — controls/fullscreen must stay clickable (RTL-safe).
+    expect(screen.queryByTestId('youtube-overlay-top')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('youtube-overlay-bottom')).not.toBeInTheDocument();
+    // Stable layout: fixed 16:9 box on the container, iframe fills it exactly.
+    const frame = screen.getByTestId('youtube-embed');
+    expect(frame.className).toContain('absolute');
+    expect(frame.className).toContain('inset-0');
+    expect(frame.className).toContain('h-full');
+    expect(frame.className).toContain('w-full');
+    const box = frame.parentElement;
+    expect(box?.className).toContain('aspect-video');
+    expect(box?.className).toContain('overflow-hidden');
   });
 
   it('falls back to a default title when none is provided', () => {
