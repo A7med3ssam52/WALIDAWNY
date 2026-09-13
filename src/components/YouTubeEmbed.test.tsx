@@ -17,12 +17,23 @@ describe('YouTubeEmbed', () => {
     expect(frame).toHaveAttribute('allowfullscreen', '');
   });
 
-  it('renders a clean 16:9 player with no covering overlays', () => {
+  it('keeps native controls clickable while invisibly blocking navigation to YouTube', () => {
     render(<YouTubeEmbed videoId="dQw4w9WgXcQ" />);
     expect(screen.getByTestId('youtube-embed-wrapper').className).toContain('glass-card');
-    // No overlay may cover the player — controls/fullscreen must stay clickable (RTL-safe).
-    expect(screen.queryByTestId('youtube-overlay-top')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('youtube-overlay-bottom')).not.toBeInTheDocument();
+    const top = screen.getByTestId('youtube-overlay-top');
+    const bottom = screen.getByTestId('youtube-overlay-bottom');
+    expect(top).toBeInTheDocument();
+    expect(bottom).toBeInTheDocument();
+    // Invisible interceptors — must never paint black bars over the video.
+    expect(top.className).not.toContain('bg-black');
+    expect(bottom.className).not.toContain('bg-black');
+    expect(top.className).toContain('bg-transparent');
+    expect(bottom.className).toContain('bg-transparent');
+    // Bottom interceptor floats above the control bar with a physical right-
+    // offset (RTL-safe), so play/volume/settings/fullscreen stay clickable.
+    expect(bottom.className).toContain('bottom-[');
+    expect(bottom.className).toContain('right-[');
+    expect(bottom.className).not.toContain('end-[');
     // Stable layout: fixed 16:9 box on the container, iframe fills it exactly.
     const frame = screen.getByTestId('youtube-embed');
     expect(frame.className).toContain('absolute');

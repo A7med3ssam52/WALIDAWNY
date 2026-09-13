@@ -41,6 +41,26 @@ export function YouTubeEmbed({ videoId, title }: YouTubeEmbedProps) {
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
           referrerPolicy="strict-origin-when-cross-origin"
         />
+        {/* Transparent click-interceptors: every native control keeps working
+            (play / volume / settings / fullscreen), but clicks on the spots
+            that navigate away to YouTube are swallowed invisibly —
+            video title/channel, Watch later/Share (top strip) and the
+            watermark chip (bottom-right, floating above the control bar so
+            the bar itself stays fully clickable). Physical `right-` (not
+            logical) because the player internals are always LTR even on
+            our RTL pages. */}
+        <div className="pointer-events-none absolute inset-0">
+          <div
+            className="pointer-events-auto absolute inset-x-0 top-0 h-[clamp(44px,16%,64px)] cursor-default bg-transparent"
+            aria-hidden="true"
+            data-testid="youtube-overlay-top"
+          />
+          <div
+            className="pointer-events-auto absolute bottom-[42px] right-[10px] h-[30px] w-[84px] cursor-default bg-transparent"
+            aria-hidden="true"
+            data-testid="youtube-overlay-bottom"
+          />
+        </div>
       </div>
     </div>
   );
