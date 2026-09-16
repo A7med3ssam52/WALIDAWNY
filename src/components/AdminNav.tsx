@@ -1,13 +1,22 @@
-import { NavLink } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 
-const adminItems = [
+import { getUnreadSuggestionsCount } from '../data/rpc';
+
+interface AdminNavItem {
+  to: string;
+  label: string;
+  unreadBadge?: boolean;
+}
+
+const adminItems: AdminNavItem[] = [
   { to: '/admin/dashboard', label: 'الرئيسية' },
   { to: '/admin/presence', label: 'المتواجدون الآن' },
   { to: '/admin/reports', label: 'التقارير المالية' },
   { to: '/admin/audit', label: 'سجل النشاطات' },
   { to: '/admin/roles', label: 'الأدوار والصلاحيات' },
   { to: '/admin/announcements', label: 'الإعلانات' },
-  { to: '/admin/suggestions', label: 'المقترحات' },
+  { to: '/admin/suggestions', label: 'المقترحات', unreadBadge: true },
 ];
 
 const contentItems = [
@@ -18,7 +27,50 @@ const contentItems = [
   { to: '/walid/codes', label: 'الأكواد' },
 ];
 
-function NavSection({ items }: { items: Array<{ to: string; label: string }> }) {
+/** Unread-suggestions pill for the inbox link (0079). Clears on view. */
+function SuggestionsUnreadBadge() {
+  const { pathname } = useLocation();
+  const [count, setCount] = useState(0);
+  const clearedRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    clearedRef.current = false;
+    try {
+      const { unreadCount } = await getUnreadSuggestionsCount();
+      // A view that lands while this fetch is in flight wins.
+      if (!clearedRef.current) {
+        setCount(unreadCount);
+      }
+    } catch {
+      // non-fatal: badge simply stays hidden
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [pathname, refresh]);
+
+  useEffect(() => {
+    const handler = () => {
+      clearedRef.current = true;
+      setCount(0);
+    };
+    window.addEventListener('suggestions-seen', handler);
+    return () => window.removeEventListener('suggestions-seen', handler);
+  }, []);
+
+  if (count <= 0) return null;
+  return (
+    <span
+      data-testid="suggestions-unread-badge"
+      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-error px-1.5 text-[11px] font-bold text-white"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+function NavSection({ items }: { items: AdminNavItem[] }) {
   return (
     <>
       {items.map((item) => (
@@ -34,7 +86,10 @@ function NavSection({ items }: { items: Array<{ to: string; label: string }> }) 
             }`
           }
         >
-          {item.label}
+          <span className="flex w-full items-center justify-between gap-2">
+            <span>{item.label}</span>
+            {item.unreadBadge ? <SuggestionsUnreadBadge /> : null}
+          </span>
         </NavLink>
       ))}
     </>

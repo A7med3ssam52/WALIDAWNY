@@ -31,6 +31,7 @@ interface MockState {
   lessonComments: AnyRecord[];
   suggestions: AnyRecord[];
   storageUploads: Array<{ bucket: string; path: string }>;
+  inboxLastSeenAt: string | null;
   appSettings: Record<string, unknown>;
   dashboardStats: AnyRecord;
   financialReports: AnyRecord;
@@ -91,6 +92,7 @@ const state: MockState = {
   lessonComments: [],
   suggestions: [],
   storageUploads: [],
+  inboxLastSeenAt: null,
   appSettings: {
     suggestions_open: true,
     suggestions_banner_message: 'banner-test',
@@ -2181,6 +2183,27 @@ function createMockClient() {
       }
       return { data: null, error: null };
     }
+    if (fn === 'get_unread_suggestions_count') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const watermark = state.inboxLastSeenAt;
+      const unread = state.suggestions.filter(
+        (item) => !watermark || String(item.created_at) > watermark,
+      );
+      return { data: [{ unread_count: unread.length, last_seen_at: watermark }], error: null };
+    }
+    if (fn === 'mark_suggestions_seen') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const watermark = state.inboxLastSeenAt;
+      const marked = state.suggestions.filter(
+        (item) => !watermark || String(item.created_at) > watermark,
+      ).length;
+      state.inboxLastSeenAt = nowIso();
+      return { data: marked, error: null };
+    }
     if (fn === 'set_app_setting') {
       const key = String(args?.p_key ?? '');
       const isWhatsapp = key.startsWith('whatsapp');
@@ -2449,6 +2472,7 @@ export function resetMockState() {
   state.lessonComments = [];
   state.suggestions = [];
   state.storageUploads = [];
+  state.inboxLastSeenAt = null;
   state.appSettings = {
     suggestions_open: true,
     suggestions_banner_message: 'banner-test',

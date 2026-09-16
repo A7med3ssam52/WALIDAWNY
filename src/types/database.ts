@@ -1051,6 +1051,11 @@ export interface Database {
         Returns: PlatformSuggestion;
       };
       delete_suggestion: { Args: { p_suggestion_id: string }; Returns: void };
+      get_unread_suggestions_count: {
+        Args: never;
+        Returns: Array<{ unread_count: number; last_seen_at: string | null }>;
+      };
+      mark_suggestions_seen: { Args: never; Returns: number };
       set_app_setting: { Args: { p_key: string; p_value: unknown }; Returns: void };
     };
   };

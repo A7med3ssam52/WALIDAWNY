@@ -619,6 +619,10 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suggestion
     'sec: anon cannot exec update_suggestion_status (0075)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_suggestion(uuid)', 'EXECUTE'),
     'sec: anon cannot exec delete_suggestion (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_unread_suggestions_count()', 'EXECUTE'),
+    'sec: anon cannot exec get_unread_suggestions_count (0079)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.mark_suggestions_seen()', 'EXECUTE'),
+    'sec: anon cannot exec mark_suggestions_seen (0079)');
 
 -- =====================================================================
 -- Cleanup

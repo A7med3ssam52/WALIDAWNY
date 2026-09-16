@@ -126,12 +126,15 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suggestion
     'anon: update_suggestion_status NOT executable (0075)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_suggestion(uuid)', 'EXECUTE'),
     'anon: delete_suggestion NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.get_unread_suggestions_count()', 'EXECUTE'),
+    'anon: get_unread_suggestions_count NOT executable (0079)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.mark_suggestions_seen()', 'EXECUTE'),
+    'anon: mark_suggestions_seen NOT executable (0079)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (109 functions; the 84-count
--- predates the 0056/assistant-era RPCs - reconciled: +0072 3-arg toggle
--- - stale overload dropped in 0076 + 6 suggestions RPCs from 0075;
--- 0077/0078 add grants/policies only, no new functions)
+-- authenticated: the full client allowlist (111 functions = 109 + 2
+-- seen-watermark RPCs from 0079; keep in sync when adding RPCs)
+-- ---------------------------------------------------------------------
 -- ---------------------------------------------------------------------
 
 DO $$
@@ -148,8 +151,8 @@ SELECT tests.expect_count(
     'SELECT count(*) FROM pg_proc
      WHERE pronamespace = ''public''::regnamespace
         AND has_function_privilege(''authenticated'', oid, ''EXECUTE'')',
-    109,
-    'authenticated: exactly 109 executable public functions (verified: legacy allowlist + presence + suspension + suggestions, minus the two stale overloads dropped in 0076)');
+    111,
+    'authenticated: exactly 111 executable public functions (109 + 2 seen-watermark RPCs from 0079)');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -242,6 +245,8 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.list_my_sugg
 SELECT tests.assert(has_function_privilege('authenticated', 'public.list_suggestions(text, text, integer, integer)', 'EXECUTE'), 'g: list_suggestions (0075)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_suggestion_status(uuid, text)', 'EXECUTE'), 'g: update_suggestion_status (0075)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_suggestion(uuid)', 'EXECUTE'), 'g: delete_suggestion (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.get_unread_suggestions_count()', 'EXECUTE'), 'g: get_unread_suggestions_count (0079)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.mark_suggestions_seen()', 'EXECUTE'), 'g: mark_suggestions_seen (0079)');
 
 -- ---------------------------------------------------------------------
 -- authenticated: internal/system functions stay locked down

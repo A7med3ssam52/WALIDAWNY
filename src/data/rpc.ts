@@ -2198,6 +2198,30 @@ export async function deleteSuggestion(suggestionId: string): Promise<void> {
   }
 }
 
+export interface UnreadSuggestions {
+  unreadCount: number;
+  lastSeenAt: string | null;
+}
+
+/** Admin-only unread badge reader (0079 seen-watermark). */
+export async function getUnreadSuggestionsCount(): Promise<UnreadSuggestions> {
+  const { data, error } = await getSupabaseClient().rpc('get_unread_suggestions_count');
+  if (error) {
+    throw error;
+  }
+  const row = (data as Array<{ unread_count: number; last_seen_at: string | null }>)?.[0];
+  return { unreadCount: row?.unread_count ?? 0, lastSeenAt: row?.last_seen_at ?? null };
+}
+
+/** Admin-only: advances the inbox watermark to now; returns newly-marked count. */
+export async function markSuggestionsSeen(): Promise<number> {
+  const { data, error } = await getSupabaseClient().rpc('mark_suggestions_seen');
+  if (error) {
+    throw error;
+  }
+  return (data as number) ?? 0;
+}
+
 /** Admin-only app_settings writer (0007 set_app_setting; admin may write any key). */
 export async function setAppSetting(key: string, value: unknown): Promise<void> {
   const { error } = await getSupabaseClient().rpc('set_app_setting', {

@@ -95,15 +95,16 @@ SELECT tests.assert(
     (SELECT to_regtype('public.subscription_status') IS NULL),
     'subscription_status enum does NOT exist (0028 step 13)');
 
--- --- RLS enabled + FORCEd on all 25 tables ----------------------------
+-- --- RLS enabled + FORCEd on all 26 tables ----------------------------
 -- 21 application tables + announcements (0049) + student_sessions and
--- student_activity_events (0055 presence) + platform_suggestions (0075).
+-- student_activity_events (0055 presence) + platform_suggestions (0075)
+-- + suggestion_inbox_state (0079).
 SELECT tests.assert(
-    (SELECT count(*) = 25
+    (SELECT count(*) = 26
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relrowsecurity AND c.relforcerowsecurity),
-    'RLS enabled AND forced on all 25 tables');
+    'RLS enabled AND forced on all 26 tables');
 
 -- --- expected columns present ----------------------------------------
 SELECT tests.assert(

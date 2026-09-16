@@ -256,6 +256,36 @@ SELECT tests.expect_error(
 RESET ROLE;
 
 -- ---------------------------------------------------------------------
+-- Seen watermark (0079): unread badge count + mark-seen flow.
+-- Fixture rows predate the watermark, so a first-time admin sees all
+-- of them as unread; marking advances the watermark and clears the
+-- badge. Non-admins are denied both RPCs.
+-- ---------------------------------------------------------------------
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT tests.expect_error('SELECT public.get_unread_suggestions_count()', 'P0001', 'permission_denied');
+SELECT tests.expect_error('SELECT public.mark_suggestions_seen()', 'P0001', 'permission_denied');
+RESET ROLE;
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000b';
+SET LOCAL ROLE authenticated;
+SELECT tests.expect_error('SELECT public.get_unread_suggestions_count()', 'P0001', 'permission_denied');
+SELECT tests.expect_error('SELECT public.mark_suggestions_seen()', 'P0001', 'permission_denied');
+RESET ROLE;
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
+SET LOCAL ROLE admin;
+SELECT tests.expect_count(
+    'SELECT (public.get_unread_suggestions_count()).unread_count',
+    3, 's: first-time admin sees all 3 remaining rows as unread');
+SELECT tests.expect_rows('SELECT public.mark_suggestions_seen()', 1, 's: mark-seen succeeds');
+SELECT tests.expect_count(
+    'SELECT (public.get_unread_suggestions_count()).unread_count',
+    0, 's: badge cleared after marking seen');
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.suggestion_inbox_state WHERE admin_id = ''70000000-0000-0000-0000-00000000000a''',
+    1, 's: watermark row recorded for the admin');
+RESET ROLE;
+
+-- ---------------------------------------------------------------------
 -- Audit capture (audit_trigger, MED-8): inserts = 2 fixtures + 2 RPC
 -- adds; updates = 3 (attach + 2 status transitions; the no-op repeat
 -- still issues UPDATE); deletes = 1 (admin RPC delete).
@@ -318,4 +348,6 @@ DELETE FROM storage.objects WHERE bucket_id = 'suggestion-images';
 DELETE FROM public.platform_suggestions
 WHERE student_id IN ('70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000005');
 DELETE FROM public.audit_logs WHERE entity_type = 'platform_suggestions';
+DELETE FROM public.suggestion_inbox_state
+WHERE admin_id = '70000000-0000-0000-0000-00000000000a';
 UPDATE public.app_settings SET value = 'true' WHERE key = 'suggestions_open';

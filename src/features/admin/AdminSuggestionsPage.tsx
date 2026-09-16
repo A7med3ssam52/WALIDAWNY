@@ -27,7 +27,9 @@ import { useToast } from '../../components/Toast';
 import {
   deleteSuggestion,
   getPublicSettings,
+  getUnreadSuggestionsCount,
   listSuggestions,
+  markSuggestionsSeen,
   setAppSetting,
   updateSuggestionStatus,
 } from '../../data/rpc';
@@ -98,16 +100,17 @@ function StatusSelect({ row, disabled, testId, onChange }: StatusSelectProps) {
 
 interface SuggestionCardProps {
   row: AdminSuggestionRow;
+  isNew: boolean;
   statusBusy: boolean;
   onStatusChange: (row: AdminSuggestionRow, status: SuggestionStatus) => void;
   onDelete: (row: AdminSuggestionRow) => void;
 }
 
 /** Mobile-first readable card (table stays for md+ screens). */
-function SuggestionCard({ row, statusBusy, onStatusChange, onDelete }: SuggestionCardProps) {
+function SuggestionCard({ row, isNew, statusBusy, onStatusChange, onDelete }: SuggestionCardProps) {
   return (
     <article
-      className="glass-card flex flex-col gap-3 p-4 sm:p-5"
+      className={`glass-card flex flex-col gap-3 p-4 sm:p-5 ${isNew ? 'border-emerald-400/30 bg-emerald-500/[0.05]' : ''}`}
       data-testid={`suggestion-card-${row.id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -115,6 +118,7 @@ function SuggestionCard({ row, statusBusy, onStatusChange, onDelete }: Suggestio
         <Badge variant={SUGGESTION_STATUS_VARIANTS[row.status]}>
           {SUGGESTION_STATUS_LABELS[row.status]}
         </Badge>
+        {isNew ? <Badge variant="success">جديدة</Badge> : null}
         <span className="ms-auto text-[11px] text-foreground-subtle" dir="ltr">
           {formatDateTime(row.created_at)}
         </span>
@@ -182,6 +186,9 @@ export function AdminSuggestionsPage() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
 
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadWatermark, setUnreadWatermark] = useState<string | null>(null);
+
   const load = useCallback(
     async (targetPage: number, kind: SuggestionKind | '', status: SuggestionStatus | '') => {
       setError(false);
@@ -194,6 +201,19 @@ export function AdminSuggestionsPage() {
         });
         setRows(data);
         setPage(targetPage);
+        // Unread badge flow (0079): snapshot the watermark for row
+        // highlighting, then advance it so the nav badge clears.
+        try {
+          const unread = await getUnreadSuggestionsCount();
+          setUnreadCount(unread.unreadCount);
+          setUnreadWatermark(unread.lastSeenAt);
+          if (unread.unreadCount > 0) {
+            await markSuggestionsSeen();
+            window.dispatchEvent(new CustomEvent('suggestions-seen'));
+          }
+        } catch {
+          // non-fatal: moderation still works without the badge flow
+        }
       } catch {
         setError(true);
       }
@@ -283,10 +303,18 @@ export function AdminSuggestionsPage() {
     { new: 0, reviewed: 0, planned: 0, done: 0, rejected: 0 },
   );
 
+  const isNewRow = useCallback(
+    (row: AdminSuggestionRow) =>
+      unreadCount > 0 && (unreadWatermark == null || row.created_at > unreadWatermark),
+    [unreadCount, unreadWatermark],
+  );
+
   return (
     <LayoutShell
       title="مقترحات الطلبة"
-      subtitle="حصر مشاكل واقتراحات التحديث القادم"
+      subtitle={
+        unreadCount > 0 ? `لديك ${unreadCount} مشاركات جديدة لم تُرَ بعد` : 'حصر مشاكل واقتراحات التحديث القادم'
+      }
       variant="sidebar"
       nav={<AdminNav />}
     >
@@ -414,7 +442,11 @@ export function AdminSuggestionsPage() {
               </TableHead>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={row.id} data-testid={`suggestion-row-${row.id}`}>
+                  <TableRow
+                    key={row.id}
+                    data-testid={`suggestion-row-${row.id}`}
+                    className={isNewRow(row) ? 'bg-emerald-500/[0.06]' : undefined}
+                  >
                     <TableCell label="الطالب">
                       <p className="font-bold text-foreground">{row.student_name || '—'}</p>
                       <p className="mt-0.5 text-xs text-foreground-muted" dir="ltr">
@@ -428,8 +460,9 @@ export function AdminSuggestionsPage() {
                       </p>
                     </TableCell>
                     <TableCell label="المشاركة">
-                      <span className="mb-1.5 inline-block">
+                      <span className="mb-1.5 inline-flex flex-wrap gap-1.5">
                         <Badge variant="info">{SUGGESTION_KIND_LABELS[row.kind]}</Badge>
+                        {isNewRow(row) ? <Badge variant="success">جديدة</Badge> : null}
                       </span>
                       <p className="font-bold text-foreground">{row.title}</p>
                       <p className="mt-1 max-w-xl text-sm leading-7 text-foreground-muted">{row.body}</p>
@@ -473,6 +506,7 @@ export function AdminSuggestionsPage() {
                 <SuggestionCard
                   key={row.id}
                   row={row}
+                  isNew={isNewRow(row)}
                   statusBusy={statusBusyId === row.id}
                   onStatusChange={handleStatusChange}
                   onDelete={setDeleteCandidate}

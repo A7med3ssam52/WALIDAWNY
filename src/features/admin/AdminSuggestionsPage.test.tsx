@@ -137,6 +137,28 @@ describe('AdminSuggestionsPage', () => {
     );
   });
 
+  it('shows the unread badge in the nav on other admin pages', async () => {
+    renderApp('/admin/dashboard');
+
+    expect(await screen.findByTestId('suggestions-unread-badge')).toHaveTextContent('2');
+  });
+
+  it('marks the inbox seen on open and clears the badge', async () => {
+    renderApp('/admin/suggestions');
+
+    await screen.findByTestId('suggestion-row-sug-1');
+    await waitFor(() =>
+      expect(
+        getRpcCalls().some((call) => call.fn === 'mark_suggestions_seen'),
+      ).toBe(true),
+    );
+    expect(await screen.findByText('لديك 2 مشاركات جديدة لم تُرَ بعد')).toBeInTheDocument();
+    expect(screen.getAllByText('جديدة').length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(screen.queryByTestId('suggestions-unread-badge')).not.toBeInTheDocument(),
+    );
+  });
+
   it('saves the open/close config and messages', async () => {
     const user = userEvent.setup();
     renderApp('/admin/suggestions');
