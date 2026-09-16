@@ -13,6 +13,7 @@ import { LessonStatusBadge } from '../../components/LessonStatusBadge';
 import { Modal } from '../../components/Modal';
 import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/AuthContext';
 import {
   createLesson,
   getUnitById,
@@ -33,6 +34,11 @@ type PendingLessonDelete = { lesson: Lesson } | null;
 export function CurriculumLessonsPage() {
   const { gradeId, unitId } = useParams<{ gradeId: string; unitId: string }>();
   const { showToast } = useToast();
+  // Assistant policy: lessons list is read-only (no create/update/delete/
+  // publish). The "الملفات" link stays visible — lesson assets are the
+  // assistant's core workspace alongside exams (full-write there).
+  const { role } = useAuth();
+  const isAssistant = role === 'assistant';
 
   const [unit, setUnit] = useState<Unit | null | undefined>(undefined);
   const [unitError, setUnitError] = useState(false);
@@ -252,9 +258,11 @@ export function CurriculumLessonsPage() {
           title="دروس الوحدة"
           subtitle={`${unit.name} — اختر درسًا لإضافة ملفاته`}
           actions={
-            <Button icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={openCreate}>
-              إضافة درس
-            </Button>
+            isAssistant ? undefined : (
+              <Button icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={openCreate}>
+                إضافة درس
+              </Button>
+            )
           }
         >
           {lessonsError ? (
@@ -299,46 +307,50 @@ export function CurriculumLessonsPage() {
                       الملفات
                     </Link>
                     <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-1">
-                      {lesson.status === 'published' ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
-                          onClick={() => void handleToggleLessonStatus(lesson)}
-                          disabled={togglingLessonId === lesson.id}
-                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                        >
-                          {togglingLessonId === lesson.id ? '...' : 'إخفاء'}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void handleToggleLessonStatus(lesson)}
-                          disabled={togglingLessonId === lesson.id}
-                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                        >
-                          {togglingLessonId === lesson.id ? '...' : 'نشر'}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
-                        onClick={() => openEditLesson(lesson)}
-                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                      >
-                        تعديل
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        icon={<Trash2 aria-hidden="true" className="h-3.5 w-3.5" />}
-                        onClick={() => setDeletingLesson({ lesson })}
-                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-rose-400/10 bg-rose-500/5 px-0 text-xs font-semibold text-rose-300 hover:border-rose-400/20 hover:bg-rose-500/10 hover:text-rose-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
-                      >
-                        حذف
-                      </Button>
+                      {!isAssistant ? (
+                        <>
+                          {lesson.status === 'published' ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
+                              onClick={() => void handleToggleLessonStatus(lesson)}
+                              disabled={togglingLessonId === lesson.id}
+                              className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                            >
+                              {togglingLessonId === lesson.id ? '...' : 'إخفاء'}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void handleToggleLessonStatus(lesson)}
+                              disabled={togglingLessonId === lesson.id}
+                              className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                            >
+                              {togglingLessonId === lesson.id ? '...' : 'نشر'}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
+                            onClick={() => openEditLesson(lesson)}
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          >
+                            تعديل
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<Trash2 aria-hidden="true" className="h-3.5 w-3.5" />}
+                            onClick={() => setDeletingLesson({ lesson })}
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-rose-400/10 bg-rose-500/5 px-0 text-xs font-semibold text-rose-300 hover:border-rose-400/20 hover:bg-rose-500/10 hover:text-rose-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          >
+                            حذف
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </li>
@@ -346,16 +358,17 @@ export function CurriculumLessonsPage() {
             </ul>
           )}
 
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setShowDeletedLessons((prev) => !prev)}
-              className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1"
-            >
-              {showDeletedLessons
-                ? 'إخفاء المحذوفة'
-                : `عرض المحذوفة (${deletedLessons?.length ?? 0})`}
-            </button>
+          {!isAssistant ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setShowDeletedLessons((prev) => !prev)}
+                className="inline-flex items-center rounded-lg px-2 py-1 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1"
+              >
+                {showDeletedLessons
+                  ? 'إخفاء المحذوفة'
+                  : `عرض المحذوفة (${deletedLessons?.length ?? 0})`}
+              </button>
             {showDeletedLessons ? (
               deletedLessons === null ? (
                 <ListSkeleton rows={1} />
@@ -384,7 +397,8 @@ export function CurriculumLessonsPage() {
                 </ul>
               )
             ) : null}
-          </div>
+            </div>
+          ) : null}
         </Card>
       )}
 

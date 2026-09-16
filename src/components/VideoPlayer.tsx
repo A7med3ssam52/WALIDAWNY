@@ -32,10 +32,17 @@ export function VideoPlayer({
   const [isBuffering, setIsBuffering] = useState(true);
   const onProgressRef = useRef(onProgress);
   const onCompleteRef = useRef(onComplete);
+  // Pinned once per src: later progress-state updates must NOT rewind
+  // playback mid-watch (fix #13 — ثبت initialPositionRef).
   const initialPositionRef = useRef(initialPosition);
+  const pinnedSrcRef = useRef<string | null>(null);
   onProgressRef.current = onProgress;
   onCompleteRef.current = onComplete;
-  initialPositionRef.current = initialPosition;
+  if (pinnedSrcRef.current !== src) {
+    pinnedSrcRef.current = src;
+    initialPositionRef.current = initialPosition;
+    resumeAppliedRef.current = false;
+  }
 
   // E-11 / R-10 — guard ضد src غير صالح (undefined/"undefined"/فارغ) لمنع hls.loadSource("") والـ buffering العالق
   const isValidSrc =
@@ -105,10 +112,10 @@ export function VideoPlayer({
     onProgressRef.current?.(Math.floor(video.currentTime), Math.round(percent));
   };
 
+  // Single completion path (fix #4): onEnded routes ONLY through
+  // onComplete (which saves 100%). No duplicate onProgress(100) here —
+  // that caused a double-save race with the trailing timeupdate.
   const handleEnded = () => {
-    const video = videoRef.current;
-    const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
-    onProgressRef.current?.(Math.floor(video?.currentTime ?? duration), 100);
     onCompleteRef.current?.();
   };
 

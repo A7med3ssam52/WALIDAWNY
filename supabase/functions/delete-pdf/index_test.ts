@@ -355,6 +355,20 @@ Deno.test('delete-pdf: admin role also allowed', async () => {
   await expectStatus(res, 200);
 });
 
+Deno.test('delete-pdf: assistant passes edge check (0073 edge parity; RPC 0044 remains authoritative)', async () => {
+  const { dep } = deps(
+    deepMerge(staffCfg(), {
+      tables: {
+        profiles: { rows: [{ id: WALID_ID, role: 'assistant', status: 'active', deleted_at: null }] },
+      },
+    }),
+  );
+  const res = await handle(deletePost(), dep);
+  // Edge role check must not reject with forbidden; the stubbed RPC succeeds here.
+  // In production the 0044 RPC (admin/mr_walid-only) is the authoritative gate.
+  await expectStatus(res, 200);
+});
+
 Deno.test('delete-pdf: profile query failure -> 403 (never leaks)', async () => {
   const { dep } = deps(
     deepMerge(staffCfg(), {

@@ -29,8 +29,8 @@ import {
 } from './designs/designsD';
 
 /**
- * سجل الـ20 تصميم — كل تصميم يحدد موضع الـModal وحجمه المناسب.
- * الأرقام ثابتة لسهولة الإشارة إليها في صفحة preview/ads.
+ * سجل تصاميم الإعلانات — كل تصميم يحدد موضع الـModal وحجمه المناسب.
+ * الأرقام ثابتة لسهولة الإشارة إليها.
  */
 export const AD_DESIGNS: AdDesignMeta[] = [
   { id: 'classic-center', number: 1, name: 'كلاسيك زجاجي وسطي', description: 'التصميم الأساسي المتوازن لكل الإعلانات العامة.', bestFor: 'إعلانات عامة — معلومات ونجاح', placement: 'center', size: 'md', component: Design01ClassicCenter },

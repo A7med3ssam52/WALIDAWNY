@@ -116,6 +116,10 @@ function isValidExamImage(file: File): string | null {
 
 export function ExamsPage() {
   const { showToast } = useToast();
+  // Assistant policy: FULL WRITE here by design — exams are the assistant's
+  // core workspace (create/update/delete exams + questions + grading).
+  // Curriculum structure stays read-only (see Curriculum*Page); backend
+  // RLS/RPCs enforce the same boundary.
   const [grades, setGrades] = useState<Grade[] | null>(null);
   const [gradesError, setGradesError] = useState(false);
   const [selectedGradeId, setSelectedGradeId] = useState('');

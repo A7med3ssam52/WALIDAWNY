@@ -70,7 +70,7 @@ import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 export const MAX_BOARD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MiB (config.toml file_size_limit)
 export const MAX_FILE_NAME_LENGTH = 255;
 export const BOARDS_BUCKET = 'boards';
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']); // 0073: assistant parity (teacher parity for lesson assets)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Arabic/Latin letters, digits, spaces, dots, hyphens, underscores.

@@ -10,7 +10,8 @@
 // deletion to ready rows):
 //   1. validates the request (lesson_id + pdf_id UUIDs),
 //   2. checks the caller role over the caller-token client
-//      (STAFF_ROLES: admin / mr_walid / teacher),
+//      (STAFF_ROLES: admin / mr_walid / teacher / assistant — 0073 edge parity;
+//       authoritative delete gate is the RPC, 0044 admin/mr_walid-only),
 //   3. reads the row with id + lesson_id + deleted_at IS NULL → when
 //      absent -> 404 pdf_not_found (the pre-check for UX),
 //   4. removes the Storage object best-effort
@@ -47,7 +48,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']); // 0073: edge mirrors teacher; authoritative gate is delete_pdf_upload_record RPC (0044: admin/mr_walid-only)
 export const PDF_BUCKET = 'pdfs';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

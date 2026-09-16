@@ -997,18 +997,43 @@ export async function upsertProgress(
   return data as Progress;
 }
 
+/**
+ * سياسة الإكمال الموحدة (unified completion policy):
+ * - مكتمل = is_completed=true.
+ * - auto: upsert_progress عند percent>=90 (completed_by='auto').
+ * - manual: زر التبديل (completed_by='manual').
+ * - exam: تسليم امتحان ناجح يستدعي toggle(..., 'exam').
+ * - PDF/سبورة: engagement فقط (upsert بحد أدنى 10%) ولا يُكمل تلقائياً.
+ * - الفك: يخفض percent إلى <=89 ويمسح completed_at حتى لا يعيد
+ *   المسار التلقائي الإكمال فوراً.
+ */
+export type LessonCompletionSource = 'manual' | 'exam';
+
 export async function toggleLessonCompleted(
   lessonId: string,
   completed: boolean,
+  source: LessonCompletionSource = 'manual',
 ): Promise<Progress> {
   const { data, error } = await getSupabaseClient().rpc('toggle_lesson_completed', {
     p_lesson_id: lessonId,
     p_completed: completed,
+    p_source: source,
   });
   if (error) {
     throw error;
   }
   return data as Progress;
+}
+
+/** Broadcast so curriculum/dashboard/units summaries refresh after any progress write. */
+export function broadcastProgressUpdated(lessonId: string): void {
+  try {
+    window.dispatchEvent(
+      new CustomEvent('lesson-progress-updated', { detail: { lessonId } }),
+    );
+  } catch {
+    // non-DOM environments (tests) — ignore
+  }
 }
 
 export async function getMyProgress(lessonId: string): Promise<Progress | null> {

@@ -16,10 +16,11 @@ import {
   getPublicSettings,
   getPublicUnitPrices,
   listMyNotifications,
+  listMyProgress,
   listUnitsForGrade,
 } from '../../data/rpc';
 import { buildWhatsAppLink, formatPrice } from '../../lib/format';
-import type { PublicSettings, PublicUnitPrice, Unit, UnitPurchaseWithUnit } from '../../types/database';
+import type { Progress, PublicSettings, PublicUnitPrice, Unit, UnitPurchaseWithUnit } from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
 
 function StatsSkeleton() {
@@ -42,6 +43,7 @@ export function StudentDashboardPage() {
   const [gradeUnitsError, setGradeUnitsError] = useState(false);
   const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [progressRows, setProgressRows] = useState<Progress[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -54,8 +56,26 @@ export function StudentDashboardPage() {
       .catch(() => {
         // non-fatal
       });
+    listMyProgress()
+      .then((rows) => {
+        if (active) setProgressRows(rows);
+      })
+      .catch(() => {
+        if (active) setProgressRows([]);
+      });
+    const handler = () => {
+      listMyProgress()
+        .then((rows) => {
+          if (active) setProgressRows(rows);
+        })
+        .catch(() => {
+          // best-effort
+        });
+    };
+    window.addEventListener('lesson-progress-updated', handler);
     return () => {
       active = false;
+      window.removeEventListener('lesson-progress-updated', handler);
     };
   }, []);
 
@@ -112,6 +132,11 @@ export function StudentDashboardPage() {
   const displayName = profile?.full_name ?? user?.email ?? '';
   const totalSpent = (purchases ?? []).reduce((sum, purchase) => sum + purchase.total_price, 0);
   const unitsCount = purchases?.length ?? 0;
+  // Fix #13 — ملخص تقدم في لوحة الطالب.
+  const completedLessonsCount = (progressRows ?? []).filter((p) => p.is_completed).length;
+  const inProgressCount = (progressRows ?? []).filter(
+    (p) => !p.is_completed && Number(p.percent_completed) > 0,
+  ).length;
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
   const purchasedUnitIds = new Set((purchases ?? []).map((purchase) => purchase.unit_id));
 
@@ -241,6 +266,41 @@ export function StudentDashboardPage() {
             />
           </div>
         )}
+
+        {/* Fix #13 — ملخص تقدم الدروس */}
+        <GridCard data-testid="dashboard-progress-summary">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-display text-base font-bold text-foreground">تقدم الدروس</h2>
+              <p className="mt-0.5 text-sm text-foreground-muted">
+                {progressRows === null
+                  ? 'جاري تحميل تقدمك...'
+                  : `${completedLessonsCount} درسًا مكتملًا${inProgressCount > 0 ? ` · ${inProgressCount} قيد المشاهدة` : ''}`}
+              </p>
+            </div>
+            <Link
+              to="/student/curriculum"
+              className="text-sm font-medium text-primary-strong hover:underline"
+            >
+              متابعة المنهج
+            </Link>
+          </div>
+          {progressRows !== null && progressRows.length > 0 ? (
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-500"
+                style={{
+                  width: `${Math.round((completedLessonsCount / progressRows.length) * 100)}%`,
+                }}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={progressRows.length}
+                aria-valuenow={completedLessonsCount}
+                aria-label="تقدم الدروس"
+              />
+            </div>
+          ) : null}
+        </GridCard>
 
         <div data-testid="grade-units-section">
           <GridCard>

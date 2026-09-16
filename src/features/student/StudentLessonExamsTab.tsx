@@ -46,9 +46,11 @@ function ExamSkeleton() {
 
 interface StudentLessonExamsTabProps {
   lessonId: string;
+  /** Called after a successful submit so the lesson can auto-complete (policy: exam → completed). */
+  onExamSubmitted?: (examId: string) => void;
 }
 
-export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) {
+export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLessonExamsTabProps) {
   const { showToast } = useToast();
   const [exams, setExams] = useState<Exam[] | null>(null);
   const [questionsByExam, setQuestionsByExam] = useState<Record<string, ExamQuestion[]>>({});
@@ -138,6 +140,12 @@ export function StudentLessonExamsTab({ lessonId }: StudentLessonExamsTabProps) 
       await submitExam(exam.id, payload);
       showToast('تم إرسال إجابتك بنجاح');
       await load();
+      // Unified policy: successful exam submit marks the lesson completed.
+      try {
+        onExamSubmitted?.(exam.id);
+      } catch {
+        // parent toast handles errors — never break the submit flow
+      }
     } catch (error) {
       setSubmitError(submitErrorMessage(error));
     } finally {

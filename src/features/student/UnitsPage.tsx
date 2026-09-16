@@ -33,10 +33,12 @@ import {
   getMyUnitPurchases,
   getPublicSettings,
   getPublicUnitPrices,
+  listMyProgress,
   listUnitsForGrade,
   redeemUnitCode,
 } from '../../data/rpc';
 import type {
+  Progress,
   PublicSettings,
   PublicUnitPrice,
   Unit,
@@ -81,6 +83,7 @@ export function UnitsPage() {
   const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
   const [error, setError] = useState(false);
   const [walletCopied, setWalletCopied] = useState(false);
+  const [progressRows, setProgressRows] = useState<Progress[]>([]);
 
   const load = useCallback(async () => {
     setError(false);
@@ -90,11 +93,13 @@ export function UnitsPage() {
         getMyUnitPurchases(),
         getPublicUnitPrices(),
         getPublicSettings(),
+        listMyProgress(),
       ]);
       const unitsResult = settled[0].status === 'fulfilled' ? settled[0].value : [];
       const purchasesResult = settled[1].status === 'fulfilled' ? settled[1].value : [];
       const pricesResult = settled[2].status === 'fulfilled' ? settled[2].value : [];
       const settingsResult = settled[3].status === 'fulfilled' ? (settled[3].value as PublicSettings | null) : null;
+      const progressResult = settled[4].status === 'fulfilled' ? (settled[4].value as Progress[]) : [];
 
       if (settled[0].status === 'rejected' || settled[1].status === 'rejected') {
         // units or purchases are critical — show error if both failed, but still render what we have
@@ -107,6 +112,7 @@ export function UnitsPage() {
       setUnits(unitsResult.filter((unit) => unit.status === 'published'));
       setPurchases(purchasesResult);
       setPrices(pricesResult);
+      setProgressRows(progressResult);
       if (settingsResult) setSettings(settingsResult);
     } catch {
       setError(true);
@@ -117,12 +123,28 @@ export function UnitsPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const handler = () => {
+      listMyProgress()
+        .then((rows) => setProgressRows(rows))
+        .catch(() => {
+          // best-effort
+        });
+    };
+    window.addEventListener('lesson-progress-updated', handler);
+    return () => window.removeEventListener('lesson-progress-updated', handler);
+  }, []);
+
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
   const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
   const isFreeUnit = (unitId: string) => priceById.get(unitId)?.is_free === true;
   const freeUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id) && isFreeUnit(unit.id));
   const lockedUnits = (units ?? []).filter((unit) => !purchasedUnitIds.has(unit.id) && !isFreeUnit(unit.id));
   const purchasedUnits = (units ?? []).filter((unit) => purchasedUnitIds.has(unit.id));
+  // Fix #13 — ملخص تقدم: دروس مكتملة من إجمالي التقدم المسجل.
+  const completedCount = progressRows.filter((p) => p.is_completed).length;
+  const startedCount = progressRows.filter((p) => !p.is_completed && Number(p.percent_completed) > 0).length;
+  const progressTotal = progressRows.length;
 
   const handleRedeem = async (code: string): Promise<boolean> => {
     setRedeemError(null);
@@ -181,6 +203,43 @@ export function UnitsPage() {
             </Button>
           }
         />
+
+        {/* Fix #13 — ملخص تقدم سريع */}
+        {!error && units !== null && profile?.grade_id ? (
+          <GridCard data-testid="units-progress-summary">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-base font-bold text-foreground">ملخص تقدمك</h2>
+                <p className="mt-0.5 text-sm text-foreground-muted">
+                  {completedCount} درسًا مكتملًا
+                  {startedCount > 0 ? ` · ${startedCount} قيد المشاهدة` : ''}
+                  {progressTotal === 0 ? ' — ابدأ أول درس من المنهج' : ''}
+                </p>
+              </div>
+              <Link
+                to="/student/curriculum"
+                className="text-sm font-medium text-primary-strong hover:underline"
+              >
+                متابعة المنهج
+              </Link>
+            </div>
+            {progressTotal > 0 ? (
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-500"
+                  style={{
+                    width: `${Math.round((completedCount / progressTotal) * 100)}%`,
+                  }}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={progressTotal}
+                  aria-valuenow={completedCount}
+                  aria-label="ملخص تقدم الوحدات"
+                />
+              </div>
+            ) : null}
+          </GridCard>
+        ) : null}
 
         {error ? (
           <ErrorState message="تعذر تحميل الوحدات" onRetry={() => void load()} />

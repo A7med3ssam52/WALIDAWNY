@@ -10,7 +10,7 @@
 // staff UI at any time:
 //   1. validates the request (lesson_id + board_id UUIDs),
 //   2. checks the caller role over the caller-token client
-//      (STAFF_ROLES: admin / mr_walid / teacher),
+//      (STAFF_ROLES: admin / mr_walid / teacher / assistant — 0073 parity),
 //   3. reads the row with id + lesson_id + deleted_at IS NULL — when
 //      absent -> 404 board_not_found (the pre-check for UX),
 //   4. removes the Storage object best-effort
@@ -48,7 +48,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']); // 0073: assistant parity
 export const BOARDS_BUCKET = 'boards';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

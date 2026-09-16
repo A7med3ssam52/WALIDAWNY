@@ -93,7 +93,7 @@ import {
 
 export const TUS_SIGNATURE_TTL_SECONDS = 86400; // 24 hour upload window
 export const MAX_FILE_NAME_LENGTH = 255;
-export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher']);
+export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']); // 0073: assistant parity (teacher parity for lesson assets)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Arabic/Latin letters, digits, spaces, dots, hyphens, underscores.

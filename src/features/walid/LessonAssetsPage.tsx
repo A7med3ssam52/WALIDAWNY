@@ -103,7 +103,6 @@ const PDF_ERROR_MESSAGES: Record<string, string> = {
   forbidden: 'ليست لديك صلاحية',
   wrong_lesson: 'الملف لا ينتمي لهذا الدرس',
   pdf_not_found: 'ملف PDF غير موجود',
-  pdf_not_pending: 'الملف مكتمل ولا يمكن حذفه',
   pdf_upload_failed: 'فشل رفع الملف إلى التخزين. حاول مرة أخرى',
   upload_url_failed: 'فشل إنشاء رابط الرفع. حاول مرة أخرى',
   pdf_reservation_failed: 'فشل إنشاء سجل الملف. حاول مرة أخرى',
@@ -366,6 +365,10 @@ function ListSkeleton({ rows = 3 }: { rows?: number }) {
 export function LessonAssetsPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const { showToast } = useToast();
+  // Assistant policy: FULL WRITE here by design — lesson assets (videos /
+  // boards / PDFs / comments) are the assistant's core workspace alongside
+  // exams. Curriculum structure stays read-only (see Curriculum*Page);
+  // backend RLS/RPCs enforce the same boundary.
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [lessonLoading, setLessonLoading] = useState(true);

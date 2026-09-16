@@ -36,6 +36,7 @@ import { useAuth } from '../auth/AuthContext';
 import { StudentLessonCommentsTab } from './StudentLessonCommentsTab';
 import { StudentLessonExamsTab } from './StudentLessonExamsTab';
 import {
+  broadcastProgressUpdated,
   getLessonBoardSignedUrls,
   getLessonById,
   getMyLessonAccess,
@@ -43,6 +44,7 @@ import {
   getPdfSignedUrl,
   getPlaybackUrl,
   getPublicSettings,
+  getRpcErrorCode,
   getUnitById,
   listLessonPdfs,
   listLessonsForUnit,
@@ -67,7 +69,15 @@ import type {
 import { redeemErrorMessage } from './redeemErrors';
 
 const PROGRESS_SAVE_INTERVAL_MS = 5000;
-const COMPLETION_PERCENT = 90;
+/**
+ * سياسة الإكمال الموحدة:
+ * مكتمل = is_completed. تلقائي عند percent>=90، يدوي عبر الزر،
+ * امتحان عبر toggle(..., 'exam') بعد تسليم ناجح.
+ * PDF/سبورة = engagement (10%) فقط ولا يُكمل تلقائياً.
+ */
+export const COMPLETION_PERCENT = 90;
+/** Minimal percent recorded for PDF/board engagement (never auto-completes). */
+export const ENGAGEMENT_PERCENT = 10;
 
 const WALLET_NUMBER = '01554416004';
 const INSTAPAY_URL = 'https://ipn.eg/S/walidawny888/instapay/6a8lU0';
@@ -78,6 +88,15 @@ const WHATSAPP_RECEIPT_MESSAGE =
 type LessonTab = 'exams' | 'comments';
 
 function errorCode(error: unknown): string | null {
+  // Delegate to the shared RPC decoder so custom RAISE codes carried in
+  // `message` (e.g. progress_stale_video via P0001) are recognised — the
+  // naive `.code`-only check misses them and silences the stale handler.
+  try {
+    const decoded = getRpcErrorCode(error);
+    if (decoded) return decoded;
+  } catch {
+    // fall through to legacy check
+  }
   if (error && typeof error === 'object') {
     const code = (error as { code?: unknown }).code;
     if (typeof code === 'string' && code.length > 0) {
@@ -138,6 +157,8 @@ export function StudentLessonPage() {
   const savingRef = useRef(false);
   const lastPositionRef = useRef(0);
   const requestIdRef = useRef(0);
+  const pdfEngagementRef = useRef(false);
+  const boardEngagementRef = useRef(false);
 
   const allVideos = useMemo<LessonVideo[]>(() => {
     const list: LessonVideo[] = [];
@@ -387,29 +408,73 @@ export function StudentLessonPage() {
     }
   }, [pdfAccess, pdfDownloading]);
 
+  // Reset per-lesson engagement flags + save guards on navigation.
+  useEffect(() => {
+    pdfEngagementRef.current = false;
+    boardEngagementRef.current = false;
+    lastSaveRef.current = 0;
+    savingRef.current = false;
+    lastPositionRef.current = 0;
+  }, [lessonId]);
+
   const saveProgress = useCallback(
-    async (position: number, percent: number) => {
+    async (position: number, percent: number, opts: { force?: boolean } = {}) => {
       if (!lesson) {
         return;
       }
+      const safePosition = Number.isFinite(position) && position >= 0 ? Math.floor(position) : 0;
+      const safePercent = Number.isFinite(percent)
+        ? Math.min(100, Math.max(0, percent))
+        : 0;
+      const isCompletionSave = safePercent >= COMPLETION_PERCENT;
       const now = Date.now();
-      if (now - lastSaveRef.current < PROGRESS_SAVE_INTERVAL_MS && percent < COMPLETION_PERCENT) {
+      if (
+        !opts.force &&
+        !isCompletionSave &&
+        now - lastSaveRef.current < PROGRESS_SAVE_INTERVAL_MS
+      ) {
         return;
       }
-      lastSaveRef.current = now;
       if (savingRef.current) {
-        return;
+        // Fix #4 — سباق 100%: حفظ الإكمال يتجاوز savingRef (انتظار + إعادة
+        // محاولة مرة واحدة). المسارات غير المكتملة تُسقط بهدوء.
+        if (isCompletionSave || opts.force) {
+          try {
+            await new Promise((r) => setTimeout(r, 700));
+          } catch {
+            // ignore timer errors
+          }
+          if (savingRef.current) {
+            return;
+          }
+        } else {
+          return;
+        }
       }
+      // Fix #4: لا تحدّث lastSave إلا عند بدء حفظ فعلي (بعد فحص savingRef).
+      lastSaveRef.current = Date.now();
       savingRef.current = true;
       try {
-        const updated = await upsertProgress(lesson.id, position, percent);
+        const updated = await upsertProgress(lesson.id, safePosition, safePercent);
         const wasCompleted = progress?.is_completed ?? false;
         setProgress(updated);
+        broadcastProgressUpdated(lesson.id);
         if (updated.is_completed && !wasCompleted) {
           showToast('أحسنت! تم إكمال الدرس', 'success');
         }
-      } catch {
-        // progress is best-effort; a failed save never blocks playback
+      } catch (err) {
+        // Fix #10: أخطاء صامتة — progress_stale_video في المسار التلقائي:
+        // تنبيه غير حاجب + log، ولا يوقف التشغيل أبداً.
+        const code = errorCode(err);
+        if (code === 'progress_stale_video') {
+          try {
+            console.warn('[progress] stale video — reload recommended', { lessonId: lesson.id });
+          } catch {
+            // ignore
+          }
+          showToast('تم تحديث فيديو الدرس — حدّث الصفحة لمزامنة تقدمك', 'info');
+        }
+        // other progress errors stay best-effort silent
       } finally {
         savingRef.current = false;
       }
@@ -417,25 +482,44 @@ export function StudentLessonPage() {
     [lesson, progress?.is_completed, showToast],
   );
 
+  // Fix #3 — تعدد الفيديوهات: التقدم يتبع primary فقط.
+  const isPrimaryActive = (primaryVideo?.id ?? null) !== null && activeVideo?.id === primaryVideo?.id;
+
   const handleProgress = useCallback(
     (position: number, percent: number) => {
-      lastPositionRef.current = position;
+      if (!Number.isFinite(position)) return;
+      lastPositionRef.current = Math.floor(position);
+      // Secondary videos never feed progress (primary-only policy).
+      if (!isPrimaryActive) return;
       void saveProgress(position, percent);
     },
-    [saveProgress],
+    [saveProgress, isPrimaryActive],
   );
 
+  const handleYouTubeProgress = useCallback(
+    (position: number, percent: number) => {
+      if (!Number.isFinite(position)) return;
+      lastPositionRef.current = Math.floor(position);
+      if (!isPrimaryActive) return;
+      void saveProgress(position, percent);
+    },
+    [saveProgress, isPrimaryActive],
+  );
+
+  // Single completion path (fix #4): onEnded → save 100% (force, bypasses throttle).
   const handleComplete = useCallback(() => {
-    void saveProgress(lastPositionRef.current, 100);
-  }, [saveProgress]);
+    if (!isPrimaryActive) return;
+    void saveProgress(lastPositionRef.current, 100, { force: true });
+  }, [saveProgress, isPrimaryActive]);
 
   const handleToggleComplete = useCallback(async () => {
     if (!lesson || togglingComplete) return;
     const nextCompleted = !(progress?.is_completed ?? false);
     setTogglingComplete(true);
     try {
-      const updated = await toggleLessonCompleted(lesson.id, nextCompleted);
+      const updated = await toggleLessonCompleted(lesson.id, nextCompleted, 'manual');
       setProgress(updated);
+      broadcastProgressUpdated(lesson.id);
       showToast(
         nextCompleted ? 'تم وضع علامة مكتمل ✓' : 'تم إلغاء علامة مكتمل',
         nextCompleted ? 'success' : 'info',
@@ -443,6 +527,11 @@ export function StudentLessonPage() {
     } catch (err) {
       const code = errorCode(err);
       if (code === 'progress_stale_video') {
+        try {
+          console.warn('[progress] stale video on toggle', { lessonId: lesson.id });
+        } catch {
+          // ignore
+        }
         showToast('حدث تحديث للفيديو، يرجى تحديث الصفحة', 'error');
       } else {
         showToast('تعذر تحديث حالة الدرس', 'error');
@@ -451,6 +540,65 @@ export function StudentLessonPage() {
       setTogglingComplete(false);
     }
   }, [lesson, progress?.is_completed, togglingComplete, showToast]);
+
+  // Fix #2 — تسليم امتحان ناجح → toggle(true, 'exam') (سياسة موحدة وموثقة).
+  const handleExamSubmitted = useCallback(
+    async (examId: string) => {
+      void examId;
+      if (!lesson || progress?.is_completed) return;
+      try {
+        const updated = await toggleLessonCompleted(lesson.id, true, 'exam');
+        setProgress(updated);
+        broadcastProgressUpdated(lesson.id);
+        showToast('أحسنت! اكتمل الدرس بتسليم الامتحان ✓', 'success');
+      } catch (err) {
+        const code = errorCode(err);
+        if (code === 'progress_stale_video') {
+          showToast('تم تحديث فيديو الدرس — حدّث الصفحة لمزامنة تقدمك', 'info');
+        }
+        // exam submit itself already succeeded — never surface as submit error
+      }
+    },
+    [lesson, progress?.is_completed, showToast],
+  );
+
+  // Fix #2 — فتح PDF / مشاهدة سبورة = engagement (10%) فقط، لا إكمال تلقائي.
+  const recordEngagement = useCallback(() => {
+    if (!lesson || progress?.is_completed) return;
+    void saveProgress(lastPositionRef.current, ENGAGEMENT_PERCENT, { force: false });
+  }, [lesson, progress?.is_completed, saveProgress]);
+
+  useEffect(() => {
+    if (pdfPreviewOpen && !pdfEngagementRef.current) {
+      pdfEngagementRef.current = true;
+      recordEngagement();
+    }
+  }, [pdfPreviewOpen, recordEngagement]);
+
+  // Fix #2 — سبورة: تُسجل عند المشاهدة الفعلية (أول صورة تُحمّل/تظهر)،
+  // وليس عند جلب الروابط فقط (حتى لا تستهلك نافذة حفظ الفيديو).
+  const handleBoardViewed = useCallback(() => {
+    if (!boardEngagementRef.current) {
+      boardEngagementRef.current = true;
+      recordEngagement();
+    }
+  }, [recordEngagement]);
+
+  // PDF download also counts as engagement (wraps the earlier downloader).
+  const handlePdfDownloadWithEngagement = useCallback(() => {
+    if (!pdfEngagementRef.current && !(progress?.is_completed ?? false)) {
+      pdfEngagementRef.current = true;
+      recordEngagement();
+    }
+    void handlePdfDownload();
+  }, [handlePdfDownload, progress?.is_completed, recordEngagement]);
+
+  // Fix #3 — resume position only for the primary video matching the saved
+  // progress.video_id (secondary videos always start at 0).
+  const resumePosition =
+    progress && (progress.video_id == null || progress.video_id === primaryVideo?.id)
+      ? (progress.position_seconds ?? 0)
+      : 0;
 
   const handleRedeem = async (code: string): Promise<boolean> => {
     setRedeemError(null);
@@ -781,6 +929,11 @@ export function StudentLessonPage() {
                 <YouTubeEmbed
                   videoId={activeVideo.youtube_video_id}
                   title={activeVideo.title ?? 'فيديو الدرس'}
+                  // Fix #1 + #3: periodic YT IFrame polling feeds the SAME
+                  // saveProgress path — primary only. Secondary YouTube
+                  // videos render manual-only (visible reminder).
+                  onProgress={isPrimaryActive ? handleYouTubeProgress : undefined}
+                  onComplete={isPrimaryActive ? handleComplete : undefined}
                 />
               ) : playback && progressLoaded ? (
                 (() => {
@@ -799,9 +952,9 @@ export function StudentLessonPage() {
                     <VideoPlayer
                       key={activeVideo.id}
                       src={rawUrl.trim()}
-                      initialPosition={progress?.position_seconds ?? 0}
-                      onProgress={handleProgress}
-                      onComplete={handleComplete}
+                      initialPosition={isPrimaryActive ? resumePosition : 0}
+                      onProgress={isPrimaryActive ? handleProgress : undefined}
+                      onComplete={isPrimaryActive ? handleComplete : undefined}
                     />
                   );
                 })()
@@ -1002,7 +1155,7 @@ export function StudentLessonPage() {
                     rel="noreferrer"
                     onClick={(event) => {
                       event.preventDefault();
-                      void handlePdfDownload();
+                      handlePdfDownloadWithEngagement();
                     }}
                     className="btn-primary inline-flex w-fit items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_-10px_rgba(99,102,241,0.6)]"
                     data-testid="lesson-pdf-download"
@@ -1055,6 +1208,7 @@ export function StudentLessonPage() {
                     loading="lazy"
                     className="aspect-video w-full rounded-lg bg-white/5 object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                     data-testid={`board-image-${board.board_id}`}
+                    onLoad={handleBoardViewed}
                     onError={(e) => {
                       try {
                         const target = e.currentTarget as HTMLImageElement;
@@ -1095,7 +1249,7 @@ export function StudentLessonPage() {
         </div>
 
         {activeTab === 'exams' ? (
-          <StudentLessonExamsTab lessonId={lesson.id} />
+          <StudentLessonExamsTab lessonId={lesson.id} onExamSubmitted={(examId) => void handleExamSubmitted(examId)} />
         ) : activeTab === 'comments' ? (
           <StudentLessonCommentsTab lessonId={lesson.id} userId={user?.id ?? ''} />
         ) : null}

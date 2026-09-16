@@ -687,7 +687,7 @@ describe('StudentLessonPage', () => {
     expect(btn).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(btn);
 
-    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: true }));
+    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: true, p_source: 'manual' }));
     expect(await screen.findByText('أكملت هذا الدرس ✓')).toBeInTheDocument();
     expect(screen.getByTestId('toggle-complete-btn')).toHaveTextContent('إلغاء الإكمال');
   });
@@ -704,7 +704,7 @@ describe('StudentLessonPage', () => {
     expect(screen.getByTestId('lesson-completed-badge')).toBeInTheDocument();
 
     fireEvent.click(btn);
-    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: false }));
+    await waitFor(() => expect(expectRpcCall('toggle_lesson_completed')).toEqual({ p_lesson_id: 'lesson-1', p_completed: false, p_source: 'manual' }));
     await waitFor(() => expect(screen.getByTestId('toggle-complete-btn')).toHaveTextContent('وضع علامة مكتمل'));
     expect(screen.queryByTestId('lesson-completed-badge')).not.toBeInTheDocument();
   });

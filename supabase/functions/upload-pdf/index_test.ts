@@ -446,6 +446,18 @@ Deno.test('upload-pdf: admin role also allowed', async () => {
   await expectStatus(res, 200);
 });
 
+Deno.test('upload-pdf: assistant role allowed (0073 teacher parity)', async () => {
+  const { dep } = deps(
+    deepMerge(staffCfg(), {
+      tables: {
+        profiles: { rows: [{ id: WALID_ID, role: 'assistant', status: 'active', deleted_at: null }] },
+      },
+    }),
+  );
+  const res = await handle(request({ lesson_id: LESSON_ID, file_name: 'lesson.pdf' }), dep);
+  await expectStatus(res, 200);
+});
+
 Deno.test('upload-pdf: profile query failure -> 403 (never leaks)', async () => {
   const { dep } = deps(
     deepMerge(staffCfg(), {

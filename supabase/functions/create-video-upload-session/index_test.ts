@@ -441,6 +441,32 @@ Deno.test('create-video-upload-session: success falls back to lesson title', asy
   assertEqual(body.metadata.title, 'TEST-L1');
 });
 
+Deno.test('create-video-upload-session: assistant role allowed (0073 teacher parity)', async () => {
+  const { dep } = deps(
+    staffCfg({
+      tables: {
+        profiles: {
+          rows: [
+            {
+              id: '70000000-0000-0000-0000-000000000009',
+              role: 'assistant',
+              status: 'active',
+              deleted_at: null,
+            },
+          ],
+        },
+        lessons: { rows: [{ id: LESSON_ID, title: 'TEST-L1', deleted_at: null }] },
+        lesson_videos: {
+          rows: [{ id: OLD_VIDEO_ID, lesson_id: LESSON_ID, status: 'ready', deleted_at: null }],
+          count: 0,
+        },
+      },
+    }),
+  );
+  const res = await handle(post({ lesson_id: LESSON_ID, mode: 'create' }), dep);
+  await expectStatus(res, 200);
+});
+
 Deno.test(
   'create-video-upload-session: replace success passes old_video_id to wrapper',
   async () => {

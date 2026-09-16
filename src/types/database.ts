@@ -220,6 +220,8 @@ export interface UnitPurchaseStats {
   top_units: Array<{ unit_name: string; purchases: number; revenue: number }>;
 }
 
+export type ProgressCompletionSource = 'auto' | 'manual' | 'exam';
+
 export type Progress = {
   id: string;
   student_id: string;
@@ -230,6 +232,10 @@ export type Progress = {
   is_completed: boolean;
   last_watched_at: string | null;
   updated_at: string;
+  /** Real completion timestamp (unified definition). Null when not completed. */
+  completed_at: string | null;
+  /** Completion source: auto (>=90% via upsert), manual (toggle), exam (submit). */
+  completed_by: ProgressCompletionSource | null;
 };
 
 export type ExamQuestionType = 'mcq' | 'essay';

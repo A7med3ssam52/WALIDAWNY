@@ -37,6 +37,9 @@ export function CurriculumUnitsPage() {
   const { gradeId } = useParams<{ gradeId: string }>();
   const { showToast } = useToast();
   const { role } = useAuth();
+  // Assistant policy: units list is read-only (no create/update/delete/
+  // publish). Exams + lesson assets stay full-write (see ExamsPage /
+  // LessonAssetsPage); backend enforces the same boundary.
   const isAssistant = role === 'assistant';
 
   const [grade, setGrade] = useState<Grade | null | undefined>(undefined);

@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { GuestOnly, ProtectedRoute, RoleGuard } from '../components/guards';
 import { Spinner } from '../components/Spinner';
 import { SuspendedAccountGate } from '../components/SuspendedAccountGate';
+import { useAuth } from '../features/auth/AuthContext';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Public — lazy for code splitting (Landing excludes hls.js chunk)
@@ -22,9 +23,6 @@ const NotFoundPage = lazy(() => import('../features/public/NotFoundPage').then((
 // Auth — keep lazy too but small
 const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import('../features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
-
-// Preview — internal announcements gallery (public, noindex)
-const AnnouncementsPreviewPage = lazy(() => import('../features/preview/AnnouncementsPreviewPage').then((m) => ({ default: m.AnnouncementsPreviewPage })));
 
 // Student
 const StudentDashboardPage = lazy(() => import('../features/student/StudentDashboardPage').then((m) => ({ default: m.StudentDashboardPage })));
@@ -73,6 +71,16 @@ function PageFallback() {
   );
 }
 
+// Assistant lands on exams (core workspace); other staff land on dashboard.
+// Runs inside the outer /walid RoleGuard, so role is already resolved.
+function WalidIndexRedirect() {
+  const { role } = useAuth();
+  if (role === 'assistant') {
+    return <Navigate to="/walid/exams" replace />;
+  }
+  return <Navigate to="/walid/dashboard" replace />;
+}
+
 export function AppRoutes() {
   return (
     <ErrorBoundary>
@@ -96,9 +104,6 @@ export function AppRoutes() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
-
-        {/* Internal preview — announcements gallery (noindex) */}
-        <Route path="/preview/ads" element={<AnnouncementsPreviewPage />} />
 
         {/* Auth — noindex */}
         <Route
@@ -134,34 +139,32 @@ export function AppRoutes() {
               </Route>
             </Route>
           </Route>
-          {/* Staff full access: mr_walid / admin / teacher */}
-          <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
-            <Route index element={<Navigate to="/walid/dashboard" replace />} />
-            <Route path="dashboard" element={<WalidDashboardPage />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="students" element={<StudentListPage />} />
-            <Route path="students/trash" element={<TrashPage />} />
-            <Route path="students/:studentId" element={<StudentDetailPage />} />
-            <Route path="grades" element={<GradesPage />} />
+          {/* Staff: single /walid guard (mr_walid / admin / teacher / assistant).
+              A duplicate /walid Route here used to redirect-loop assistants
+              (the first guard always won). Restricted pages are nested under
+              an inner staff-only guard instead. */}
+          <Route path="/walid" element={<RoleGuard allow={['mr_walid', 'admin', 'teacher', 'assistant']} />}>
+            <Route index element={<WalidIndexRedirect />} />
+            {/* Assistant-allowed: curriculum (read-only UI) + exams + lesson assets */}
             <Route path="curriculum" element={<CurriculumPage />} />
             <Route path="curriculum/:gradeId" element={<CurriculumUnitsPage />} />
             <Route path="curriculum/:gradeId/:unitId" element={<CurriculumLessonsPage />} />
             <Route path="exams" element={<ExamsPage />} />
             <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
-            <Route path="pricing" element={<PricingPage />} />
-            <Route path="codes" element={<CodesPage />} />
-            <Route path="announcements" element={<WalidAnnouncementsListPage />} />
-            <Route path="announcements/new" element={<WalidAnnouncementFormPage />} />
-            <Route path="announcements/:id/edit" element={<WalidAnnouncementFormPage />} />
-          </Route>
-          {/* Assistant limited: curriculum (read-only) + exams only */}
-          <Route path="/walid" element={<RoleGuard allow={['assistant']} />}>
-            <Route index element={<Navigate to="/walid/exams" replace />} />
-            <Route path="curriculum" element={<CurriculumPage />} />
-            <Route path="curriculum/:gradeId" element={<CurriculumUnitsPage />} />
-            <Route path="curriculum/:gradeId/:unitId" element={<CurriculumLessonsPage />} />
-            <Route path="exams" element={<ExamsPage />} />
-            <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
+            {/* Staff-only (no assistant): dashboard/reports/students/grades/pricing/codes/announcements */}
+            <Route element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>
+              <Route path="dashboard" element={<WalidDashboardPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="students" element={<StudentListPage />} />
+              <Route path="students/trash" element={<TrashPage />} />
+              <Route path="students/:studentId" element={<StudentDetailPage />} />
+              <Route path="grades" element={<GradesPage />} />
+              <Route path="pricing" element={<PricingPage />} />
+              <Route path="codes" element={<CodesPage />} />
+              <Route path="announcements" element={<WalidAnnouncementsListPage />} />
+              <Route path="announcements/new" element={<WalidAnnouncementFormPage />} />
+              <Route path="announcements/:id/edit" element={<WalidAnnouncementFormPage />} />
+            </Route>
           </Route>
           <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />

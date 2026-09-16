@@ -15,6 +15,11 @@ const allItems: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/announcements', label: 'الإعلانات', badge: 'جديد' },
 ];
 
+// Assistant scope: curriculum (read-only) + exams. Lesson assets
+// (/walid/lessons/:lessonId) stay reachable via the "الملفات" link inside
+// the lessons list — deliberately not a top-level nav item. Dashboard and
+// all staff-only pages (reports/students/grades/pricing/codes/announcements)
+// never appear here.
 const assistantItems: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/curriculum', label: 'المنهج' },
   { to: '/walid/exams', label: 'الإختبارات' },

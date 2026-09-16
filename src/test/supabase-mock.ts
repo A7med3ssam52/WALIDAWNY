@@ -296,6 +296,7 @@ export function makeUnitCode(overrides: Partial<AnyRecord> = {}): AnyRecord {
 }
 
 export function makeProgress(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  const isCompleted = (overrides.is_completed as boolean | undefined) ?? false;
   return {
     id: 'progress-1',
     student_id: 'user-test-1',
@@ -306,6 +307,8 @@ export function makeProgress(overrides: Partial<AnyRecord> = {}): AnyRecord {
     is_completed: false,
     last_watched_at: nowIso(),
     updated_at: nowIso(),
+    completed_at: isCompleted ? nowIso() : null,
+    completed_by: isCompleted ? 'auto' : null,
     ...overrides,
   };
 }
@@ -782,6 +785,7 @@ function createMockClient() {
     if (fn === 'toggle_lesson_completed') {
       const lessonId = String(args?.p_lesson_id ?? '');
       const completed = Boolean(args?.p_completed);
+      const source = args?.p_source === 'exam' ? 'exam' : 'manual';
       if (!uid) return error('access_denied');
       let existing = state.progress.find((item) => item.student_id === uid && item.lesson_id === lessonId);
       if (completed) {
@@ -795,6 +799,8 @@ function createMockClient() {
           is_completed: true,
           last_watched_at: nowIso(),
           updated_at: nowIso(),
+          completed_at: (existing?.completed_at as string | null) ?? nowIso(),
+          completed_by: source,
         });
         if (existing) Object.assign(existing, updated);
         else {
@@ -813,11 +819,17 @@ function createMockClient() {
             is_completed: false,
             last_watched_at: nowIso(),
             updated_at: nowIso(),
+            completed_at: null,
+            completed_by: null,
           });
           state.progress.push(created);
           return { data: created, error: null };
         }
         existing.is_completed = false;
+        // 0072: unmark lowers percent below 90 + clears completed_at.
+        existing.percent_completed = Math.min(Number(existing.percent_completed ?? 0), 89);
+        existing.completed_at = null;
+        existing.completed_by = null;
         existing.last_watched_at = nowIso();
         existing.updated_at = nowIso();
         return { data: existing, error: null };
@@ -833,21 +845,32 @@ function createMockClient() {
       const existing = state.progress.find(
         (item) => item.student_id === uid && item.lesson_id === lessonId,
       );
+      // 0072: position is GREATEST(old,new).
+      const mergedPosition = existing
+        ? Math.max(Number(existing.position_seconds ?? 0), position)
+        : position;
+      const mergedPercent = existing
+        ? Math.max(Number(existing.percent_completed ?? 0), percent)
+        : percent;
+      const mergedCompleted = existing
+        ? Boolean(existing.is_completed) || mergedPercent >= 90
+        : percent >= 90;
       const updated = makeProgress({
         ...existing,
         id: existing?.id ?? `progress-created-${++state.idSeq}`,
         student_id: uid,
         lesson_id: lessonId,
-        position_seconds: position,
-        percent_completed: existing
-          ? Math.max(Number(existing.percent_completed), percent)
-          : percent,
-        is_completed: existing
-          ? Boolean(existing.is_completed) ||
-            Math.max(Number(existing.percent_completed), percent) >= 90
-          : percent >= 90,
+        position_seconds: mergedPosition,
+        percent_completed: mergedPercent,
+        is_completed: mergedCompleted,
         last_watched_at: nowIso(),
         updated_at: nowIso(),
+        completed_at: mergedCompleted
+          ? ((existing?.completed_at as string | null) ?? nowIso())
+          : null,
+        completed_by: mergedCompleted
+          ? ((existing?.completed_by as string | null) ?? 'auto')
+          : null,
       });
       if (existing) {
         Object.assign(existing, updated);

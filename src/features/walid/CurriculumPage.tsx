@@ -10,9 +10,15 @@ import { LayoutShell } from '../../components/LayoutShell';
 import { RoleNav } from '../../components/RoleNav';
 import { listGrades } from '../../data/rpc';
 import type { Grade } from '../../types/database';
+import { useAuth } from '../auth/AuthContext';
 import { ListSkeleton } from './curriculumShared';
 
 export function CurriculumPage() {
+  const { role } = useAuth();
+  // Assistant policy: curriculum structure is read-only (no grade/unit/lesson
+  // CRUD — /walid/grades is staff-only). Exams + lesson assets stay full-write
+  // (see ExamsPage / LessonAssetsPage); backend enforces the same boundary.
+  const isAssistant = role === 'assistant';
   const [grades, setGrades] = useState<Grade[] | null>(null);
   const [error, setError] = useState(false);
 
@@ -42,7 +48,7 @@ export function CurriculumPage() {
         title="الصفوف"
         subtitle="انتقل من الصف إلى الوحدات ثم الدروس"
         actions={
-          hasGrades ? (
+          hasGrades && !isAssistant ? (
             <Link
               to="/walid/grades"
               className="inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-primary-strong transition-colors hover:bg-primary-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
@@ -61,13 +67,15 @@ export function CurriculumPage() {
             title="لا توجد صفوف نشطة"
             description="أنشئ صفًا أولاً من صفحة إدارة الصفوف لبدء بناء المنهج."
             action={
-              <Link
-                to="/walid/grades"
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-gradient-to-br from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] transition-[filter] hover:brightness-110"
-              >
-                <GraduationCap aria-hidden="true" className="h-4 w-4" />
-                إدارة الصفوف
-              </Link>
+              isAssistant ? undefined : (
+                <Link
+                  to="/walid/grades"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-gradient-to-br from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] transition-[filter] hover:brightness-110"
+                >
+                  <GraduationCap aria-hidden="true" className="h-4 w-4" />
+                  إدارة الصفوف
+                </Link>
+              )
             }
           />
         ) : (

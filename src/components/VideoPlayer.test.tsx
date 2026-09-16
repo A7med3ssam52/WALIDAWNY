@@ -83,7 +83,7 @@ describe('VideoPlayer', () => {
     expect(onProgress).toHaveBeenCalledWith(60, 30);
   });
 
-  it('reports completion with 100% on ended', () => {
+  it('reports completion via onComplete only on ended (single path, no duplicate progress)', () => {
     const onProgress = vi.fn();
     const onComplete = vi.fn();
     render(
@@ -98,7 +98,9 @@ describe('VideoPlayer', () => {
     video.currentTime = 200;
     fireEvent.ended(video);
     expect(onComplete).toHaveBeenCalledTimes(1);
-    expect(onProgress).toHaveBeenLastCalledWith(200, 100);
+    // Single completion path (fix #4): onEnded must NOT emit onProgress(100)
+    // — the parent saves 100% once via onComplete.
+    expect(onProgress).not.toHaveBeenCalled();
   });
 
   it('destroys the hls instance when the source changes', () => {

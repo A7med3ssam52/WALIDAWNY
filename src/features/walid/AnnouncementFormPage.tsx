@@ -54,7 +54,7 @@ const initialForm: FormData = {
   link_url: '',
   link_label: '',
   variant: 'info',
-  target_roles: ['student', 'teacher', 'mr_walid', 'admin'],
+  target_roles: ['student', 'teacher', 'mr_walid', 'admin', 'assistant'],
   hide_on_paths: '',
   starts_at: new Date().toISOString().slice(0, 16),
   ends_at: '',

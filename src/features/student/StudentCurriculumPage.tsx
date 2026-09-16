@@ -172,6 +172,20 @@ export function StudentCurriculumPage() {
     };
   }, [load]);
 
+  // Fix #13 — إبطال cache المنهج بعد toggle/upsert: إعادة تحميل التقدم فقط
+  // عند حدث lesson-progress-updated (بدون إعادة تحميل الوحدات كاملة).
+  useEffect(() => {
+    const handler = () => {
+      listMyProgress()
+        .then((rows) => setProgressByLesson(new Map(rows.map((row) => [row.lesson_id, row]))))
+        .catch(() => {
+          // best-effort
+        });
+    };
+    window.addEventListener('lesson-progress-updated', handler);
+    return () => window.removeEventListener('lesson-progress-updated', handler);
+  }, []);
+
   const focusUnitId = searchParams.get('unit');
   useEffect(() => {
     if (!focusUnitId) {
@@ -301,15 +315,26 @@ export function StudentCurriculumPage() {
     );
   }
 
-  const totalLessons = units.reduce((sum, unit) => sum + unit.lessons.length, 0);
-  const completedLessons = units.reduce(
-    (sum, unit) =>
-      sum + unit.lessons.filter((lesson) => progressByLesson.get(lesson.id)?.is_completed).length,
-    0,
-  );
-  const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
   const purchasedUnitIds = new Set(purchases.map((purchase) => purchase.unit_id));
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
+  const isUnitAccessible = (unit: Unit) =>
+    purchasedUnitIds.has(unit.id) || priceById.get(unit.id)?.is_free === true;
+  // Fix #6 — نسبة المنهج على الوحدات المفعلة فقط (مشتراة + مجانية +
+  // تجريبي ظاهر)، لا كل الوحدات المنشورة.
+  const existingLessonIdsForRatio = new Set(units.flatMap((u) => u.lessons.map((l) => l.id)));
+  const visibleTrialForRatio = trialLessons.filter((t) => !existingLessonIdsForRatio.has(t.lesson_id));
+  const accessibleUnits = units.filter((u) => isUnitAccessible(u));
+  const totalLessons =
+    accessibleUnits.reduce((sum, unit) => sum + unit.lessons.length, 0) +
+    visibleTrialForRatio.length;
+  const completedLessons =
+    accessibleUnits.reduce(
+      (sum, unit) =>
+        sum + unit.lessons.filter((lesson) => progressByLesson.get(lesson.id)?.is_completed).length,
+      0,
+    ) +
+    visibleTrialForRatio.filter((t) => progressByLesson.get(t.lesson_id)?.is_completed).length;
+  const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
   // trial: deduplicate lessons already present in own-grade units, keep published filter (RPC already does)
   const existingLessonIds = new Set(units.flatMap((u) => u.lessons.map((l) => l.id)));
