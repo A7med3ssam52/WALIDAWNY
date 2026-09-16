@@ -72,10 +72,10 @@ SELECT tests.assert(
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
-            ARRAY['new_content','unit_activated','system','exam_submitted','exam_graded','lesson_comment','comment_reply']::text[]
+            ARRAY['new_content','unit_activated','system','exam_submitted','exam_graded','lesson_comment','comment_reply','suggestion_status']::text[]
      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
      WHERE t.typname = 'notification_type'),
-    'notification_type members are new_content,unit_activated,system + exam_submitted,exam_graded (0028/0029) + lesson_comment,comment_reply (0030)');
+    'notification_type members are new_content,unit_activated,system + exam_submitted,exam_graded (0028/0029) + lesson_comment,comment_reply (0030) + suggestion_status (0075)');
 
 SELECT tests.assert(
     (SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] =
@@ -95,19 +95,21 @@ SELECT tests.assert(
     (SELECT to_regtype('public.subscription_status') IS NULL),
     'subscription_status enum does NOT exist (0028 step 13)');
 
--- --- RLS enabled + FORCEd on all 21 tables ----------------------------
+-- --- RLS enabled + FORCEd on all 25 tables ----------------------------
+-- 21 application tables + announcements (0049) + student_sessions and
+-- student_activity_events (0055 presence) + platform_suggestions (0075).
 SELECT tests.assert(
-    (SELECT count(*) = 21
+    (SELECT count(*) = 25
      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND c.relkind = 'r'
        AND c.relrowsecurity AND c.relforcerowsecurity),
-    'RLS enabled AND forced on all 21 tables');
+    'RLS enabled AND forced on all 25 tables');
 
 -- --- expected columns present ----------------------------------------
 SELECT tests.assert(
     (SELECT array_agg(column_name ORDER BY column_name)::text[] = ARRAY[
         'address','created_at','deleted_at','full_name','grade_id','guardian_phone',
-        'id','phone','role','status','updated_at']::text[]
+        'id','phone','role','status','suspension_reason','updated_at']::text[]
      FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles'),
     'profiles has exactly the documented columns');
 
@@ -350,9 +352,9 @@ SELECT tests.assert(
 -- PG views are SECURITY INVOKER by default (no SECURITY DEFINER views, L5);
 -- the previous information_schema.security_type column does not exist in PG.
 SELECT tests.assert(
-    (SELECT count(*) = 5 FROM information_schema.views
+    (SELECT count(*) = 7 FROM information_schema.views
      WHERE table_schema = 'public' AND table_name LIKE 'v_%'),
-    'all 5 views are SECURITY INVOKER (L5)');
+    'all 7 views are SECURITY INVOKER (L5: 5 app views + v_online_students + v_student_activity_summary from 0055)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -387,10 +389,10 @@ SELECT tests.assert(
     'set_updated_at on the 12 documented tables (0028 list + exams 0029 + lesson_boards 0036)');
 
 SELECT tests.assert(
-    (SELECT count(*) = 15 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+    (SELECT count(*) = 16 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE n.nspname = 'public' AND t.tgname = 'audit_trigger'
-       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments','lesson_boards','platform_expenses','platform_payouts')),
-    'audit_trigger on the exact 15-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030 + lesson_boards 0036 + 0043 financial)');
+       AND c.relname IN ('profiles','grades','units','lessons','lesson_videos','lesson_pdfs','app_settings','unit_pricing','unit_codes','unit_purchases','exams','lesson_comments','lesson_boards','platform_expenses','platform_payouts','platform_suggestions')),
+    'audit_trigger on the exact 16-table inventory (MED-8, 0028 + exams 0029 + lesson_comments 0030 + lesson_boards 0036 + 0043 financial + platform_suggestions 0075)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
@@ -403,8 +405,8 @@ SELECT tests.assert(
 
 -- --- Storage buckets: private ----------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 3 FROM storage.buckets WHERE id IN ('pdfs','audit-exports','boards') AND NOT public),
-    'pdfs, audit-exports and boards buckets exist and are private');
+    (SELECT count(*) = 4 FROM storage.buckets WHERE id IN ('pdfs','audit-exports','boards','suggestion-images') AND NOT public),
+    'pdfs, audit-exports, boards and suggestion-images buckets exist and are private');
 
 -- --- B1: SECURITY DEFINER ownership -----------------------------------
 SELECT tests.assert(

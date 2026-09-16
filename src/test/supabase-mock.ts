@@ -29,6 +29,9 @@ interface MockState {
   examAttempts: AnyRecord[];
   examAnswers: AnyRecord[];
   lessonComments: AnyRecord[];
+  suggestions: AnyRecord[];
+  storageUploads: Array<{ bucket: string; path: string }>;
+  appSettings: Record<string, unknown>;
   dashboardStats: AnyRecord;
   financialReports: AnyRecord;
   platformExpenses: AnyRecord[];
@@ -86,6 +89,13 @@ const state: MockState = {
   examAttempts: [],
   examAnswers: [],
   lessonComments: [],
+  suggestions: [],
+  storageUploads: [],
+  appSettings: {
+    suggestions_open: true,
+    suggestions_banner_message: 'banner-test',
+    suggestions_closed_message: 'closed-test',
+  },
   dashboardStats: makeDashboardStats(),
   financialReports: makeFinancialReports(),
   platformExpenses: [],
@@ -456,6 +466,20 @@ export function makeLessonComment(overrides: Partial<AnyRecord> = {}): AnyRecord
   };
 }
 
+export function makeSuggestion(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  return {
+    id: 'suggestion-1',
+    student_id: 'user-test-1',
+    kind: 'suggestion',
+    title: 'عنوان تجريبي',
+    body: 'نص تجريبي طويل بما يكفي للتحقق من الصحة',
+    image_path: null,
+    status: 'new',
+    created_at: '2026-01-04T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 export function makeAuditLog(overrides: Partial<AnyRecord> = {}): AnyRecord {
   return {
     id: 'audit-1',
@@ -483,6 +507,9 @@ export function setAuthenticatedUser(profile: AnyRecord): MockSession {
     platform_name: 'وليد عونى',
     whatsapp_number: '+201000000000',
     whatsapp_default_message: 'مرحبًا، أود التواصل مع الأستاذ',
+    suggestions_open: state.appSettings.suggestions_open ?? true,
+    suggestions_banner_message: state.appSettings.suggestions_banner_message ?? null,
+    suggestions_closed_message: state.appSettings.suggestions_closed_message ?? null,
   };
   return session;
 }
@@ -2009,6 +2036,165 @@ function createMockClient() {
     return null;
   };
 
+  const SUGGESTION_KINDS = ['issue', 'suggestion', 'other'];
+  const SUGGESTION_STATUSES = ['new', 'reviewed', 'planned', 'done', 'rejected'];
+
+  const applySuggestionsRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
+    const uid = currentUserId();
+    const profile = state.profiles.find((item) => item.id === uid);
+    const role = String(profile?.role ?? '');
+    const isStudent = role === 'student' && profile?.status === 'active' && !profile?.deleted_at;
+    const isAdmin = role === 'admin';
+    if (fn === 'submit_suggestion') {
+      if (!uid || !isStudent) {
+        return error('permission_denied');
+      }
+      if (state.appSettings.suggestions_open === false) {
+        return error('suggestions_closed');
+      }
+      const kind = String(args?.p_kind ?? '');
+      const title = String(args?.p_title ?? '').trim();
+      const body = String(args?.p_body ?? '').trim();
+      if (!SUGGESTION_KINDS.includes(kind)) {
+        return error('invalid_kind');
+      }
+      if (!title || title.length > 100) {
+        return error('invalid_title');
+      }
+      if (body.length < 10 || body.length > 1000) {
+        return error('invalid_body');
+      }
+      const row = makeSuggestion({
+        id: `suggestion-created-${++state.idSeq}`,
+        student_id: uid,
+        kind,
+        title,
+        body,
+        status: 'new',
+        created_at: nowIso(),
+      });
+      state.suggestions.push(row);
+      return { data: row, error: null };
+    }
+    if (fn === 'attach_suggestion_image') {
+      if (!uid || !isStudent) {
+        return error('permission_denied');
+      }
+      const row = state.suggestions.find(
+        (item) => item.id === args?.p_suggestion_id && item.student_id === uid,
+      );
+      if (!row) {
+        return error('suggestion_not_found');
+      }
+      if (row.image_path) {
+        return error('suggestion_image_exists');
+      }
+      const path = String(args?.p_path ?? '');
+      if (path !== `${uid}/${row.id}.jpg`) {
+        return error('invalid_image');
+      }
+      if (!state.storageUploads.some((item) => item.path === path)) {
+        return error('suggestion_image_missing');
+      }
+      row.image_path = path;
+      return { data: null, error: null };
+    }
+    if (fn === 'list_my_suggestions') {
+      if (!uid || !isStudent) {
+        return error('permission_denied');
+      }
+      const rows = state.suggestions
+        .filter((item) => item.student_id === uid)
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      return { data: rows, error: null };
+    }
+    if (fn === 'list_suggestions') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const kind = (args?.p_kind as string | null) ?? null;
+      const status = (args?.p_status as string | null) ?? null;
+      if (kind && !SUGGESTION_KINDS.includes(kind)) {
+        return error('invalid_kind');
+      }
+      if (status && !SUGGESTION_STATUSES.includes(status)) {
+        return error('invalid_status');
+      }
+      const limit = Math.max(1, Math.min(Number(args?.p_limit ?? 50), 100));
+      const offset = Math.max(0, Number(args?.p_offset ?? 0));
+      const rows = state.suggestions
+        .filter((item) => (!kind || item.kind === kind) && (!status || item.status === status))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(offset, offset + limit)
+        .map((item) => {
+          const student = state.profiles.find((candidate) => candidate.id === item.student_id);
+          const grade = state.grades.find((candidate) => candidate.id === student?.grade_id);
+          return {
+            ...item,
+            student_name: student?.full_name ?? '',
+            student_phone: student?.phone ?? '',
+            grade_name: grade?.name ?? null,
+          };
+        });
+      return { data: rows, error: null };
+    }
+    if (fn === 'update_suggestion_status') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const status = String(args?.p_status ?? '');
+      if (!SUGGESTION_STATUSES.includes(status)) {
+        return error('invalid_status');
+      }
+      const row = state.suggestions.find((item) => item.id === args?.p_suggestion_id);
+      if (!row) {
+        return error('suggestion_not_found');
+      }
+      if (row.status !== status) {
+        row.status = status;
+        state.notifications.push(
+          makeNotification({
+            id: `notification-created-${++state.idSeq}`,
+            user_id: row.student_id,
+            type: 'suggestion_status',
+            title: 'تحديث على حالة مشاركتك',
+            body: row.title,
+            entity_type: 'suggestion',
+            entity_id: row.id,
+            created_at: nowIso(),
+          }),
+        );
+      }
+      return { data: row, error: null };
+    }
+    if (fn === 'delete_suggestion') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const index = state.suggestions.findIndex((item) => item.id === args?.p_suggestion_id);
+      if (index < 0) {
+        return error('suggestion_not_found');
+      }
+      const [removed] = state.suggestions.splice(index, 1);
+      if (removed?.image_path) {
+        state.storageUploads = state.storageUploads.filter((item) => item.path !== removed.image_path);
+      }
+      return { data: null, error: null };
+    }
+    if (fn === 'set_app_setting') {
+      const key = String(args?.p_key ?? '');
+      const isWhatsapp = key.startsWith('whatsapp');
+      if (!(isAdmin || (role === 'mr_walid' && isWhatsapp))) {
+        return error('access_denied');
+      }
+      state.appSettings[key] = args?.p_value;
+      const current = (state.rpcResults['get_public_settings'] as AnyRecord | undefined) ?? {};
+      state.rpcResults['get_public_settings'] = { ...current, [key]: args?.p_value };
+      return { data: null, error: null };
+    }
+    return null;
+  };
+
   const auth = {
     getSession: vi.fn(async () => {
       const gate = state.authGates.getSession;
@@ -2211,12 +2397,35 @@ function createMockClient() {
     if (boards) {
       return boards;
     }
+    const suggestions = applySuggestionsRpc(fn, args);
+    if (suggestions) {
+      return suggestions;
+    }
     return { data: null, error: null };
   });
 
   const from = (table: string) => createQueryBuilder(table);
 
-  return { auth, from, rpc };
+  const storage = {
+    from: (bucket: string) => ({
+      upload: vi.fn(async (path: string) => {
+        state.storageUploads.push({ bucket, path });
+        return { data: { path }, error: null };
+      }),
+      createSignedUrl: vi.fn(async (path: string) => ({
+        data: { signedUrl: `https://storage.test/${bucket}/${path}?signed=1` },
+        error: null,
+      })),
+      remove: vi.fn(async (paths: string[]) => {
+        state.storageUploads = state.storageUploads.filter(
+          (item) => !(item.bucket === bucket && paths.includes(item.path)),
+        );
+        return { data: [], error: null };
+      }),
+    }),
+  };
+
+  return { auth, from, rpc, storage };
 }
 
 export function resetMockState() {
@@ -2238,6 +2447,13 @@ export function resetMockState() {
   state.examAttempts = [];
   state.examAnswers = [];
   state.lessonComments = [];
+  state.suggestions = [];
+  state.storageUploads = [];
+  state.appSettings = {
+    suggestions_open: true,
+    suggestions_banner_message: 'banner-test',
+    suggestions_closed_message: 'closed-test',
+  };
   state.dashboardStats = makeDashboardStats();
   state.financialReports = makeFinancialReports();
   state.platformExpenses = [];

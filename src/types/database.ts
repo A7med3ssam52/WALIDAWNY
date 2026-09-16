@@ -31,6 +31,12 @@ export interface PublicSettings {
   platform_name?: string | null;
   whatsapp_number?: string | null;
   whatsapp_default_message?: string | null;
+  /** Suggestions inbox kill-switch (0075). Missing key = open. */
+  suggestions_open?: boolean | null;
+  /** Admin-editable banner text shown above the student suggestions form. */
+  suggestions_banner_message?: string | null;
+  /** Message shown instead of the form while the inbox is closed. */
+  suggestions_closed_message?: string | null;
 }
 
 export type ActiveGrade = {
@@ -312,6 +318,28 @@ export type LessonComment = {
   created_at: string;
 };
 
+export type SuggestionKind = 'issue' | 'suggestion' | 'other';
+
+export type SuggestionStatus = 'new' | 'reviewed' | 'planned' | 'done' | 'rejected';
+
+export type PlatformSuggestion = {
+  id: string;
+  student_id: string;
+  kind: SuggestionKind;
+  title: string;
+  body: string;
+  image_path: string | null;
+  status: SuggestionStatus;
+  created_at: string;
+};
+
+/** Admin inbox row: suggestion + student identity join (0075 list_suggestions). */
+export type AdminSuggestionRow = PlatformSuggestion & {
+  student_name: string;
+  student_phone: string;
+  grade_name: string | null;
+};
+
 export type NotificationType =
   | 'unit_activated'
   | 'new_content'
@@ -319,7 +347,8 @@ export type NotificationType =
   | 'exam_submitted'
   | 'exam_graded'
   | 'lesson_comment'
-  | 'comment_reply';
+  | 'comment_reply'
+  | 'suggestion_status';
 
 export type AppNotification = {
   id: string;
@@ -725,6 +754,12 @@ export interface Database {
         Update: Partial<LessonComment>;
         Relationships: [];
       };
+      platform_suggestions: {
+        Row: PlatformSuggestion;
+        Insert: Partial<PlatformSuggestion>;
+        Update: Partial<PlatformSuggestion>;
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -993,6 +1028,30 @@ export interface Database {
       };
       close_stale_sessions: { Args: never; Returns: number };
       cleanup_old_presence_events: { Args: never; Returns: number };
+      submit_suggestion: {
+        Args: { p_kind: SuggestionKind; p_title: string; p_body: string };
+        Returns: PlatformSuggestion;
+      };
+      attach_suggestion_image: {
+        Args: { p_suggestion_id: string; p_path: string };
+        Returns: void;
+      };
+      list_my_suggestions: { Args: never; Returns: PlatformSuggestion[] };
+      list_suggestions: {
+        Args: {
+          p_kind?: SuggestionKind | null;
+          p_status?: SuggestionStatus | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+        };
+        Returns: AdminSuggestionRow[];
+      };
+      update_suggestion_status: {
+        Args: { p_suggestion_id: string; p_status: SuggestionStatus };
+        Returns: PlatformSuggestion;
+      };
+      delete_suggestion: { Args: { p_suggestion_id: string }; Returns: void };
+      set_app_setting: { Args: { p_key: string; p_value: unknown }; Returns: void };
     };
   };
 }

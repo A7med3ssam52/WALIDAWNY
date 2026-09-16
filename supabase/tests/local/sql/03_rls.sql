@@ -115,7 +115,12 @@ RESET ROLE;
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000002';
 SET LOCAL ROLE student;
 
-SELECT tests.expect_count('SELECT count(*) FROM public.profiles WHERE id = ''70000000-0000-0000-0000-000000000002''', 0, 'B: disabled - own profile SELECT denied');
+-- Disabled users CAN read their own profile row: the suspension popup
+-- (0069 suspension_reason) is rendered client-side from this row via RLS
+-- (AuthContext/SuspendedAccountGate read it directly). Content stays
+-- closed via is_student() RLS below. Soft-deleted users (section 3) see
+-- nothing (0074 gates self-read on deleted_at IS NULL).
+SELECT tests.expect_count('SELECT count(*) FROM public.profiles WHERE id = ''70000000-0000-0000-0000-000000000002''', 1, 'B: disabled - own profile readable for suspension popup (0064+0069)');
 SELECT tests.expect_rows('UPDATE public.profiles SET full_name = ''B2'' WHERE id = ''70000000-0000-0000-0000-000000000002''', 0, 'B: disabled - self UPDATE denied');
 SELECT tests.expect_count('SELECT count(*) FROM public.grades', 0, 'B: disabled - grades denied');
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 0, 'B: disabled - units denied');
@@ -148,7 +153,7 @@ SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000004';
 SET LOCAL ROLE student;
 
 SELECT tests.expect_count('SELECT count(*) FROM public.units', 1, 'D: own-grade units only (u2)');
-SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 1, 'D: own-grade lessons only (l6)');
+SELECT tests.expect_count('SELECT count(*) FROM public.lessons', 2, 'D: own-grade l6 + cross-grade trial L9 (0068 trial visibility)');
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 1, 'D: unit_pricing = own-grade active only (pu2)');
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 1, 'D: own purchases only (u2)');
 SELECT tests.expect_count('SELECT count(*) FROM public.notifications WHERE id = ''a0000000-0000-0000-0000-000000000001''', 0, 'D: others notifications hidden');
@@ -172,7 +177,7 @@ SELECT tests.expect_count('SELECT count(*) FROM public.unit_pricing', 4, 'W: see
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_codes', 6, 'W: sees all codes');
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 3, 'W: sees all purchases');
 SELECT tests.expect_count('SELECT count(*) FROM public.progress', 2, 'W: sees all progress');
-SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 3, 'W: sees app_settings (0028 dropped expiry_warning_days)');
+SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 6, 'W: sees app_settings (0028 keys + 3 suggestions keys from 0075)');
 SELECT tests.expect_count('SELECT count(*) FROM public.audit_logs', 0, 'W: audit denied (admin only)');
 SELECT tests.expect_rows('SELECT * FROM public.list_trash()', 1, 'W: list_trash returns soft-deleted students');
 SELECT tests.assert(
@@ -211,7 +216,7 @@ SELECT tests.expect_count('SELECT count(*) FROM public.lesson_pdfs', 2, 'T: sees
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_codes', 6, 'T: sees all codes');
 SELECT tests.expect_count('SELECT count(*) FROM public.unit_purchases', 3, 'T: sees all purchases');
 SELECT tests.expect_count('SELECT count(*) FROM public.progress', 2, 'T: sees all progress');
-SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 3, 'T: sees app_settings (0028 dropped expiry_warning_days)');
+SELECT tests.expect_count('SELECT count(*) FROM public.app_settings', 6, 'T: sees app_settings (0028 keys + 3 suggestions keys from 0075)');
 SELECT tests.expect_count('SELECT count(*) FROM public.audit_logs', 0, 'T: audit denied (admin only)');
 SELECT tests.expect_rows('SELECT * FROM public.list_trash()', 1, 'T: list_trash returns soft-deleted students');
 SELECT tests.assert(

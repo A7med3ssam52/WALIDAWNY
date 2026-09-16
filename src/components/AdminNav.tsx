@@ -7,6 +7,7 @@ const adminItems = [
   { to: '/admin/audit', label: 'سجل النشاطات' },
   { to: '/admin/roles', label: 'الأدوار والصلاحيات' },
   { to: '/admin/announcements', label: 'الإعلانات' },
+  { to: '/admin/suggestions', label: 'المقترحات' },
 ];
 
 const contentItems = [

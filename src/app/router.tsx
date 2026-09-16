@@ -32,6 +32,7 @@ const UnitsPage = lazy(() => import('../features/student/UnitsPage').then((m) =>
 const StudentCurriculumPage = lazy(() => import('../features/student/StudentCurriculumPage').then((m) => ({ default: m.StudentCurriculumPage })));
 const StudentLessonPage = lazy(() => import('../features/student/StudentLessonPage').then((m) => ({ default: m.StudentLessonPage })));
 const StudentNotificationsPage = lazy(() => import('../features/student/StudentNotificationsPage').then((m) => ({ default: m.StudentNotificationsPage })));
+const StudentSuggestionsPage = lazy(() => import('../features/student/StudentSuggestionsPage').then((m) => ({ default: m.StudentSuggestionsPage })));
 const StudentPresenceGate = lazy(() =>
   import('../features/student/StudentPresenceGate').then((m) => ({ default: m.StudentPresenceGate })),
 );
@@ -57,6 +58,7 @@ const WalidAnnouncementFormPage = lazy(() => import('../features/walid/Announcem
 const AuditLogPage = lazy(() => import('../features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
 const RolesPage = lazy(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
 const AnnouncementsListPage = lazy(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
+const AdminSuggestionsPage = lazy(() => import('../features/admin/AdminSuggestionsPage').then((m) => ({ default: m.AdminSuggestionsPage })));
 const AnnouncementFormPage = lazy(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
 const PresencePage = lazy(() => import('../features/admin/PresencePage').then((m) => ({ default: m.PresencePage })));
 const StudentPresenceHistoryPage = lazy(() =>
@@ -136,6 +138,7 @@ export function AppRoutes() {
                 <Route path="curriculum" element={<StudentCurriculumPage />} />
                 <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
                 <Route path="notifications" element={<StudentNotificationsPage />} />
+                <Route path="suggestions" element={<StudentSuggestionsPage />} />
               </Route>
             </Route>
           </Route>
@@ -175,6 +178,7 @@ export function AppRoutes() {
             <Route path="audit" element={<AuditLogPage />} />
             <Route path="roles" element={<RolesPage />} />
             <Route path="announcements" element={<AnnouncementsListPage />} />
+            <Route path="suggestions" element={<AdminSuggestionsPage />} />
             <Route path="announcements/new" element={<AnnouncementFormPage />} />
             <Route path="announcements/:id/edit" element={<AnnouncementFormPage />} />
           </Route>

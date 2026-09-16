@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Bell, BookOpen, LayoutDashboard, PackageOpen, User, type LucideIcon } from 'lucide-react';
+import { Bell, BookOpen, LayoutDashboard, Lightbulb, PackageOpen, User, type LucideIcon } from 'lucide-react';
 
 interface StudentNavItem {
   to: string;
@@ -13,6 +13,7 @@ const items: StudentNavItem[] = [
   { to: '/student/curriculum', label: 'المنهج الدراسي', icon: BookOpen },
   { to: '/student/units', label: 'وحداتي', icon: PackageOpen },
   { to: '/student/notifications', label: 'الإشعارات', icon: Bell },
+  { to: '/student/suggestions', label: 'المقترحات', icon: Lightbulb },
   { to: '/student/profile', label: 'الملف', icon: User },
 ];
 

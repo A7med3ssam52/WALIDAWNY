@@ -54,3 +54,7 @@ file_size_limit = "10MiB"
 [storage.buckets.exam-images]
 public = false
 file_size_limit = "5MiB"
+
+[storage.buckets.suggestion-images]
+public = false
+file_size_limit = "5MiB"

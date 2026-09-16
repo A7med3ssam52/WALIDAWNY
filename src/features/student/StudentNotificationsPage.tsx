@@ -25,6 +25,7 @@ const typeLabels: Record<string, string> = {
   exam_graded: 'نتيجة اختبار',
   lesson_comment: 'تعليق',
   comment_reply: 'رد على تعليق',
+  suggestion_status: 'حالة مقترح',
 };
 
 function NotificationsSkeleton() {
@@ -82,6 +83,8 @@ export function StudentNotificationsPage() {
       }
       if (notification.entity_type === 'lesson' && notification.entity_id) {
         navigate(`/student/lessons/${notification.entity_id}`);
+      } else if (notification.entity_type === 'suggestion') {
+        navigate('/student/suggestions');
       }
     },
     [navigate, notifications, showToast],

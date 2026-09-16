@@ -9,6 +9,7 @@ import { StatCard } from '../../components/StatCard';
 import { GridCard } from '../../components/GridCard';
 import { PageHeader } from '../../components/PageHeader';
 import { StudentNav } from '../../components/StudentNav';
+import { SuggestionsCta } from '../../components/SuggestionsCta';
 import { TechnicalSupportFab } from '../../components/TechnicalSupportFab';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import {
@@ -155,6 +156,9 @@ export function StudentDashboardPage() {
           subtitle="متابعة تقدمك وإدارة وحداتك بكل سهولة"
           icon={<TrendingUp className="h-5 w-5" />}
         />
+
+        {/* === مقترحات التحديث القادم — بانر دائم أعلى الدعم (0075) === */}
+        <SuggestionsCta />
 
         {/* === قسم الدعم البارز — فني + أكاديمي === */}
         <section

@@ -1,6 +1,7 @@
 import { getSupabaseClient, supabasePublishableKey, supabaseUrl } from '../lib/supabase';
 
 import type {
+  AdminSuggestionRow,
   AppNotification,
   AuditFilters,
   AuditLogRow,
@@ -18,11 +19,14 @@ import type {
   LessonPdf,
   LessonVideo,
   PdfAccessResponse,
+  PlatformSuggestion,
   PlaybackResponse,
   Profile,
   Progress,
   PublicSettings,
   PublicUnitPrice,
+  SuggestionKind,
+  SuggestionStatus,
   Unit,
   UnitCode,
   UnitCodeWithUnit,
@@ -2114,4 +2118,122 @@ export async function getPresenceDailyCounts(input: {
     throw error;
   }
   return (data ?? []) as import('../types/database').PresenceDailyCount[];
+}
+
+// ---------------------------------------------------------------------
+// Suggestions inbox (0075) — student submit/history + admin workflow
+// ---------------------------------------------------------------------
+export async function submitSuggestion(
+  kind: SuggestionKind,
+  title: string,
+  body: string,
+): Promise<PlatformSuggestion> {
+  const { data, error } = await getSupabaseClient().rpc('submit_suggestion', {
+    p_kind: kind,
+    p_title: title,
+    p_body: body,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as PlatformSuggestion;
+}
+
+export async function attachSuggestionImage(
+  suggestionId: string,
+  path: string,
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('attach_suggestion_image', {
+    p_suggestion_id: suggestionId,
+    p_path: path,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listMySuggestions(): Promise<PlatformSuggestion[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_my_suggestions');
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as PlatformSuggestion[];
+}
+
+export async function listSuggestions(
+  filters: { kind?: SuggestionKind | null; status?: SuggestionStatus | null; limit?: number; offset?: number } = {},
+): Promise<AdminSuggestionRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_suggestions', {
+    p_kind: filters.kind ?? null,
+    p_status: filters.status ?? null,
+    p_limit: filters.limit ?? 50,
+    p_offset: filters.offset ?? 0,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as AdminSuggestionRow[];
+}
+
+export async function updateSuggestionStatus(
+  suggestionId: string,
+  status: SuggestionStatus,
+): Promise<PlatformSuggestion> {
+  const { data, error } = await getSupabaseClient().rpc('update_suggestion_status', {
+    p_suggestion_id: suggestionId,
+    p_status: status,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as PlatformSuggestion;
+}
+
+export async function deleteSuggestion(suggestionId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('delete_suggestion', {
+    p_suggestion_id: suggestionId,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+/** Admin-only app_settings writer (0007 set_app_setting; admin may write any key). */
+export async function setAppSetting(key: string, value: unknown): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_app_setting', {
+    p_key: key,
+    p_value: value as never,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+const SUGGESTION_IMAGE_BUCKET = 'suggestion-images';
+
+/** Direct Storage upload of a compressed suggestion image (0075 row-backed INSERT policy). */
+export async function uploadSuggestionImage(
+  studentId: string,
+  suggestionId: string,
+  blob: Blob,
+): Promise<string> {
+  const path = `${studentId}/${suggestionId}.jpg`;
+  const { error } = await getSupabaseClient()
+    .storage.from(SUGGESTION_IMAGE_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+  if (error) {
+    throw error;
+  }
+  return path;
+}
+
+/** Signed read URL for a suggestion image (owner + admin SELECT policy). */
+export async function getSuggestionImageSignedUrl(path: string): Promise<string | null> {
+  const { data, error } = await getSupabaseClient()
+    .storage.from(SUGGESTION_IMAGE_BUCKET)
+    .createSignedUrl(path, 3600);
+  if (error) {
+    return null;
+  }
+  return data?.signedUrl ?? null;
 }

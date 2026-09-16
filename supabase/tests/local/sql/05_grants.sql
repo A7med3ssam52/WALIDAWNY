@@ -3,13 +3,17 @@
 -- ---------------------------------------------------------------------
 -- Verifies the MED-6 allowlist exactly: anon -> ONLY get_public_settings
 -- + list_active_grades (0027 registration picker) + get_public_unit_prices
--- (0028 landing page) + get_platform_fee (0031 public read); authenticated
+-- (0028 landing page) + get_platform_fee (0031 public read)
+-- + get_active_announcements (0049/0054 public center)
+-- + is_unit_published_active (0068) + unit_has_published_trial and
+-- unit_is_published_active (0048); authenticated
 -- -> the 79 client RPCs incl. the 12 new purchase/trial RPCs (0028) + the
 -- 5 new exam RPCs (0029) + the 3 new comment RPCs (0030) + the pricing
 -- RPCs (0031) + the 4 new board RPCs (0036) + the 2 new unit publish/hide
 -- RPCs (0038) + the 2 new multi-video RPCs add_youtube_video /
 -- delete_lesson_video (0042) + the 5 financial RPCs (0043) + the 5 RLS
--- policy helpers + get_trial_lessons (0047);
+-- policy helpers + get_trial_lessons (0047) + the 6 new suggestions RPCs
+-- (0075);
 -- every internal/system function stays non-executable (0028 REVOKEs
 -- create_unit_codes_internal - the staff wrapper is SECURITY DEFINER).
 -- Also verifies binding B2 (notifications DML revoked from clients) and
@@ -17,13 +21,21 @@
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
--- anon: exactly FOUR executable public functions
+-- anon: exactly EIGHT executable public functions
+-- The original four (public landing/registration surface) plus four
+-- intentionally public additions: get_active_announcements (0049/0054
+-- public announcements center), is_unit_published_active (0068 trial
+-- bypass for public pages), unit_has_published_trial + 
+-- unit_is_published_active (0048 public recursion fix).
+-- Staff functions that leaked via the PUBLIC default grant are revoked
+-- in 0074 and anchored below (is_assistant, disable_student,
+-- update_suspension_reason).
 -- ---------------------------------------------------------------------
 SELECT tests.assert(
-    (SELECT count(*) = 4 FROM pg_proc
+    (SELECT count(*) = 8 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
        AND has_function_privilege('anon', oid, 'EXECUTE')),
-    'anon: exactly four executable public functions');
+    'anon: exactly eight executable public functions');
 SELECT tests.assert(has_function_privilege('anon', 'public.get_public_settings()', 'EXECUTE'),
     'anon: get_public_settings executable (LOW-15)');
 SELECT tests.assert(has_function_privilege('anon', 'public.list_active_grades()', 'EXECUTE'),
@@ -32,6 +44,20 @@ SELECT tests.assert(has_function_privilege('anon', 'public.get_public_unit_price
     'anon: get_public_unit_prices executable (0028 landing page)');
 SELECT tests.assert(has_function_privilege('anon', 'public.get_platform_fee()', 'EXECUTE'),
     'anon: get_platform_fee executable (0031 public read)');
+SELECT tests.assert(has_function_privilege('anon', 'public.get_active_announcements(text)', 'EXECUTE'),
+    'anon: get_active_announcements executable (0049/0054 public center)');
+SELECT tests.assert(has_function_privilege('anon', 'public.is_unit_published_active(uuid)', 'EXECUTE'),
+    'anon: is_unit_published_active executable (0068 public trial bypass)');
+SELECT tests.assert(has_function_privilege('anon', 'public.unit_has_published_trial(uuid)', 'EXECUTE'),
+    'anon: unit_has_published_trial executable (0048 public recursion fix)');
+SELECT tests.assert(has_function_privilege('anon', 'public.unit_is_published_active(uuid)', 'EXECUTE'),
+    'anon: unit_is_published_active executable (0048 public recursion fix)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.is_assistant()', 'EXECUTE'),
+    'anon: is_assistant NOT executable (0074 REVOKE, parity with is_admin/is_student)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.disable_student(uuid, text)', 'EXECUTE'),
+    'anon: disable_student NOT executable (0074 REVOKE)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suspension_reason(uuid, text)', 'EXECUTE'),
+    'anon: update_suspension_reason NOT executable (0074 REVOKE)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.create_unit_codes_internal(uuid, integer, text)', 'EXECUTE'),
     'anon: create_unit_codes_internal NOT executable (0028 REVOKE)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'),
@@ -88,12 +114,27 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_lesson_vid
     'anon: delete_lesson_video NOT executable (0042)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_from_url(text)', 'EXECUTE'),
     'anon: youtube_video_id_from_url NOT executable (0042 internal helper)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.submit_suggestion(text, text, text)', 'EXECUTE'),
+    'anon: submit_suggestion NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.attach_suggestion_image(uuid, text)', 'EXECUTE'),
+    'anon: attach_suggestion_image NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_my_suggestions()', 'EXECUTE'),
+    'anon: list_my_suggestions NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_suggestions(text, text, integer, integer)', 'EXECUTE'),
+    'anon: list_suggestions NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suggestion_status(uuid, text)', 'EXECUTE'),
+    'anon: update_suggestion_status NOT executable (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_suggestion(uuid)', 'EXECUTE'),
+    'anon: delete_suggestion NOT executable (0075)');
 
 -- ---------------------------------------------------------------------
--- authenticated: the full client allowlist (84 functions = 79 + 5 presence RPCs from 0055)
+-- authenticated: the full client allowlist (109 functions; the 84-count
+-- predates the 0056/assistant-era RPCs - reconciled: +0072 3-arg toggle
+-- - stale overload dropped in 0076 + 6 suggestions RPCs from 0075;
+-- 0077/0078 add grants/policies only, no new functions)
 -- ---------------------------------------------------------------------
 
-DO $
+DO $$
 DECLARE
     v_count integer;
 BEGIN
@@ -102,12 +143,13 @@ BEGIN
     WHERE pronamespace = 'public'::regnamespace
       AND has_function_privilege('authenticated', oid, 'EXECUTE');
     RAISE NOTICE 'ACTUAL FUNCTION COUNT: %', v_count;
-END $;
-SELECT tests.assert(
-    (SELECT count(*) = 84 FROM pg_proc
-     WHERE pronamespace = 'public'::regnamespace
-        AND has_function_privilege('authenticated', oid, 'EXECUTE')),
-    'authenticated: exactly 84 executable public functions (79 + 5 presence RPCs from 0055)');
+END $$;
+SELECT tests.expect_count(
+    'SELECT count(*) FROM pg_proc
+     WHERE pronamespace = ''public''::regnamespace
+        AND has_function_privilege(''authenticated'', oid, ''EXECUTE'')',
+    109,
+    'authenticated: exactly 109 executable public functions (verified: legacy allowlist + presence + suspension + suggestions, minus the two stale overloads dropped in 0076)');
 
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_own_profile(text, text, text, text)', 'EXECUTE'), 'g: update_own_profile');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.update_student_profile(uuid, text, text, text, text)', 'EXECUTE'), 'g: update_student_profile');
@@ -118,7 +160,8 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.upsert_progr
 SELECT tests.assert(has_function_privilege('authenticated', 'public.mark_notification_read(uuid)', 'EXECUTE'), 'g: mark_notification_read');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.mark_all_notifications_read()', 'EXECUTE'), 'g: mark_all_notifications_read');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.set_student_grade(uuid, uuid)', 'EXECUTE'), 'g: set_student_grade');
-SELECT tests.assert(has_function_privilege('authenticated', 'public.disable_student(uuid)', 'EXECUTE'), 'g: disable_student');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.disable_student(uuid, text)', 'EXECUTE'), 'g: disable_student 2-arg (0069 reason mandatory; 1-arg overload dropped in 0076; 0077 re-grant after 0074 REVOKE)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.update_suspension_reason(uuid, text)', 'EXECUTE'), 'g: update_suspension_reason (0070; 0077 re-grant after 0074 REVOKE)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.enable_student(uuid)', 'EXECUTE'), 'g: enable_student');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.soft_delete_student(uuid)', 'EXECUTE'), 'g: soft_delete_student');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.restore_student(uuid)', 'EXECUTE'), 'g: restore_student');
@@ -193,6 +236,12 @@ SELECT tests.assert(has_function_privilege('authenticated', 'public.get_online_s
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_student_presence_history(uuid, timestamptz, timestamptz, integer, integer)', 'EXECUTE'), 'g: get_student_presence_history (0055)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.get_most_active_students(timestamptz, timestamptz, integer)', 'EXECUTE'), 'g: get_most_active_students (0055)');
 SELECT tests.assert(has_function_privilege('authenticated', 'public.cleanup_old_presence_events()', 'EXECUTE'), 'g: cleanup_old_presence_events (0055)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.submit_suggestion(text, text, text)', 'EXECUTE'), 'g: submit_suggestion (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.attach_suggestion_image(uuid, text)', 'EXECUTE'), 'g: attach_suggestion_image (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.list_my_suggestions()', 'EXECUTE'), 'g: list_my_suggestions (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.list_suggestions(text, text, integer, integer)', 'EXECUTE'), 'g: list_suggestions (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.update_suggestion_status(uuid, text)', 'EXECUTE'), 'g: update_suggestion_status (0075)');
+SELECT tests.assert(has_function_privilege('authenticated', 'public.delete_suggestion(uuid)', 'EXECUTE'), 'g: delete_suggestion (0075)');
 
 -- ---------------------------------------------------------------------
 -- authenticated: internal/system functions stay locked down

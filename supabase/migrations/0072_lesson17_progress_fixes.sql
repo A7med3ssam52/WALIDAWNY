@@ -471,7 +471,7 @@ BEGIN
         RAISE EXCEPTION 'permission_denied';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_student_id) THEN
+    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = p_student_id) THEN
         RAISE EXCEPTION 'student_not_found';
     END IF;
 

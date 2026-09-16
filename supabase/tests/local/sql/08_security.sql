@@ -5,7 +5,7 @@
 --   1. search_path hardening lock    (every public SECURITY DEFINER pins
 --                                     search_path = public -- B1, no
 --                                     regression lock existed before)
---   2. storage.objects policy lock   (exactly six policies: the INSERT
+--   2. storage.objects policy lock   (exactly nine policies: the INSERT
 --                                     pdfs_insert_row_backed + the 0021
 --                                     SELECT pdfs_select_row_backed RETURNING
 --                                     mirror + the 0036 boards_insert_row_backed
@@ -51,10 +51,10 @@ SELECT tests.assert(
     'sec: create_unit_codes_internal pins search_path=public, extensions (0032)');
 
 -- =====================================================================
--- Section 2: storage.objects policy inventory lock (REVISED, 0041)
+-- Section 2: storage.objects policy inventory lock (REVISED, 0075)
 -- The Storage API uploads with INSERT ... RETURNING *, so a SELECT
 -- policy covering the inserted row is REQUIRED (42501 without it).
--- Exactly SIX policies may exist:
+-- Exactly NINE policies may exist:
 --   * pdfs_insert_row_backed FOR INSERT TO authenticated (0015/0020,
 --     pending-only: is_ready=false AND is_primary=false)
 --   * pdfs_select_row_backed FOR SELECT TO authenticated (0021, the
@@ -69,14 +69,22 @@ SELECT tests.assert(
 --     staff-only: is_admin/is_mr_walid/is_teacher, row-backed)
 --   * pdfs_delete_row_backed FOR DELETE TO authenticated (0041 H1,
 --     staff-only, row-backed on lesson_pdfs)
+--   * suggestion_images_insert_own FOR INSERT TO authenticated (0075,
+--     owner-only: path {uid}/{suggestion_id}.{img} bound to the
+--     caller's own image-less platform_suggestions row)
+--   * suggestion_images_select_owner_admin FOR SELECT TO authenticated
+--     (0075, owner-or-admin RETURNING mirror, row-backed on
+--     platform_suggestions.image_path)
+--   * suggestion_images_delete_admin FOR DELETE TO authenticated
+--     (0075, admin-only, row-backed on platform_suggestions.image_path)
 -- No UPDATE and no anon surface may ever be reintroduced, and
 -- storage.objects must stay ENABLE-without-FORCE (0021 H2: the storage
 -- service role must not be subject to RLS on its own bookkeeping).
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 6 FROM pg_policies
+    (SELECT count(*) = 9 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'),
-    'sec: exactly six storage.objects policies (2x INSERT + 2x SELECT + 2x DELETE)');
+    'sec: exactly nine storage.objects policies (3x INSERT + 3x SELECT + 3x DELETE)');
 
 SELECT tests.assert(
     (SELECT count(*) = 1 FROM pg_policies
@@ -206,6 +214,61 @@ SELECT tests.assert(
       WHERE schemaname = 'storage' AND tablename = 'objects'
         AND policyname = 'pdfs_delete_row_backed'),
     'sec: pdfs_delete_row_backed = staff-only row-backed DELETE (0041 H1)');
+
+-- 0075 suggestion-images triple: owner INSERT, owner-or-admin SELECT
+-- mirror, admin-only DELETE - all row-backed on platform_suggestions
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_insert_own'
+        AND cmd = 'INSERT' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: suggestion_images_insert_own FOR INSERT TO authenticated (0075)');
+
+SELECT tests.assert(
+    (SELECT COALESCE(with_check, qual) LIKE '%bucket_id = ''suggestion-images''%'
+        AND COALESCE(with_check, qual) LIKE '%platform_suggestions%'
+        AND COALESCE(with_check, qual) LIKE '%auth.uid()%'
+        AND COALESCE(with_check, qual) LIKE '%jpg|jpeg|png|webp%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_insert_own'),
+    'sec: suggestion_images_insert_own is the owner-bound row-backed INSERT (0075)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_select_owner_admin'
+        AND cmd = 'SELECT' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: suggestion_images_select_owner_admin FOR SELECT TO authenticated (0075)');
+
+SELECT tests.assert(
+    (SELECT qual LIKE '%bucket_id = ''suggestion-images''%'
+        AND qual LIKE '%platform_suggestions%'
+        AND qual LIKE '%is_admin()%'
+        AND qual LIKE '%student_id%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_select_owner_admin'),
+    'sec: suggestion_images_select_owner_admin is the owner-or-admin mirror (0075, INSERT-scope 0078)');
+
+SELECT tests.assert(
+    (SELECT count(*) = 1 FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_delete_admin'
+        AND cmd = 'DELETE' AND permissive = 'PERMISSIVE'
+        AND roles::text = '{authenticated}'),
+    'sec: suggestion_images_delete_admin FOR DELETE TO authenticated (0075)');
+
+SELECT tests.assert(
+    (SELECT qual LIKE '%bucket_id = ''suggestion-images''%'
+        AND qual LIKE '%platform_suggestions%'
+        AND qual LIKE '%is_admin()%'
+      FROM pg_policies
+      WHERE schemaname = 'storage' AND tablename = 'objects'
+        AND policyname = 'suggestion_images_delete_admin'),
+    'sec: suggestion_images_delete_admin = admin-only row-backed DELETE (0075)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_policies
@@ -449,10 +512,16 @@ RESET "app.current_user_id";
 -- function silently widening the anon executable surface.
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 4 FROM pg_proc
+    (SELECT count(*) = 8 FROM pg_proc
      WHERE pronamespace = 'public'::regnamespace
        AND has_function_privilege('anon', oid, 'EXECUTE')),
-    'sec: anon still has exactly four executable public functions (get_public_settings + list_active_grades + get_public_unit_prices + get_platform_fee)');
+    'sec: anon has exactly eight executable public functions (4 landing/registration + get_active_announcements + is_unit_published_active + unit_has_published_trial + unit_is_published_active; 0074 revokes the staff leakers)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.is_assistant()', 'EXECUTE'),
+    'sec: anon cannot exec is_assistant (0074)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.disable_student(uuid, text)', 'EXECUTE'),
+    'sec: anon cannot exec disable_student (0074)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suspension_reason(uuid, text)', 'EXECUTE'),
+    'sec: anon cannot exec update_suspension_reason (0074)');
 
 -- 0055 presence: student heartbeat + admin reads must stay anon-locked (admin-only RPCs)
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.touch_presence(text, uuid, boolean, boolean)', 'EXECUTE'),
@@ -536,6 +605,20 @@ SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_lesson_vid
     'sec: anon cannot exec delete_lesson_video (0042)');
 SELECT tests.assert(NOT has_function_privilege('anon', 'public.youtube_video_id_from_url(text)', 'EXECUTE'),
     'sec: anon cannot exec youtube_video_id_from_url (0042)');
+
+-- 0075 suggestions RPCs: student/admin surface, locked from anon
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.submit_suggestion(text, text, text)', 'EXECUTE'),
+    'sec: anon cannot exec submit_suggestion (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.attach_suggestion_image(uuid, text)', 'EXECUTE'),
+    'sec: anon cannot exec attach_suggestion_image (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_my_suggestions()', 'EXECUTE'),
+    'sec: anon cannot exec list_my_suggestions (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.list_suggestions(text, text, integer, integer)', 'EXECUTE'),
+    'sec: anon cannot exec list_suggestions (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suggestion_status(uuid, text)', 'EXECUTE'),
+    'sec: anon cannot exec update_suggestion_status (0075)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.delete_suggestion(uuid)', 'EXECUTE'),
+    'sec: anon cannot exec delete_suggestion (0075)');
 
 -- =====================================================================
 -- Cleanup

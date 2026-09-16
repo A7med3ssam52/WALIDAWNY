@@ -150,8 +150,11 @@ SELECT tests.assert(
 -- ---------------------------------------------------------------------
 -- 4. close_stale_sessions and closing
 -- ---------------------------------------------------------------------
--- Make session stale (last_seen 10 minutes ago)
-UPDATE public.student_sessions SET last_seen_at = now() - interval '10 minutes'
+-- Make session stale (last_seen 10 minutes ago). started_at moves back as
+-- well: student_sessions enforces CHECK (last_seen_at >= started_at).
+UPDATE public.student_sessions
+SET started_at = now() - interval '11 minutes',
+    last_seen_at = now() - interval '10 minutes'
 WHERE student_id = '70000000-0000-0000-0000-000000000001' AND ended_at IS NULL;
 
 SELECT tests.assert(
@@ -189,7 +192,9 @@ SELECT tests.assert(
 -- ---------------------------------------------------------------------
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
 SET LOCAL ROLE admin;
-SELECT tests.expect_rows('SELECT public.get_student_presence_history(''70000000-0000-0000-0000-000000000001'', NULL, NULL, 10, 0)', 1, 'presence: admin history returns rows');
+-- Two closed sessions exist by now: S1 (ended by close_stale_sessions
+-- above) + S2 (created after the stale close, ended via closing flag).
+SELECT tests.expect_rows('SELECT public.get_student_presence_history(''70000000-0000-0000-0000-000000000001'', NULL, NULL, 10, 0)', 2, 'presence: admin history returns both closed sessions');
 SELECT tests.expect_rows('SELECT public.get_most_active_students(NULL, NULL, 5)', 1, 'presence: admin ranking returns rows');
 RESET ROLE;
 RESET "app.current_user_id";

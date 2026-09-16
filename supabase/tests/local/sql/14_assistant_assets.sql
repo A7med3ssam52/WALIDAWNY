@@ -55,3 +55,30 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT pg_get_functiondef(to_regprocedure('public.delete_lesson_video(uuid, uuid)')) LIKE '%is_assistant()%'),
     'a14: delete_lesson_video keeps assistant (0061)');
+
+-- --- 0074: PUBLIC default-grant leaks revoked --------------------------
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.is_assistant()', 'EXECUTE'),
+    'a14: is_assistant revoked from anon (0074)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.disable_student(uuid, text)', 'EXECUTE'),
+    'a14: disable_student revoked from anon (0074)');
+SELECT tests.assert(NOT has_function_privilege('anon', 'public.update_suspension_reason(uuid, text)', 'EXECUTE'),
+    'a14: update_suspension_reason revoked from anon (0074)');
+
+-- --- 0074: 0041 M2 storage check restored on finalize -------------------
+SELECT tests.assert(
+    (SELECT pg_get_functiondef(to_regprocedure('public.finalize_board_upload(uuid)')) LIKE '%board_storage_missing%'),
+    'a14: finalize_board_upload keeps the 0041 M2 storage check (0074)');
+
+-- --- 0074: soft-deleted users lose profiles self-read -------------------
+SELECT tests.assert(
+    (SELECT pg_get_expr(polqual, polrelid) LIKE '%deleted_at IS NULL%'
+     FROM pg_policy WHERE polrelid = 'public.profiles'::regclass AND polname = 'profiles_select_own_or_staff'),
+    'a14: profiles self-read gated on deleted_at IS NULL (0074)');
+
+-- --- 0076: no stale toggle overload ------------------------------------
+SELECT tests.assert(
+    (SELECT to_regprocedure('public.toggle_lesson_completed(uuid, boolean)') IS NULL),
+    'a14: stale two-arg toggle overload dropped (0076, phantom-uncomplete path gone)');
+SELECT tests.assert(
+    (SELECT to_regprocedure('public.toggle_lesson_completed(uuid, boolean, text)') IS NOT NULL),
+    'a14: three-arg toggle (manual/exam sources) is the only toggle (0072)');

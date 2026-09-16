@@ -235,8 +235,11 @@ SELECT tests.assert(
 SELECT tests.assert(
     (SELECT public.get_public_settings() ? 'whatsapp_number'
         AND public.get_public_settings() ? 'whatsapp_default_message'
-        AND public.get_public_settings() ? 'platform_name'),
-    'get_public_settings returns the 3 public keys');
+        AND public.get_public_settings() ? 'platform_name'
+        AND public.get_public_settings() ? 'suggestions_open'
+        AND public.get_public_settings() ? 'suggestions_banner_message'
+        AND public.get_public_settings() ? 'suggestions_closed_message'),
+    'get_public_settings returns the public keys incl. the 3 suggestions keys (0075)');
 SELECT tests.assert(
     (SELECT NOT public.get_public_settings() ? 'expiry_warning_days'),
     'get_public_settings does NOT leak expiry_warning_days (LOW-15)');

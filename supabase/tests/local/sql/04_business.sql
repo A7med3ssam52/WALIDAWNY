@@ -39,13 +39,14 @@ SELECT tests.expect_rows(
     'UPDATE auth.users SET raw_user_meta_data = raw_user_meta_data WHERE id = ''70000000-0000-0000-0000-000000000001''',
     1, 'auth: non-email UPDATE allowed');
 
--- sign-in gate: active passes, disabled/deleted raise
+-- sign-in gate (0069): active AND disabled pass (suspended users must sign
+-- in to see the suspension popup); only soft-deleted raise.
 SELECT tests.expect_rows(
     'UPDATE auth.users SET last_sign_in_at = now() WHERE id = ''70000000-0000-0000-0000-000000000001''',
     1, 'auth: active user sign-in allowed');
-SELECT tests.expect_error(
+SELECT tests.expect_rows(
     'UPDATE auth.users SET last_sign_in_at = now() WHERE id = ''70000000-0000-0000-0000-000000000002''',
-    'P0001', 'account_inactive_or_deleted');
+    1, 'auth: disabled user sign-in allowed for suspension popup (0069)');
 SELECT tests.expect_error(
     'UPDATE auth.users SET last_sign_in_at = now() WHERE id = ''70000000-0000-0000-0000-000000000003''',
     'P0001', 'account_inactive_or_deleted');
@@ -139,17 +140,18 @@ SELECT tests.assert(
      FROM public.progress WHERE student_id = '70000000-0000-0000-0000-000000000001' AND lesson_id = '40000000-0000-0000-0000-000000000009'),
     'progress: percent never decreases (monotonic)');
 
--- position is last-write-wins
+-- position keeps the furthest point (GREATEST): rewinding must not move
+-- the resume point backwards (0072 fix 8)
 SELECT tests.expect_rows(
     'SELECT public.upsert_progress(''40000000-0000-0000-0000-000000000009'', 500, 40)',
     1, 'progress: position 500');
 SELECT tests.expect_rows(
     'SELECT public.upsert_progress(''40000000-0000-0000-0000-000000000009'', 7, 40)',
-    1, 'progress: position 7');
+    1, 'progress: rewind to 7 accepted');
 SELECT tests.assert(
-    (SELECT position_seconds = 7
+    (SELECT position_seconds = 500
      FROM public.progress WHERE student_id = '70000000-0000-0000-0000-000000000001' AND lesson_id = '40000000-0000-0000-0000-000000000009'),
-    'progress: position is last-write-wins');
+    'progress: position keeps furthest point (GREATEST, 0072)');
 
 -- completion at >= 90 is irreversible
 SELECT tests.expect_rows(
@@ -185,14 +187,15 @@ SELECT tests.assert(
      FROM public.progress WHERE student_id = '70000000-0000-0000-0000-000000000001' AND lesson_id = '40000000-0000-0000-0000-000000000008'),
     'progress: PDF-only lesson has no video pinned');
 
--- clamp: negative position and >100 percent
+-- clamp: negative position and >100 percent (position keeps furthest
+-- point per 0072 GREATEST, so the earlier l8 position 1 survives the -5)
 SELECT tests.expect_rows(
     'SELECT public.upsert_progress(''40000000-0000-0000-0000-000000000008'', -5, 250)',
     1, 'progress: out-of-range values accepted');
 SELECT tests.assert(
-    (SELECT position_seconds = 0 AND percent_completed = 100.00
+    (SELECT position_seconds = 1 AND percent_completed = 100.00
      FROM public.progress WHERE student_id = '70000000-0000-0000-0000-000000000001' AND lesson_id = '40000000-0000-0000-0000-000000000008'),
-    'progress: position clamped >= 0, percent clamped <= 100');
+    'progress: negative position ignored (keeps furthest), percent clamped <= 100');
 RESET ROLE;
 RESET "app.current_user_id";
 
@@ -895,8 +898,8 @@ SELECT tests.assert(
     (SELECT status = 'active' FROM public.profiles WHERE id = '70000000-0000-0000-0000-000000000002'),
     'staff: B active after enable');
 SELECT tests.expect_rows(
-    'SELECT public.disable_student(''70000000-0000-0000-0000-000000000002'')',
-    1, 'staff: disable B');
+    'SELECT public.disable_student(''70000000-0000-0000-0000-000000000002'', ''round-trip fixture'')',
+    1, 'staff: disable B (0069 reason mandatory; one-arg overload dropped in 0076)');
 SELECT tests.assert(
     (SELECT status = 'disabled' FROM public.profiles WHERE id = '70000000-0000-0000-0000-000000000002'),
     'staff: B disabled again (fixture preserved)');
