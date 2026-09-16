@@ -70,6 +70,101 @@ function TableSkeleton() {
   );
 }
 
+interface StatusSelectProps {
+  row: AdminSuggestionRow;
+  disabled: boolean;
+  testId: string;
+  onChange: (row: AdminSuggestionRow, status: SuggestionStatus) => void;
+}
+
+function StatusSelect({ row, disabled, testId, onChange }: StatusSelectProps) {
+  return (
+    <select
+      aria-label={`حالة المشاركة: ${row.title}`}
+      value={row.status}
+      disabled={disabled}
+      onChange={(event) => void onChange(row, event.target.value as SuggestionStatus)}
+      className="glass-input rounded-lg px-2 py-2 text-sm font-bold text-foreground"
+      data-testid={testId}
+    >
+      {STATUS_ORDER.map((status) => (
+        <option key={status} value={status}>
+          {SUGGESTION_STATUS_LABELS[status]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+interface SuggestionCardProps {
+  row: AdminSuggestionRow;
+  statusBusy: boolean;
+  onStatusChange: (row: AdminSuggestionRow, status: SuggestionStatus) => void;
+  onDelete: (row: AdminSuggestionRow) => void;
+}
+
+/** Mobile-first readable card (table stays for md+ screens). */
+function SuggestionCard({ row, statusBusy, onStatusChange, onDelete }: SuggestionCardProps) {
+  return (
+    <article
+      className="glass-card flex flex-col gap-3 p-4 sm:p-5"
+      data-testid={`suggestion-card-${row.id}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="info">{SUGGESTION_KIND_LABELS[row.kind]}</Badge>
+        <Badge variant={SUGGESTION_STATUS_VARIANTS[row.status]}>
+          {SUGGESTION_STATUS_LABELS[row.status]}
+        </Badge>
+        <span className="ms-auto text-[11px] text-foreground-subtle" dir="ltr">
+          {formatDateTime(row.created_at)}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.03] px-3 py-2">
+        <span
+          aria-hidden="true"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 text-sm font-bold text-indigo-200"
+        >
+          {(row.student_name || '؟').trim().charAt(0)}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-foreground">{row.student_name || '—'}</p>
+          <p className="mt-0.5 truncate text-xs text-foreground-muted" dir="ltr">
+            {[row.student_phone, row.grade_name].filter(Boolean).join(' • ') || '—'}
+          </p>
+        </div>
+      </div>
+
+      <h3 className="text-[15px] font-bold leading-8 text-foreground">{row.title}</h3>
+      <p className="text-sm leading-8 text-foreground-muted">{row.body}</p>
+
+      {row.image_path ? (
+        <SuggestionImageThumb path={row.image_path} title={row.title} />
+      ) : null}
+
+      <div className="flex items-center gap-2 border-t border-white/5 pt-3">
+        <div className="min-w-0 flex-1">
+          <StatusSelect
+            row={row}
+            disabled={statusBusy}
+            testId={`suggestion-status-card-${row.id}`}
+            onChange={onStatusChange}
+          />
+        </div>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => onDelete(row)}
+          icon={<Trash2 className="h-4 w-4" />}
+          aria-label={`حذف مشاركة ${row.title}`}
+        >
+          حذف
+        </Button>
+      </div>
+    </article>
+  );
+}
+
 export function AdminSuggestionsPage() {
   const { showToast } = useToast();
   const [rows, setRows] = useState<AdminSuggestionRow[] | null>(null);
@@ -257,7 +352,7 @@ export function AdminSuggestionsPage() {
           )}
         </Card>
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {STATUS_ORDER.map((status) => (
             <StatCard
               key={status}
@@ -307,6 +402,7 @@ export function AdminSuggestionsPage() {
           />
         ) : (
           <>
+            <div className="hidden md:block">
             <Table>
               <TableHead>
                 <TableRow>
@@ -344,22 +440,12 @@ export function AdminSuggestionsPage() {
                       ) : null}
                     </TableCell>
                     <TableCell label="الحالة">
-                      <select
-                        aria-label={`حالة المشاركة: ${row.title}`}
-                        value={row.status}
+                      <StatusSelect
+                        row={row}
                         disabled={statusBusyId === row.id}
-                        onChange={(event) =>
-                          void handleStatusChange(row, event.target.value as SuggestionStatus)
-                        }
-                        className="glass-input rounded-lg px-2 py-1.5 text-xs font-bold text-foreground"
-                        data-testid={`suggestion-status-${row.id}`}
-                      >
-                        {STATUS_ORDER.map((status) => (
-                          <option key={status} value={status}>
-                            {SUGGESTION_STATUS_LABELS[status]}
-                          </option>
-                        ))}
-                      </select>
+                        testId={`suggestion-status-${row.id}`}
+                        onChange={handleStatusChange}
+                      />
                       <span className="mt-1.5 block">
                         <Badge variant={SUGGESTION_STATUS_VARIANTS[row.status]}>
                           {SUGGESTION_STATUS_LABELS[row.status]}
@@ -381,6 +467,18 @@ export function AdminSuggestionsPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="flex flex-col gap-3 md:hidden">
+              {rows.map((row) => (
+                <SuggestionCard
+                  key={row.id}
+                  row={row}
+                  statusBusy={statusBusyId === row.id}
+                  onStatusChange={handleStatusChange}
+                  onDelete={setDeleteCandidate}
+                />
+              ))}
+            </div>
             {rows.length === PAGE_SIZE ? (
               <Pagination page={page} totalPages={page + 2} onPageChange={(next) => void load(next, kindFilter, statusFilter)} />
             ) : page > 0 ? (

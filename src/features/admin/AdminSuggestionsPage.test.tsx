@@ -84,6 +84,32 @@ describe('AdminSuggestionsPage', () => {
     expect(await screen.findByText('تم تحديث الحالة وإشعار الطالب')).toBeInTheDocument();
   });
 
+  it('renders the mobile cards with the full readable content', async () => {
+    renderApp('/admin/suggestions');
+
+    const card = await screen.findByTestId('suggestion-card-sug-1');
+    expect(within(card).getByText('مشكلة في الفيديو')).toBeInTheDocument();
+    expect(within(card).getByText('طالب واحد')).toBeInTheDocument();
+    expect(within(card).getByText('مشكلة')).toBeInTheDocument();
+    expect(within(card).getByTestId('suggestion-status-card-sug-1')).toHaveValue('new');
+    expect(within(card).getAllByText('جديد').length).toBeGreaterThan(0);
+  });
+
+  it('updates the status from the mobile card', async () => {
+    const user = userEvent.setup();
+    renderApp('/admin/suggestions');
+
+    const statusSelect = await screen.findByTestId('suggestion-status-card-sug-2');
+    await user.selectOptions(statusSelect, 'done');
+
+    await waitFor(() =>
+      expect(expectRpcCall('update_suggestion_status')).toEqual({
+        p_suggestion_id: 'sug-2',
+        p_status: 'done',
+      }),
+    );
+  });
+
   it('deletes a suggestion after confirmation', async () => {
     const user = userEvent.setup();
     renderApp('/admin/suggestions');
@@ -96,6 +122,19 @@ describe('AdminSuggestionsPage', () => {
       expect(expectRpcCall('delete_suggestion')).toEqual({ p_suggestion_id: 'sug-1' }),
     );
     expect(await screen.findByText('تم حذف المشاركة')).toBeInTheDocument();
+  });
+
+  it('deletes a suggestion from the mobile card after confirmation', async () => {
+    const user = userEvent.setup();
+    renderApp('/admin/suggestions');
+
+    const card = await screen.findByTestId('suggestion-card-sug-2');
+    await user.click(within(card).getByRole('button', { name: /حذف مشاركة/ }));
+    await user.click(screen.getAllByRole('button', { name: 'حذف نهائي' })[0]);
+
+    await waitFor(() =>
+      expect(expectRpcCall('delete_suggestion')).toEqual({ p_suggestion_id: 'sug-2' }),
+    );
   });
 
   it('saves the open/close config and messages', async () => {
