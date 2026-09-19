@@ -10,6 +10,7 @@ const allItems: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/grades', label: 'الصفوف' },
   { to: '/walid/curriculum', label: 'المنهج' },
   { to: '/walid/exams', label: 'الإختبارات' },
+  { to: '/walid/general-exams', label: 'الامتحان العام' },
   { to: '/walid/pricing', label: 'أسعار الوحدات' },
   { to: '/walid/codes', label: 'أكواد الوحدات' },
   { to: '/walid/announcements', label: 'الإعلانات', badge: 'جديد' },
@@ -23,6 +24,7 @@ const allItems: Array<{ to: string; label: string; badge?: string }> = [
 const assistantItems: Array<{ to: string; label: string; badge?: string }> = [
   { to: '/walid/curriculum', label: 'المنهج' },
   { to: '/walid/exams', label: 'الإختبارات' },
+  { to: '/walid/general-exams', label: 'الامتحان العام' },
 ];
 
 export function StaffNav() {

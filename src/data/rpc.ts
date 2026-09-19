@@ -10,6 +10,10 @@ import type {
   ExamAnswer,
   ExamAttempt,
   ExamQuestion,
+  GeneralExamLeaderboardRow,
+  GeneralExamReviewRow,
+  GeneralExamRow,
+  GeneralExamStatus,
   Grade,
   Lesson,
   LessonAccessInfo,
@@ -1982,6 +1986,147 @@ export async function listAttemptAnswers(attemptId: string): Promise<ExamAnswer[
     throw error;
   }
   return (data ?? []) as ExamAnswer[];
+}
+
+// ---------------------------------------------------------------------
+// General (standalone grade-level) exams — 0080
+// ---------------------------------------------------------------------
+
+export async function listGeneralExams(gradeId?: string | null): Promise<GeneralExamRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_general_exams', {
+    p_grade_id: gradeId ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as GeneralExamRow[];
+}
+
+export interface CreateGeneralExamInput {
+  gradeId: string;
+  title: string;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  durationMinutes?: number | null;
+  passingScore?: number;
+  showLeaderboard?: boolean;
+}
+
+export async function createGeneralExam(input: CreateGeneralExamInput): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('create_general_exam', {
+    p_grade_id: input.gradeId,
+    p_title: input.title,
+    p_starts_at: input.startsAt ?? null,
+    p_ends_at: input.endsAt ?? null,
+    p_duration_minutes: input.durationMinutes ?? null,
+    p_passing_score: input.passingScore ?? 50,
+    p_show_leaderboard: input.showLeaderboard ?? true,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as string;
+}
+
+export interface UpdateGeneralExamInput {
+  examId: string;
+  title?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  durationMinutes?: number | null;
+  passingScore?: number | null;
+  showLeaderboard?: boolean | null;
+  status?: Extract<GeneralExamStatus, 'draft' | 'archived'> | null;
+  clearWindow?: boolean;
+}
+
+export async function updateGeneralExam(input: UpdateGeneralExamInput): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('update_general_exam', {
+    p_exam_id: input.examId,
+    p_title: input.title ?? null,
+    p_starts_at: input.startsAt ?? null,
+    p_ends_at: input.endsAt ?? null,
+    p_duration_minutes: input.durationMinutes ?? null,
+    p_passing_score: input.passingScore ?? null,
+    p_show_leaderboard: input.showLeaderboard ?? null,
+    p_status: input.status ?? null,
+    p_clear_window: input.clearWindow ?? false,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function publishGeneralExam(examId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('publish_general_exam', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function startGeneralExamAttempt(examId: string): Promise<ExamAttempt> {
+  const { data, error } = await getSupabaseClient().rpc('start_general_exam_attempt', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as ExamAttempt;
+}
+
+export async function submitGeneralExam(
+  examId: string,
+  answers: ExamAnswerInput[],
+): Promise<ExamAttempt> {
+  const { data, error } = await getSupabaseClient().rpc('submit_general_exam_attempt', {
+    p_exam_id: examId,
+    p_answers: answers.map((answer) => ({
+      question_id: answer.questionId,
+      choice_index: answer.choiceIndex ?? null,
+      answer_text: answer.answerText ?? null,
+    })),
+  });
+  if (error) {
+    throw error;
+  }
+  return data as ExamAttempt;
+}
+
+export async function getGeneralExamLeaderboard(
+  examId: string,
+): Promise<GeneralExamLeaderboardRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_general_exam_leaderboard', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as GeneralExamLeaderboardRow[];
+}
+
+export async function getGeneralExamReview(examId: string): Promise<GeneralExamReviewRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_general_exam_review', {
+    p_exam_id: examId,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as GeneralExamReviewRow[];
+}
+
+export async function resetGeneralExamAttempt(
+  examId: string,
+  studentId: string,
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('reset_general_exam_attempt', {
+    p_exam_id: examId,
+    p_student_id: studentId,
+  });
+  if (error) {
+    throw error;
+  }
 }
 
 export async function getProfileName(userId: string): Promise<string> {

@@ -31,6 +31,8 @@ const StudentChangePasswordPage = lazy(() => import('../features/student/Student
 const UnitsPage = lazy(() => import('../features/student/UnitsPage').then((m) => ({ default: m.UnitsPage })));
 const StudentCurriculumPage = lazy(() => import('../features/student/StudentCurriculumPage').then((m) => ({ default: m.StudentCurriculumPage })));
 const StudentLessonPage = lazy(() => import('../features/student/StudentLessonPage').then((m) => ({ default: m.StudentLessonPage })));
+const GeneralExamsListPage = lazy(() => import('../features/student/GeneralExamsListPage').then((m) => ({ default: m.GeneralExamsListPage })));
+const GeneralExamTakePage = lazy(() => import('../features/student/GeneralExamTakePage').then((m) => ({ default: m.GeneralExamTakePage })));
 const StudentNotificationsPage = lazy(() => import('../features/student/StudentNotificationsPage').then((m) => ({ default: m.StudentNotificationsPage })));
 const StudentSuggestionsPage = lazy(() => import('../features/student/StudentSuggestionsPage').then((m) => ({ default: m.StudentSuggestionsPage })));
 const StudentPresenceGate = lazy(() =>
@@ -48,6 +50,8 @@ const CurriculumPage = lazy(() => import('../features/walid/CurriculumPage').the
 const CurriculumUnitsPage = lazy(() => import('../features/walid/CurriculumUnitsPage').then((m) => ({ default: m.CurriculumUnitsPage })));
 const CurriculumLessonsPage = lazy(() => import('../features/walid/CurriculumLessonsPage').then((m) => ({ default: m.CurriculumLessonsPage })));
 const ExamsPage = lazy(() => import('../features/walid/ExamsPage').then((m) => ({ default: m.ExamsPage })));
+const GeneralExamsPage = lazy(() => import('../features/walid/GeneralExamsPage').then((m) => ({ default: m.GeneralExamsPage })));
+const GeneralExamDetailPage = lazy(() => import('../features/walid/GeneralExamDetailPage').then((m) => ({ default: m.GeneralExamDetailPage })));
 const LessonAssetsPage = lazy(() => import('../features/walid/LessonAssetsPage').then((m) => ({ default: m.LessonAssetsPage })));
 const PricingPage = lazy(() => import('../features/walid/PricingPage').then((m) => ({ default: m.PricingPage })));
 const CodesPage = lazy(() => import('../features/walid/CodesPage').then((m) => ({ default: m.CodesPage })));
@@ -137,6 +141,8 @@ export function AppRoutes() {
                 <Route path="units" element={<UnitsPage />} />
                 <Route path="curriculum" element={<StudentCurriculumPage />} />
                 <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
+                <Route path="exams" element={<GeneralExamsListPage />} />
+                <Route path="exams/:examId" element={<GeneralExamTakePage />} />
                 <Route path="notifications" element={<StudentNotificationsPage />} />
                 <Route path="suggestions" element={<StudentSuggestionsPage />} />
               </Route>
@@ -153,6 +159,8 @@ export function AppRoutes() {
             <Route path="curriculum/:gradeId" element={<CurriculumUnitsPage />} />
             <Route path="curriculum/:gradeId/:unitId" element={<CurriculumLessonsPage />} />
             <Route path="exams" element={<ExamsPage />} />
+            <Route path="general-exams" element={<GeneralExamsPage />} />
+            <Route path="general-exams/:examId" element={<GeneralExamDetailPage />} />
             <Route path="lessons/:lessonId" element={<LessonAssetsPage />} />
             {/* Staff-only (no assistant): dashboard/reports/students/grades/pricing/codes/announcements */}
             <Route element={<RoleGuard allow={['mr_walid', 'admin', 'teacher']} />}>

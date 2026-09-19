@@ -246,15 +246,73 @@ export type Progress = {
 
 export type ExamQuestionType = 'mcq' | 'essay';
 
+export type GeneralExamStatus = 'draft' | 'published' | 'archived';
+
 export type Exam = {
   id: string;
-  lesson_id: string;
+  lesson_id: string | null;
+  /** Set for standalone (grade-level) exams; NULL for per-lesson exams. */
+  grade_id: string | null;
   title: string;
   sort_order: number;
   passing_score: number;
+  /** Gates general exams only; lesson-exam reads ignore it. */
+  status: GeneralExamStatus;
+  starts_at: string | null;
+  ends_at: string | null;
+  duration_minutes: number | null;
+  show_leaderboard: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Row returned by list_general_exams (exam + grade + counters + my attempt). */
+export type GeneralExamRow = {
+  id: string;
+  grade_id: string;
+  grade_name: string;
+  title: string;
+  sort_order: number;
+  passing_score: number;
+  status: GeneralExamStatus;
+  starts_at: string | null;
+  ends_at: string | null;
+  duration_minutes: number | null;
+  show_leaderboard: boolean;
+  question_count: number;
+  attempt_count: number;
+  my_attempt_id: string | null;
+  my_status: ExamAttemptStatus | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GeneralExamLeaderboardRow = {
+  rank: number;
+  student_id: string;
+  student_name: string;
+  status: ExamAttemptStatus;
+  auto_score: number | null;
+  manual_score: number | null;
+  final_score: number | null;
+  submitted_at: string;
+};
+
+/** Answer-key review row (post-deadline): question + key + my answer. */
+export type GeneralExamReviewRow = {
+  question_id: string;
+  q_type: ExamQuestionType;
+  prompt: string;
+  choices: string[] | null;
+  correct_index: number | null;
+  max_score: number;
+  sort_order: number;
+  prompt_image_path: string | null;
+  choice_image_paths: (string | null)[] | null;
+  my_choice_index: number | null;
+  my_answer_text: string | null;
+  my_score: number | null;
 };
 
 export type ExamQuestion = {
@@ -294,6 +352,8 @@ export type ExamAttempt = {
   graded_by: string | null;
   graded_at: string | null;
   submitted_at: string;
+  /** Server-side attempt clock for general exams (NULL for legacy lesson attempts). */
+  started_at: string | null;
 };
 
 export type ExamAnswer = {
@@ -935,6 +995,51 @@ export interface Database {
       list_exams: { Args: { p_lesson_id: string }; Returns: Exam[] };
       get_exam_questions: { Args: { p_exam_id: string }; Returns: ExamQuestion[] };
       get_my_exam_attempt: { Args: { p_exam_id: string }; Returns: ExamAttempt[] };
+      list_general_exams: { Args: { p_grade_id?: string | null }; Returns: GeneralExamRow[] };
+      get_general_exam_leaderboard: {
+        Args: { p_exam_id: string };
+        Returns: GeneralExamLeaderboardRow[];
+      };
+      get_general_exam_review: {
+        Args: { p_exam_id: string };
+        Returns: GeneralExamReviewRow[];
+      };
+      start_general_exam_attempt: { Args: { p_exam_id: string }; Returns: ExamAttempt };
+      submit_general_exam_attempt: {
+        Args: { p_exam_id: string; p_answers: unknown };
+        Returns: ExamAttempt;
+      };
+      create_general_exam: {
+        Args: {
+          p_grade_id: string;
+          p_title: string;
+          p_starts_at?: string | null;
+          p_ends_at?: string | null;
+          p_duration_minutes?: number | null;
+          p_passing_score?: number | null;
+          p_show_leaderboard?: boolean | null;
+        };
+        Returns: string;
+      };
+      update_general_exam: {
+        Args: {
+          p_exam_id: string;
+          p_title?: string | null;
+          p_starts_at?: string | null;
+          p_ends_at?: string | null;
+          p_duration_minutes?: number | null;
+          p_passing_score?: number | null;
+          p_show_leaderboard?: boolean | null;
+          p_status?: string | null;
+          p_clear_window?: boolean | null;
+        };
+        Returns: void;
+      };
+      publish_general_exam: { Args: { p_exam_id: string }; Returns: void };
+      reset_general_exam_attempt: {
+        Args: { p_exam_id: string; p_student_id: string };
+        Returns: void;
+      };
       delete_exam: { Args: { p_exam_id: string }; Returns: void };
       delete_exam_question: { Args: { p_question_id: string }; Returns: void };
       submit_exam_attempt: {

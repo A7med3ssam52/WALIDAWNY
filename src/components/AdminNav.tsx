@@ -23,6 +23,7 @@ const contentItems = [
   { to: '/walid/students', label: 'الطلاب' },
   { to: '/walid/grades', label: 'الصفوف' },
   { to: '/walid/curriculum', label: 'المنهج' },
+  { to: '/walid/general-exams', label: 'الامتحان العام' },
   { to: '/walid/pricing', label: 'الباقات' },
   { to: '/walid/codes', label: 'الأكواد' },
 ];
