@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Pencil, Plus, Timer, Trash2 } from 'lucide-react';
 
@@ -41,10 +41,20 @@ import type {
 } from '../../types/database';
 import { LeaderboardCard } from '../exams/LeaderboardCard';
 import { generalExamErrorMessage } from '../exams/generalExamUtils';
+import { clearPersisted, readPersisted, writePersisted } from '../../lib/usePersistedState';
 
 const CHOICE_LABELS = ['أ', 'ب', 'ج', 'د'];
 const EMPTY_CHOICES = ['', '', '', ''];
 const EXAM_IMAGE_MAX_SIZE = 5 * 1024 * 1024;
+
+/** Auto-saved new-question draft (text fields only — files can't persist). */
+interface NewQuestionDraft {
+  type: 'mcq' | 'essay';
+  prompt: string;
+  choices: string[];
+  correct: string;
+  score: string;
+}
 
 type Tab = 'questions' | 'attempts' | 'leaderboard';
 
@@ -65,20 +75,34 @@ function isValidExamImage(file: File): string | null {
 export function GeneralExamDetailPage() {
   const { examId } = useParams<{ examId: string }>();
   const { showToast } = useToast();
+  const draftKey = `ge-new-question:${examId ?? 'unknown'}`;
+  const tabKey = `ge-tab:${examId ?? 'unknown'}`;
   const [exam, setExam] = useState<GeneralExamRow | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<Tab>('questions');
+  // Active tab survives refresh so staff resume where they left off.
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = readPersisted<Tab>(`ge-tab:${examId ?? 'unknown'}`);
+    return saved === 'attempts' || saved === 'leaderboard' ? saved : 'questions';
+  });
+  useEffect(() => {
+    writePersisted(tabKey, tab);
+  }, [tabKey, tab]);
 
   const [questions, setQuestions] = useState<ExamQuestion[] | null>(null);
   const [detailsError, setDetailsError] = useState(false);
   const [imageUrls, setImageUrls] = useState<Record<string, { promptUrl: string | null; choiceUrls: (string | null)[] | null }>>({});
 
-  // question form
-  const [qType, setQType] = useState<'mcq' | 'essay'>('mcq');
-  const [qPrompt, setQPrompt] = useState('');
-  const [qChoices, setQChoices] = useState<string[]>(EMPTY_CHOICES);
-  const [qCorrect, setQCorrect] = useState('0');
-  const [qScore, setQScore] = useState('1');
+  // New-question form: restored from the auto-saved draft (refresh-safe).
+  // File inputs are NOT persistable — only text fields are restored.
+  const [qType, setQType] = useState<'mcq' | 'essay'>(
+    () => readPersisted<NewQuestionDraft>(draftKey)?.type ?? 'mcq',
+  );
+  const [qPrompt, setQPrompt] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.prompt ?? '');
+  const [qChoices, setQChoices] = useState<string[]>(
+    () => readPersisted<NewQuestionDraft>(draftKey)?.choices ?? EMPTY_CHOICES,
+  );
+  const [qCorrect, setQCorrect] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.correct ?? '0');
+  const [qScore, setQScore] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.score ?? '1');
   const [qBusy, setQBusy] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
   const [qPromptFile, setQPromptFile] = useState<File | null>(null);
@@ -89,6 +113,25 @@ export function GeneralExamDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [deletingQ, setDeletingQ] = useState<ExamQuestion | null>(null);
   const [deleteQBusy, setDeleteQBusy] = useState(false);
+
+  // Auto-save the unsent new-question draft on every keystroke (paused
+  // while the edit modal borrows the same fields, so edits never clobber
+  // the draft). Survives refresh + accidental navigation.
+  useEffect(() => {
+    if (editingQ) return;
+    writePersisted(draftKey, {
+      type: qType,
+      prompt: qPrompt,
+      choices: qChoices,
+      correct: qCorrect,
+      score: qScore,
+    } satisfies NewQuestionDraft);
+  }, [draftKey, editingQ, qType, qPrompt, qChoices, qCorrect, qScore]);
+
+  // In-memory snapshot of the new-question form (incl. chosen files) taken
+  // when the edit modal opens, restored when it closes — typing is never
+  // lost by opening an edit.
+  const createSnapshotRef = useRef<(NewQuestionDraft & { promptFile: File | null; choiceFiles: (File | null)[] }) | null>(null);
 
   // attempts
   const [attempts, setAttempts] = useState<ExamAttempt[] | null>(null);
@@ -185,6 +228,19 @@ export function GeneralExamDetailPage() {
     if (tab === 'leaderboard') void loadBoard();
   }, [tab, loadAttempts, loadBoard]);
 
+  // Refetch on window focus: leaving and coming back never shows stale
+  // questions/attempts (e.g. another staff member added questions).
+  useEffect(() => {
+    const onFocus = () => {
+      void loadExam();
+      if (tab === 'questions') void loadQuestions();
+      else if (tab === 'attempts') void loadAttempts();
+      else void loadBoard();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [tab, loadExam, loadQuestions, loadAttempts, loadBoard]);
+
   const resetQuestionForm = () => {
     setQPrompt('');
     setQChoices(EMPTY_CHOICES);
@@ -192,6 +248,25 @@ export function GeneralExamDetailPage() {
     setQScore('1');
     setQPromptFile(null);
     setQChoiceFiles([null, null, null, null]);
+    setQError(null);
+    clearPersisted(draftKey);
+  };
+
+  /** Restore the new-question form stashed before an edit (never lose typing). */
+  const restoreCreateSnapshot = () => {
+    const snapshot = createSnapshotRef.current;
+    createSnapshotRef.current = null;
+    if (!snapshot) {
+      resetQuestionForm();
+      return;
+    }
+    setQType(snapshot.type);
+    setQPrompt(snapshot.prompt);
+    setQChoices(snapshot.choices);
+    setQCorrect(snapshot.correct);
+    setQScore(snapshot.score);
+    setQPromptFile(snapshot.promptFile);
+    setQChoiceFiles(snapshot.choiceFiles);
     setQError(null);
   };
 
@@ -262,6 +337,16 @@ export function GeneralExamDetailPage() {
   };
 
   const openEditQuestion = (question: ExamQuestion) => {
+    // stash the unsent new-question form (incl. chosen files) first
+    createSnapshotRef.current = {
+      type: qType,
+      prompt: qPrompt,
+      choices: qChoices,
+      correct: qCorrect,
+      score: qScore,
+      promptFile: qPromptFile,
+      choiceFiles: qChoiceFiles,
+    };
     setEditingQ(question);
     setEditError(null);
     setQType(question.type);
@@ -313,7 +398,7 @@ export function GeneralExamDetailPage() {
       });
       showToast('تم حفظ السؤال', 'success');
       setEditingQ(null);
-      resetQuestionForm();
+      restoreCreateSnapshot();
       await loadQuestions();
     } catch (error) {
       setEditError(error instanceof Error && error.message.includes('صورة') ? error.message : generalExamErrorMessage(error));
@@ -451,6 +536,11 @@ export function GeneralExamDetailPage() {
         {tab === 'questions' ? (
           <div className="flex flex-col gap-4">
             <Card title="سؤال جديد" subtitle="اختياري أو مقالي — مع صور اختيارية">
+              {qPrompt.trim() ? (
+                <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold text-emerald-300">
+                  مسودتك محفوظة تلقائياً على هذا الجهاز — يمكنك الخروج والعودة لإكمالها.
+                </p>
+              ) : null}
               {detailsError ? (
                 <ErrorState message="تعذر تحميل الأسئلة" onRetry={() => void loadQuestions()} />
               ) : (
@@ -653,7 +743,7 @@ export function GeneralExamDetailPage() {
         onConfirm={() => void handleEditQuestion()}
         onCancel={() => {
           setEditingQ(null);
-          resetQuestionForm();
+          restoreCreateSnapshot();
         }}
       >
         <div className="flex flex-col gap-3">

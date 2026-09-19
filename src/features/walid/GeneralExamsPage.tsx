@@ -32,6 +32,7 @@ import {
   getGeneralExamTimeState,
   toDateTimeLocalValue,
 } from '../exams/generalExamUtils';
+import { clearPersisted, readPersisted, writePersisted } from '../../lib/usePersistedState';
 
 function statusBadge(exam: GeneralExamRow) {
   if (exam.status === 'draft') return <Badge variant="warning">مسودة</Badge>;
@@ -63,6 +64,8 @@ const EMPTY_FORM: ExamFormState = {
   showLeaderboard: true,
 };
 
+const CREATE_DRAFT_KEY = 'ge-create-form';
+
 export function GeneralExamsPage() {
   const { showToast } = useToast();
   const [grades, setGrades] = useState<Grade[] | null>(null);
@@ -78,6 +81,20 @@ export function GeneralExamsPage() {
   const [editing, setEditing] = useState<GeneralExamRow | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Auto-save the unsent create draft (paused while the edit modal borrows
+  // the same form state) — refresh-safe.
+  useEffect(() => {
+    if (!createOpen || editing) return;
+    writePersisted(CREATE_DRAFT_KEY, form);
+  }, [createOpen, editing, form]);
+
+  const openCreate = () => {
+    const saved = readPersisted<ExamFormState>(CREATE_DRAFT_KEY);
+    setForm(saved ?? { ...EMPTY_FORM, gradeId: filterGradeId || grades?.[0]?.id || '' });
+    setFormError(null);
+    setCreateOpen(true);
+  };
 
   const [publishing, setPublishing] = useState<GeneralExamRow | null>(null);
   const [publishBusy, setPublishBusy] = useState(false);
@@ -154,6 +171,7 @@ export function GeneralExamsPage() {
       showToast('تم إنشاء الامتحان كمسودة', 'success');
       setCreateOpen(false);
       setForm(EMPTY_FORM);
+      clearPersisted(CREATE_DRAFT_KEY);
       await loadExams();
     } catch (error) {
       setFormError(generalExamErrorMessage(error));
@@ -341,11 +359,7 @@ export function GeneralExamsPage() {
         <Button
           size="sm"
           icon={<Plus aria-hidden="true" className="h-4 w-4" />}
-          onClick={() => {
-            setForm({ ...EMPTY_FORM, gradeId: filterGradeId || grades?.[0]?.id || '' });
-            setFormError(null);
-            setCreateOpen(true);
-          }}
+          onClick={() => openCreate()}
         >
           امتحان جديد
         </Button>
@@ -398,11 +412,7 @@ export function GeneralExamsPage() {
               <Button
                 size="sm"
                 icon={<Plus aria-hidden="true" className="h-4 w-4" />}
-                onClick={() => {
-                  setForm({ ...EMPTY_FORM, gradeId: filterGradeId || grades?.[0]?.id || '' });
-                  setFormError(null);
-                  setCreateOpen(true);
-                }}
+                onClick={() => openCreate()}
               >
                 امتحان جديد
               </Button>
@@ -477,6 +487,11 @@ export function GeneralExamsPage() {
         onConfirm={() => void handleCreate()}
         onCancel={() => setCreateOpen(false)}
       >
+        {form.title.trim() ? (
+          <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold text-emerald-300">
+            مسودتك محفوظة تلقائياً على هذا الجهاز — يمكنك الإغلاق والعودة لإكمالها.
+          </p>
+        ) : null}
         {renderFormFields(formError)}
       </Modal>
 
