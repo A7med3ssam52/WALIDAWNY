@@ -132,3 +132,63 @@ Deno.test('get-exam-image-signed-urls: storage error -> 500', async () => {
   const body = await res.json();
   assertEqual(body.error.code, 'internal_error');
 });
+
+// ---------------------------------------------------------------------
+// General (standalone) exams — 0080: grade-gated, no lesson involved
+// ---------------------------------------------------------------------
+const GENERAL_EXAM_ID = 'ac000000-0000-0000-0000-000000000001';
+const GENERAL_GRADE_ID = '10000000-0000-0000-0000-000000000001';
+
+function generalCfg(overrides?: Partial<StubConfig>): StubConfig {
+  return cfg({
+    ...overrides,
+    tables: {
+      exams: {
+        rows: [{ id: GENERAL_EXAM_ID, lesson_id: null, grade_id: GENERAL_GRADE_ID, deleted_at: null }],
+      },
+      exam_questions: {
+        rows: [
+          { id: Q1, exam_id: GENERAL_EXAM_ID, prompt_image_path: P1_PATH, choice_image_paths: [C1_PATH, null] },
+        ],
+      },
+      ...(overrides?.tables ?? {}),
+    },
+    rpc: { can_access_general_exam: { data: true }, ...(overrides?.rpc ?? {}) },
+  });
+}
+
+function generalPost(user: { id: string }): Request {
+  return post(GENERAL_EXAM_ID, user);
+}
+
+Deno.test('get-exam-image-signed-urls: general exam student with access -> 200', async () => {
+  const { dep, rpcCalls } = deps(generalCfg());
+  const res = await handle(generalPost(USER_STUDENT), dep);
+  await expectStatus(res, 200);
+  const body = (await res.json()) as { exam_id: string; images: unknown[] };
+  assertEqual(body.exam_id, GENERAL_EXAM_ID);
+  assertEqual(body.images.length, 1);
+  const called = rpcCalls.map((c) => c.fn);
+  assert(called.includes('can_access_general_exam'), 'general path must check grade access');
+  assert(!called.includes('get_my_lesson_access'), 'general path must not touch lesson access');
+});
+
+Deno.test('get-exam-image-signed-urls: general exam student denied -> 403', async () => {
+  const { dep } = deps(generalCfg({ rpc: { can_access_general_exam: { data: false } } }));
+  const res = await handle(generalPost(USER_STUDENT), dep);
+  await expectStatus(res, 403);
+  const body = await res.json();
+  assertEqual(body.error.code, 'access_denied');
+});
+
+Deno.test('get-exam-image-signed-urls: general exam staff bypasses gate', async () => {
+  const { dep, rpcCalls } = deps(
+    generalCfg({
+      user: USER_STAFF,
+      tables: { profiles: { rows: [{ id: USER_STAFF.id, role: 'admin', status: 'active', deleted_at: null }] } },
+    }),
+  );
+  const res = await handle(generalPost(USER_STAFF), dep);
+  await expectStatus(res, 200);
+  assertEqual(rpcCalls.length, 0, 'staff must skip access RPCs on general exams too');
+});

@@ -16,10 +16,13 @@
 // `exam-images` bucket — content only ever leaves via this EF.
 //
 // Access control:
-//   * STUDENT: the exam's lesson must be reachable (not soft-deleted) AND
-//     the student needs access to THIS lesson (can_access_lesson via
+//   * Lesson exams: the exam's lesson must be reachable (not soft-deleted)
+//     AND the student needs access to THIS lesson (can_access_lesson via
 //     get_my_lesson_access). has_access != true -> access_denied.
-//   * STAFF (admin / mr_walid / teacher): allowed directly (preview).
+//   * General (standalone) exams: the exam must be live and the student
+//     must pass can_access_general_exam (own active grade + published).
+//   * STAFF (admin / mr_walid / teacher / assistant): allowed directly
+//     (preview) for both exam kinds.
 //   * Other roles -> forbidden.
 //   * Inactive / soft-deleted accounts rejected.
 //
@@ -185,10 +188,10 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   }
   const examId = parsed.examId;
 
-  // --- exam + lesson reachability ---
+  // --- exam reachability (lesson OR general exam) ---
   const { data: exam, error: examError } = await client
     .from('exams')
-    .select('id,lesson_id,deleted_at')
+    .select('id,lesson_id,grade_id,deleted_at')
     .eq('id', examId)
     .maybeSingle();
   if (examError) {
@@ -198,49 +201,82 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
       500,
     );
   }
-  const examRow = exam as { id: string; lesson_id: string; deleted_at: string | null } | null;
+  const examRow = exam as {
+    id: string;
+    lesson_id: string | null;
+    grade_id: string | null;
+    deleted_at: string | null;
+  } | null;
   if (!examRow || examRow.deleted_at !== null) {
     return jsonResponse({ error: { code: 'access_denied', message: 'Exam is not accessible.' } }, 403);
   }
 
-  const { data: lesson, error: lessonError } = await client
-    .from('lessons')
-    .select('id,deleted_at')
-    .eq('id', examRow.lesson_id)
-    .maybeSingle();
-  if (lessonError) {
-    console.error('get-exam-image-signed-urls: lesson query failed', lessonError.code ?? 'unknown');
-    return jsonResponse(
-      { error: { code: 'internal_error', message: 'Failed to validate lesson.' } },
-      500,
-    );
-  }
-  const lessonRow = lesson as { id: string; deleted_at: string | null } | null;
-  if (!lessonRow || lessonRow.deleted_at !== null) {
-    return jsonResponse({ error: { code: 'access_denied', message: 'Lesson is not accessible.' } }, 403);
-  }
-
-  if (isStudent) {
-    const { data: access, error: accessError } = await client.rpc('get_my_lesson_access', {
-      p_lesson_id: examRow.lesson_id,
-    });
-    if (accessError) {
-      console.error(
-        'get-exam-image-signed-urls: lesson access check failed',
-        accessError.code ?? 'unknown',
-      );
+  if (examRow.lesson_id) {
+    // --- lesson-exam path (unchanged) ---
+    const { data: lesson, error: lessonError } = await client
+      .from('lessons')
+      .select('id,deleted_at')
+      .eq('id', examRow.lesson_id)
+      .maybeSingle();
+    if (lessonError) {
+      console.error('get-exam-image-signed-urls: lesson query failed', lessonError.code ?? 'unknown');
       return jsonResponse(
-        { error: { code: 'internal_error', message: 'Failed to validate lesson access.' } },
+        { error: { code: 'internal_error', message: 'Failed to validate lesson.' } },
         500,
       );
     }
-    const accessInfo = access as { has_access: boolean } | null;
-    if (!accessInfo || accessInfo.has_access !== true) {
-      return jsonResponse(
-        { error: { code: 'access_denied', message: 'Lesson access is required.' } },
-        403,
-      );
+    const lessonRow = lesson as { id: string; deleted_at: string | null } | null;
+    if (!lessonRow || lessonRow.deleted_at !== null) {
+      return jsonResponse({ error: { code: 'access_denied', message: 'Lesson is not accessible.' } }, 403);
     }
+
+    if (isStudent) {
+      const { data: access, error: accessError } = await client.rpc('get_my_lesson_access', {
+        p_lesson_id: examRow.lesson_id,
+      });
+      if (accessError) {
+        console.error(
+          'get-exam-image-signed-urls: lesson access check failed',
+          accessError.code ?? 'unknown',
+        );
+        return jsonResponse(
+          { error: { code: 'internal_error', message: 'Failed to validate lesson access.' } },
+          500,
+        );
+      }
+      const accessInfo = access as { has_access: boolean } | null;
+      if (!accessInfo || accessInfo.has_access !== true) {
+        return jsonResponse(
+          { error: { code: 'access_denied', message: 'Lesson access is required.' } },
+          403,
+        );
+      }
+    }
+  } else if (examRow.grade_id) {
+    // --- general-exam path (0080): grade-gated, no lesson involved ---
+    if (isStudent) {
+      const { data: allowed, error: accessError } = await client.rpc('can_access_general_exam', {
+        p_exam_id: examId,
+      });
+      if (accessError) {
+        console.error(
+          'get-exam-image-signed-urls: general-exam access check failed',
+          accessError.code ?? 'unknown',
+        );
+        return jsonResponse(
+          { error: { code: 'internal_error', message: 'Failed to validate exam access.' } },
+          500,
+        );
+      }
+      if (allowed !== true) {
+        return jsonResponse(
+          { error: { code: 'access_denied', message: 'Exam access is required.' } },
+          403,
+        );
+      }
+    }
+  } else {
+    return jsonResponse({ error: { code: 'access_denied', message: 'Exam is not accessible.' } }, 403);
   }
 
   // --- fetch questions with image paths ---
