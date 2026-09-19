@@ -19,6 +19,7 @@ const ContactPage = lazy(() => import('../features/public/ContactPage').then((m)
 const PrivacyPage = lazy(() => import('../features/public/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const TermsPage = lazy(() => import('../features/public/TermsPage').then((m) => ({ default: m.TermsPage })));
 const NotFoundPage = lazy(() => import('../features/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const LabsExamPage = lazy(() => import('../features/labs/LabsExamPage').then((m) => ({ default: m.LabsExamPage })));
 
 // Auth — keep lazy too but small
 const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
@@ -110,6 +111,8 @@ export function AppRoutes() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        {/* Labs: interactive demo (noindex, no backend, no persistence) */}
+        <Route path="/labs/exam" element={<LabsExamPage />} />
 
         {/* Auth — noindex */}
         <Route
