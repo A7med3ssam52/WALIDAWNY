@@ -5,10 +5,13 @@
 --     rows untouched (lesson_id NOT NULL, status backfilled published)
 --   * visibility: students see published exams of their own grade only
 --     (draft/archived/other-grade hidden); staff see all live
---   * answer key masked for students via get_exam_questions
+--   * answer key masked for students via get_exam_questions; upcoming
+--     prompts hidden pre-start (0081 anti-cheat), staff preview OK
 --   * start window enforced (exam_not_started / exam_ended),
---     cross-grade start denied (access_denied)
---   * submit requires start (not_started), single attempt enforced,
+--     cross-grade start denied (access_denied), empty exams rejected
+--   * submit requires start (not_started), exact answer-set enforced
+--     (count/distinct/membership), blanks accepted unscored (0081),
+--     single attempt enforced,
 --     server deadline enforced (time_expired via backdated started_at)
 --   * MCQ auto-grade; review locked before ends_at
 --     (answers_not_released) and open after
@@ -200,7 +203,74 @@ SELECT tests.expect_error(
 SELECT tests.expect_error(
     'SELECT public.submit_general_exam_attempt(''ac000000-0000-0000-0000-000000000002'', ''[]''::jsonb)',
     'P0001', 'not_started');
+-- upcoming exam prompts hidden from students (0081 F1 anti-cheat)
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.get_exam_questions(''ac000000-0000-0000-0000-000000000003'')',
+    0, 'g: upcoming general exam prompts hidden before start');
 RESET ROLE;
+
+-- staff still previews upcoming prompts
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-00000000000a';
+SET LOCAL ROLE admin;
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.get_exam_questions(''ac000000-0000-0000-0000-000000000003'')',
+    1, 'g: staff previews upcoming general exam prompts');
+RESET ROLE;
+
+-- question-less published exam cannot start (0081 F5)
+INSERT INTO public.exams (id, lesson_id, grade_id, title, status, starts_at, ends_at, duration_minutes, passing_score)
+VALUES ('ac000000-0000-0000-0000-000000000006', NULL,
+        '10000000-0000-0000-0000-000000000001', 'GE-16-EMPTY', 'published',
+        now() - interval '1 day', now() + interval '1 day', 60, 50);
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT tests.expect_error(
+    'SELECT public.start_general_exam_attempt(''ac000000-0000-0000-0000-000000000006'')',
+    'P0001', 'exam_empty');
+RESET ROLE;
+DELETE FROM public.exams WHERE id = 'ac000000-0000-0000-0000-000000000006';
+
+-- ---------------------------------------------------------------------
+-- Answer-set validation (0081 F2) + blank tolerance (0081 F3) on GE2
+-- (MCQ q12 + essay q13), fresh student ...003
+-- ---------------------------------------------------------------------
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000003';
+SET LOCAL ROLE student;
+SELECT public.start_general_exam_attempt('ac000000-0000-0000-0000-000000000002');
+-- partial set (1 of 2) -> invalid
+SELECT tests.expect_error(
+    'SELECT public.submit_general_exam_attempt(''ac000000-0000-0000-0000-000000000002'', ''[{"question_id":"ac000000-0000-0000-0000-000000000012","choice_index":0}]''::jsonb)',
+    'P0001', 'invalid_answers');
+-- duplicated question -> invalid
+SELECT tests.expect_error(
+    'SELECT public.submit_general_exam_attempt(''ac000000-0000-0000-0000-000000000002'', ''[{"question_id":"ac000000-0000-0000-0000-000000000012","choice_index":0},{"question_id":"ac000000-0000-0000-0000-000000000012","choice_index":0}]''::jsonb)',
+    'P0001', 'invalid_answers');
+-- blank MCQ + blank essay accepted, stored unscored, attempt pending essays
+SELECT tests.assert(
+    ((SELECT public.submit_general_exam_attempt(
+        'ac000000-0000-0000-0000-000000000002',
+        '[{"question_id":"ac000000-0000-0000-0000-000000000012","choice_index":null,"answer_text":null},{"question_id":"ac000000-0000-0000-0000-000000000013","choice_index":null,"answer_text":""}]'::jsonb
+    )).status = 'submitted'),
+    'g: blank answers accepted as submitted (pending essay grading)');
+RESET ROLE;
+
+SELECT tests.assert(
+    (SELECT auto_score = 0
+     FROM public.exam_attempts
+     WHERE student_id = '70000000-0000-0000-0000-000000000003'
+       AND exam_id = 'ac000000-0000-0000-0000-000000000002'),
+    'g: blank MCQ contributes 0 to auto_score');
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.exam_answers a JOIN public.exam_attempts t ON t.id = a.attempt_id WHERE t.student_id = ''70000000-0000-0000-0000-000000000003'' AND t.exam_id = ''ac000000-0000-0000-0000-000000000002'' AND a.score IS NULL',
+    2, 'g: blank answers stored unscored');
+-- cleanup the ...003/GE2 probe attempt (answers + attempt)
+DELETE FROM public.exam_answers
+WHERE attempt_id IN (SELECT id FROM public.exam_attempts
+                     WHERE student_id = '70000000-0000-0000-0000-000000000003'
+                       AND exam_id = 'ac000000-0000-0000-0000-000000000002');
+DELETE FROM public.exam_attempts
+WHERE student_id = '70000000-0000-0000-0000-000000000003'
+  AND exam_id = 'ac000000-0000-0000-0000-000000000002';
 
 -- ---------------------------------------------------------------------
 -- Start + MCQ auto-grade (GE1, student ...001 correct answer)

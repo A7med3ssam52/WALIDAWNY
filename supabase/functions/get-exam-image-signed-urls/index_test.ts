@@ -192,3 +192,27 @@ Deno.test('get-exam-image-signed-urls: general exam staff bypasses gate', async 
   await expectStatus(res, 200);
   assertEqual(rpcCalls.length, 0, 'staff must skip access RPCs on general exams too');
 });
+
+Deno.test('get-exam-image-signed-urls: general exam pre-start hidden from students', async () => {
+  const { dep } = deps(
+    generalCfg({
+      tables: {
+        exams: {
+          rows: [
+            {
+              id: GENERAL_EXAM_ID,
+              lesson_id: null,
+              grade_id: GENERAL_GRADE_ID,
+              starts_at: new Date(Date.now() + 3_600_000).toISOString(),
+              deleted_at: null,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(generalPost(USER_STUDENT), dep);
+  await expectStatus(res, 403);
+  const body = await res.json();
+  assertEqual(body.error.code, 'access_denied');
+});

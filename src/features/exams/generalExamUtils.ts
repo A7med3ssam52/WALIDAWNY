@@ -23,10 +23,13 @@ export function getGeneralExamTimeState(
 ): GeneralExamTimeState {
   if (exam.status === 'draft') return 'draft';
   if (exam.status === 'archived') return 'archived';
-  const start = exam.starts_at ? Date.parse(exam.starts_at) : null;
-  const end = exam.ends_at ? Date.parse(exam.ends_at) : null;
-  if (start !== null && Number.isFinite(start) && nowMs < start) return 'upcoming';
-  if (end !== null && Number.isFinite(end) && nowMs > end) return 'ended';
+  const rawStart = exam.starts_at ? Date.parse(exam.starts_at) : null;
+  const rawEnd = exam.ends_at ? Date.parse(exam.ends_at) : null;
+  // Corrupt date strings must not masquerade as a live exam.
+  const start = rawStart !== null && Number.isFinite(rawStart) ? rawStart : null;
+  const end = rawEnd !== null && Number.isFinite(rawEnd) ? rawEnd : null;
+  if (start !== null && nowMs < start) return 'upcoming';
+  if (end !== null && nowMs > end) return 'ended';
   if (start === null && end === null) return 'open';
   return 'live';
 }

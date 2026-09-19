@@ -191,7 +191,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   // --- exam reachability (lesson OR general exam) ---
   const { data: exam, error: examError } = await client
     .from('exams')
-    .select('id,lesson_id,grade_id,deleted_at')
+    .select('id,lesson_id,grade_id,starts_at,deleted_at')
     .eq('id', examId)
     .maybeSingle();
   if (examError) {
@@ -205,6 +205,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     id: string;
     lesson_id: string | null;
     grade_id: string | null;
+    starts_at: string | null;
     deleted_at: string | null;
   } | null;
   if (!examRow || examRow.deleted_at !== null) {
@@ -255,6 +256,16 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   } else if (examRow.grade_id) {
     // --- general-exam path (0080): grade-gated, no lesson involved ---
     if (isStudent) {
+      // Pre-start: prompts AND images stay hidden (anti-cheat, mirrors F1).
+      // Post-end stays open so the review tab can render images.
+      if (examRow.starts_at && Number.isFinite(Date.parse(examRow.starts_at))) {
+        if (Date.parse(examRow.starts_at) > Date.now()) {
+          return jsonResponse(
+            { error: { code: 'access_denied', message: 'Exam has not started.' } },
+            403,
+          );
+        }
+      }
       const { data: allowed, error: accessError } = await client.rpc('can_access_general_exam', {
         p_exam_id: examId,
       });

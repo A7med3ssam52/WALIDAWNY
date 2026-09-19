@@ -212,7 +212,6 @@ export function GeneralExamsPage() {
         durationMinutes: form.duration.trim() ? Number(form.duration) : null,
         passingScore: Number(form.passing),
         showLeaderboard: form.showLeaderboard,
-        clearWindow: !form.startsAt && !form.endsAt,
       });
       showToast('تم حفظ التعديلات', 'success');
       setEditing(null);

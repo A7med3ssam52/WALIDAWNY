@@ -2037,7 +2037,6 @@ export interface UpdateGeneralExamInput {
   passingScore?: number | null;
   showLeaderboard?: boolean | null;
   status?: Extract<GeneralExamStatus, 'draft' | 'archived'> | null;
-  clearWindow?: boolean;
 }
 
 export async function updateGeneralExam(input: UpdateGeneralExamInput): Promise<void> {
@@ -2050,7 +2049,6 @@ export async function updateGeneralExam(input: UpdateGeneralExamInput): Promise<
     p_passing_score: input.passingScore ?? null,
     p_show_leaderboard: input.showLeaderboard ?? null,
     p_status: input.status ?? null,
-    p_clear_window: input.clearWindow ?? false,
   });
   if (error) {
     throw error;

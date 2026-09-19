@@ -56,6 +56,16 @@ interface NewQuestionDraft {
   score: string;
 }
 
+/** Guard restored drafts against malformed stored shapes. */
+function normalizeDraftChoices(value: unknown): string[] {
+  const list = Array.isArray(value) ? value.map((item) => String(item ?? '')) : [];
+  return [...list, '', '', '', ''].slice(0, 4);
+}
+
+function normalizeDraftCorrect(value: unknown): string {
+  return typeof value === 'string' && /^[0-3]$/.test(value) ? value : '0';
+}
+
 type Tab = 'questions' | 'attempts' | 'leaderboard';
 
 async function uploadImageFile(examId: string, file: File): Promise<string> {
@@ -99,9 +109,11 @@ export function GeneralExamDetailPage() {
   );
   const [qPrompt, setQPrompt] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.prompt ?? '');
   const [qChoices, setQChoices] = useState<string[]>(
-    () => readPersisted<NewQuestionDraft>(draftKey)?.choices ?? EMPTY_CHOICES,
+    () => normalizeDraftChoices(readPersisted<NewQuestionDraft>(draftKey)?.choices),
   );
-  const [qCorrect, setQCorrect] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.correct ?? '0');
+  const [qCorrect, setQCorrect] = useState(
+    () => normalizeDraftCorrect(readPersisted<NewQuestionDraft>(draftKey)?.correct),
+  );
   const [qScore, setQScore] = useState(() => readPersisted<NewQuestionDraft>(draftKey)?.score ?? '1');
   const [qBusy, setQBusy] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
@@ -111,6 +123,7 @@ export function GeneralExamDetailPage() {
   const [editingQ, setEditingQ] = useState<ExamQuestion | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editRemovePromptImage, setEditRemovePromptImage] = useState(false);
   const [deletingQ, setDeletingQ] = useState<ExamQuestion | null>(null);
   const [deleteQBusy, setDeleteQBusy] = useState(false);
 
@@ -322,7 +335,7 @@ export function GeneralExamDetailPage() {
         choices: qType === 'mcq' ? qChoices.map((c) => c.trim()) : null,
         correctIndex: qType === 'mcq' ? Number(qCorrect) : null,
         maxScore: score,
-        sortOrder: (questions ?? []).length,
+        sortOrder: (questions ?? []).reduce((max, q) => Math.max(max, q.sort_order ?? 0), 0) + 1,
         promptImagePath: promptPath,
         choiceImagePaths: choicePaths,
       });
@@ -348,6 +361,7 @@ export function GeneralExamDetailPage() {
       choiceFiles: qChoiceFiles,
     };
     setEditingQ(question);
+    setEditRemovePromptImage(false);
     setEditError(null);
     setQType(question.type);
     setQPrompt(question.prompt);
@@ -372,7 +386,9 @@ export function GeneralExamDetailPage() {
     setEditError(null);
     try {
       let promptPath = editingQ.prompt_image_path ?? null;
-      if (qPromptFile) {
+      if (editRemovePromptImage) {
+        promptPath = null;
+      } else if (qPromptFile) {
         const invalid = isValidExamImage(qPromptFile);
         if (invalid) throw new Error(invalid);
         promptPath = await uploadImageFile(examId, qPromptFile);
@@ -698,21 +714,26 @@ export function GeneralExamDetailPage() {
               <EmptyState title="لا توجد محاولات بعد" description="ستظهر محاولات الطلاب هنا فور دخولهم الامتحان." />
             ) : (
               <ol className="flex flex-col gap-3">
-                {attempts.map((attempt) => (
+                {attempts.map((attempt) => {
+                  // Never grade a never-submitted attempt (started the timer
+                  // but sent no answers) — grading it would lock a 0 with no
+                  // recourse. Staff can reset it instead.
+                  const hasAnswers = (answersByAttempt[attempt.id] ?? []).length > 0;
+                  return (
                   <li key={attempt.id}>
                     <Card padding="sm">
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-bold text-foreground">{names[attempt.student_id] || 'طالب'}</p>
                           <Badge variant={attempt.status === 'graded' ? 'success' : 'warning'}>
-                            {attempt.status === 'graded' ? `مصحح: ${attempt.final_score ?? 0}` : 'بانتظار التصحيح'}
+                            {attempt.status === 'graded' ? `مصحح: ${attempt.final_score ?? 0}` : hasAnswers ? 'بانتظار التصحيح' : 'بدأ ولم يُرسل'}
                           </Badge>
                         </div>
                         <p className="text-xs text-foreground-subtle">
                           تلقائي: {attempt.auto_score ?? 0} • يدوي: {attempt.manual_score ?? '—'} • أُرسلت {formatDateTime(attempt.submitted_at)}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          {attempt.status !== 'graded' && essayQuestions.length > 0 ? (
+                          {attempt.status !== 'graded' && essayQuestions.length > 0 && hasAnswers ? (
                             <Button size="sm" variant="secondary" onClick={() => openGrading(attempt)}>
                               تصحيح المقالي
                             </Button>
@@ -724,7 +745,8 @@ export function GeneralExamDetailPage() {
                       </div>
                     </Card>
                   </li>
-                ))}
+                  );
+                })}
               </ol>
             )}
           </div>
@@ -774,6 +796,26 @@ export function GeneralExamDetailPage() {
             </div>
           ) : null}
           <Input label="الدرجة" type="number" inputMode="decimal" min={0.5} step={0.5} value={qScore} onChange={(e) => setQScore(e.target.value)} />
+          <Input
+            label="استبدال صورة السؤال (اختياري)"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={(e) => {
+              setQPromptFile(e.target.files?.[0] ?? null);
+              if (e.target.files?.[0]) setEditRemovePromptImage(false);
+            }}
+          />
+          {editingQ?.prompt_image_path && !qPromptFile ? (
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/3 px-3 py-2.5 text-sm font-bold">
+              <span>إزالة الصورة الحالية</span>
+              <input
+                type="checkbox"
+                checked={editRemovePromptImage}
+                onChange={(event) => setEditRemovePromptImage(event.target.checked)}
+                className="h-5 w-5 accent-rose-500"
+              />
+            </label>
+          ) : null}
           {editError ? <p role="alert" className="text-sm font-bold text-rose-300">{editError}</p> : null}
         </div>
       </Modal>

@@ -1031,7 +1031,6 @@ export interface Database {
           p_passing_score?: number | null;
           p_show_leaderboard?: boolean | null;
           p_status?: string | null;
-          p_clear_window?: boolean | null;
         };
         Returns: void;
       };

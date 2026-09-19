@@ -84,11 +84,17 @@ export function GeneralExamTakePage() {
         return;
       }
       setExam(found);
-      const [qs, myAttempt] = await Promise.all([
-        getExamQuestions(examId),
-        getMyExamAttempt(examId),
-      ]);
+      // Questions are best-effort here: upcoming exams hide prompts from
+      // students (anti-cheat), while intro/ended views don't need them.
+      // A questions failure must never block the intro/result screens.
+      let qs: ExamQuestion[] = [];
+      try {
+        qs = await getExamQuestions(examId);
+      } catch {
+        qs = [];
+      }
       setQuestions(qs);
+      const myAttempt = await getMyExamAttempt(examId);
       setAttempt(myAttempt);
       if (myAttempt) {
         const myAnswers = await listAttemptAnswers(myAttempt.id);
@@ -155,8 +161,14 @@ export function GeneralExamTakePage() {
 
   const handleSubmit = useCallback(
     async (auto = false) => {
-      if (!examId || submitting || (auto && autoSubmittedRef.current)) return;
-      if (auto) autoSubmittedRef.current = true;
+      if (!examId || submitting) return;
+      // Latch auto-submits permanently: a failed timeout submit must not
+      // retry in a loop (the deadline effect would refire on every
+      // submitting toggle). The student can still retry manually.
+      if (auto) {
+        if (autoSubmittedRef.current) return;
+        autoSubmittedRef.current = true;
+      }
       const payload: ExamAnswerInput[] = [];
       for (const question of questions) {
         if (question.type === 'mcq') {
@@ -172,7 +184,8 @@ export function GeneralExamTakePage() {
             showToast('يرجى الإجابة على جميع الأسئلة قبل الإرسال', 'error');
             return;
           }
-          payload.push({ questionId: question.id, choiceIndex: null, answerText: text || '—' });
+          // Blank essays on timeout are stored unscored (server F3).
+          payload.push({ questionId: question.id, choiceIndex: null, answerText: text });
         }
       }
       setSubmitting(true);
@@ -187,7 +200,6 @@ export function GeneralExamTakePage() {
           'success',
         );
       } catch (error) {
-        if (auto) autoSubmittedRef.current = false;
         showToast(generalExamErrorMessage(error), 'error');
       } finally {
         setSubmitting(false);
@@ -228,6 +240,13 @@ export function GeneralExamTakePage() {
     if (resultTab === 'leaderboard' && board === null) void loadBoard();
     if (resultTab === 'review' && review === null) void loadReview();
   }, [phase, resultTab, board, review, loadBoard, loadReview]);
+
+  // Ended exams without an attempt: the intro becomes a leaderboard view
+  // so late students can still see the ranking.
+  const showEndedBoard = phase === 'intro' && timeState === 'ended';
+  useEffect(() => {
+    if (showEndedBoard && board === null) void loadBoard();
+  }, [showEndedBoard, board, loadBoard]);
 
   const totalScore = questions.reduce((sum, q) => sum + Number(q.max_score ?? 0), 0);
 
@@ -290,8 +309,22 @@ export function GeneralExamTakePage() {
               )}
             </div>
           </Card>
+          {showEndedBoard ? (
+            boardHidden ? (
+              <EmptyState title="قايمة الأوائل مخفية" description="المدرس أخفى الترتيب لهذا الامتحان." />
+            ) : (
+              <LeaderboardCard
+                rows={board}
+                highlightStudentId={profile?.id ?? null}
+                totalScore={totalScore || null}
+              />
+            )
+          ) : null}
         </div>
       ) : phase === 'taking' ? (
+        questions.length === 0 ? (
+          <ErrorState message="تعذر تحميل الأسئلة" onRetry={() => void load()} />
+        ) : (
         <div className="flex flex-col gap-4 pb-24">
           {remainingMs !== null ? (
             <div
@@ -381,6 +414,7 @@ export function GeneralExamTakePage() {
             </Button>
           </div>
         </div>
+        )
       ) : (
         <div className="flex flex-col gap-4">
           <div role="tablist" aria-label="نتيجة الامتحان" className="grid grid-cols-3 gap-2">

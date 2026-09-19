@@ -35,6 +35,15 @@ describe('getGeneralExamTimeState', () => {
     expect(getGeneralExamTimeState(exam, Date.parse('2026-05-01T11:00:00Z'))).toBe('live');
     expect(getGeneralExamTimeState(exam, Date.parse('2026-05-01T13:00:00Z'))).toBe('ended');
   });
+
+  it('treats corrupt date strings as missing (never fake-live)', () => {
+    expect(
+      getGeneralExamTimeState(
+        { ...base, starts_at: 'not-a-date', ends_at: 'also-bad' },
+        Date.parse('2026-01-01T00:00:00Z'),
+      ),
+    ).toBe('open');
+  });
 });
 
 describe('getAttemptDeadlineMs', () => {
