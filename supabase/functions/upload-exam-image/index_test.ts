@@ -136,6 +136,19 @@ Deno.test('upload-exam-image: invalid file_name -> 422', async () => {
   }
 });
 
+Deno.test('upload-exam-image: phone-gallery names with parens accepted', async () => {
+  const { dep } = deps(staffCfg());
+  for (const file_name of [
+    'Screenshot (1).png',
+    'IMG_2026 (2).JPG',
+    'صورة (٣).jpeg',
+    'photo [final]+1@home, v2!.webp',
+  ]) {
+    const res = await handle(request({ exam_id: EXAM_ID, file_name }), dep);
+    await expectStatus(res, 200);
+  }
+});
+
 Deno.test('upload-exam-image: file too large -> 422', async () => {
   const { dep } = deps(staffCfg());
   const res = await handle(

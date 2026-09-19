@@ -130,6 +130,12 @@ export const GENERAL_EXAM_ERROR_MESSAGES: Record<string, string> = {
   no_attempt: 'يجب دخول الامتحان أولاً',
   attempt_not_found: 'المحاولة غير موجودة',
   auth_required: 'سجل الدخول أولاً',
+  // Edge Function (exam-images) codes — staff upload/preview path
+  invalid_file_name: 'اسم الصورة غير مدعوم — أعد تسميتها بحروف وأرقام فقط (JPG/PNG/WebP)',
+  file_too_large: 'حجم الصورة يتجاوز الحد المسموح (5 ميجابايت)',
+  forbidden: 'ليست لديك صلاحية رفع الصور',
+  upload_url_failed: 'فشل تجهيز رفع الصورة — حاول مرة أخرى',
+  exam_image_upload_failed: 'فشل رفع الصورة — تحقق من الاتصال وحاول مجدداً',
 };
 
 export function generalExamErrorMessage(error: unknown): string {

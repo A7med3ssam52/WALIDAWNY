@@ -43,7 +43,13 @@ export const EXAM_IMAGES_BUCKET = 'exam-images';
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FILE_NAME_RE = /^[\p{L}\p{N} _.\-]+$/u;
+// Original names from phone galleries commonly contain parentheses,
+// brackets and separators (e.g. "Screenshot (1).png", "IMG_2026 (2).JPG").
+// The name is NEVER used as a storage path (the server mints
+// "{exam_id}/{uuid}.{ext}"), so these characters are harmless — only the
+// extension matters. Path separators are stripped by basename logic and
+// control characters are rejected separately below.
+const FILE_NAME_RE = /^[\p{L}\p{N} _.\-()\[\]+,@&'!~]+$/u;
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
 
 export type DbError = { message: string; code?: string; details?: string };
