@@ -49,7 +49,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
 
 export const EXAM_IMAGES_BUCKET = 'exam-images';
-export const GEMINI_MODEL = 'gemini-2.0-flash';
+// Verified live against the project key: versioned 2.x models are retired
+// for new accounts and the -latest alias is unreliable (503s); this
+// preview build returns the exact JSON contract.
+export const GEMINI_MODEL = 'gemini-3-flash-preview';
 export const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 export const MAX_QUESTIONS_PER_CALL = 20;
 export const MAX_IMAGES_PER_CALL = 3;
