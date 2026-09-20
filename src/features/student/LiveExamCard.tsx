@@ -19,11 +19,15 @@ export function isLiveExam(exam: GeneralExamRow): boolean {
  * one general exam of the student's grade is live and unattempted.
  * Silent when loading, on error, or when nothing is live (non-fatal by
  * design — the dashboard must never break because of this card).
+ *
+ * `previewExams` bypasses the backend and renders the given rows instead
+ * (used by /labs/exam to showcase the card design).
  */
-export function LiveExamCard() {
+export function LiveExamCard({ previewExams }: { previewExams?: GeneralExamRow[] }) {
   const [live, setLive] = useState<GeneralExamRow[] | null>(null);
 
   useEffect(() => {
+    if (previewExams) return;
     let active = true;
     listGeneralExams()
       .then((rows) => {
@@ -35,11 +39,12 @@ export function LiveExamCard() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [previewExams]);
 
-  if (!live || live.length === 0) return null;
-  const first = live[0];
-  const rest = live.length - 1;
+  const display = previewExams ? previewExams.filter(isLiveExam) : live;
+  if (!display || display.length === 0) return null;
+  const first = display[0];
+  const rest = display.length - 1;
 
   return (
     <section

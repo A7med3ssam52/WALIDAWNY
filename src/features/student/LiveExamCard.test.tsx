@@ -78,4 +78,16 @@ describe('LiveExamCard', () => {
     await screen.findByRole('heading', { name: 'لوحة الطالب' }, { timeout: 5000 });
     expect(screen.queryByTestId('live-exam-card')).not.toBeInTheDocument();
   });
+
+  it('renders the preview rows in /labs/exam without backend', async () => {
+    renderApp('/labs/exam');
+
+    const card = await screen.findByTestId('live-exam-card', {}, { timeout: 5000 });
+    expect(card).toHaveTextContent('امتحان شامل — الفصل الأول');
+    expect(screen.getByRole('link', { name: 'ادخل الامتحان الآن' })).toHaveAttribute(
+      'href',
+      '/student/exams/lab-card-exam-1',
+    );
+    expect(card).toHaveTextContent('امتحان آخر');
+  });
 });

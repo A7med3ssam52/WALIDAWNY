@@ -7,6 +7,8 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { SeoHead } from '../../components/SeoHead';
+import type { GeneralExamRow } from '../../types/database';
+import { LiveExamCard } from '../student/LiveExamCard';
 import { LeaderboardCard } from '../exams/LeaderboardCard';
 import { formatCountdown } from '../exams/generalExamUtils';
 import {
@@ -19,6 +21,44 @@ import {
 } from './labsExamData';
 
 const CHOICE_LABELS = ['أ', 'ب', 'ج', 'د'];
+
+/** Mock rows so /labs/exam showcases the dashboard live-exam card design. */
+function labsCardPreviewRows(): GeneralExamRow[] {
+  const now = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const base = {
+    grade_id: 'lab-grade',
+    grade_name: 'الثالث الثانوي',
+    sort_order: 0,
+    passing_score: 50,
+    status: 'published' as const,
+    show_leaderboard: true,
+    question_count: 10,
+    attempt_count: 24,
+    my_attempt_id: null,
+    my_status: null,
+    created_at: iso(now),
+    updated_at: iso(now),
+  };
+  return [
+    {
+      ...base,
+      id: 'lab-card-exam-1',
+      title: 'امتحان شامل — الفصل الأول',
+      starts_at: iso(now - 30 * 60_000),
+      ends_at: iso(now + 90 * 60_000),
+      duration_minutes: 60,
+    },
+    {
+      ...base,
+      id: 'lab-card-exam-2',
+      title: 'اختبار سريع — الكهربية',
+      starts_at: iso(now - 10 * 60_000),
+      ends_at: iso(now + 50 * 60_000),
+      duration_minutes: 30,
+    },
+  ];
+}
 
 type Phase = 'intro' | 'taking' | 'submitted';
 type ResultTab = 'result' | 'leaderboard' | 'review';
@@ -131,6 +171,15 @@ export function LabsExamPage() {
             نفس شاشات الطالب الحقيقية: مؤقت، إرسال، نتيجة، أوائل، مراجعة.
           </p>
         </div>
+
+        {phase === 'intro' ? (
+          <div className="mb-6 flex flex-col gap-2">
+            <p className="text-xs font-bold text-foreground-subtle">
+              هكذا يظهر كارت «امتحان جاري الآن» في لوحة تحكم الطالب:
+            </p>
+            <LiveExamCard previewExams={labsCardPreviewRows()} />
+          </div>
+        ) : null}
 
         {phase === 'intro' ? (
           <Card title="تعليمات الامتحان" subtitle="٦ أسئلة • الدرجة الكلية ٧ • النجاح من ٥٠٪">
