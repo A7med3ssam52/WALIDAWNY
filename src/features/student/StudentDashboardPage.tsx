@@ -12,6 +12,7 @@ import { StudentNav } from '../../components/StudentNav';
 import { SuggestionsCta } from '../../components/SuggestionsCta';
 import { TechnicalSupportFab } from '../../components/TechnicalSupportFab';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
+import { LiveExamCard } from './LiveExamCard';
 import {
   getMyUnitPurchases,
   getPublicSettings,
@@ -159,6 +160,9 @@ export function StudentDashboardPage() {
 
         {/* === مقترحات التحديث القادم — بانر دائم أعلى الدعم (0075) === */}
         <SuggestionsCta />
+
+        {/* === امتحان عام جارٍ — يظهر فقط أثناء وجود امتحان حي === */}
+        <LiveExamCard />
 
         {/* === قسم الدعم البارز — فني + أكاديمي === */}
         <section
