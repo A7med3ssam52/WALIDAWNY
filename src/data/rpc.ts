@@ -2127,6 +2127,67 @@ export async function resetGeneralExamAttempt(
   }
 }
 
+// ---------------------------------------------------------------------
+// Admin-only AI question generation (Gemini Edge Function)
+// ---------------------------------------------------------------------
+
+export type AiGenerateMode = 'generate' | 'format';
+export type AiDifficulty = 'easy' | 'medium' | 'hard' | 'mixed';
+
+export interface AiGeneratedQuestion {
+  type: 'mcq' | 'essay';
+  prompt: string;
+  choices: string[] | null;
+  correct_index: number | null;
+  max_score: number;
+  needs_review: boolean;
+  prompt_image_path: string | null;
+  choice_image_paths: (string | null)[] | null;
+}
+
+export interface GenerateExamQuestionsInput {
+  mode: AiGenerateMode;
+  examId: string;
+  topic?: string;
+  gradeName?: string | null;
+  mcqCount?: number;
+  essayCount?: number;
+  difficulty?: AiDifficulty;
+  context?: string | null;
+  rawText?: string | null;
+  imagePaths?: string[];
+}
+
+export interface GenerateExamQuestionsResult {
+  exam_id: string;
+  mode: AiGenerateMode;
+  questions: AiGeneratedQuestion[];
+}
+
+export async function generateExamQuestions(
+  input: GenerateExamQuestionsInput,
+): Promise<GenerateExamQuestionsResult> {
+  const res = await invokeFunction<GenerateExamQuestionsResult>('generate-exam-questions', {
+    method: 'POST',
+    body: {
+      mode: input.mode,
+      exam_id: input.examId,
+      topic: input.topic ?? '',
+      grade_name: input.gradeName ?? null,
+      mcq_count: input.mcqCount ?? 5,
+      essay_count: input.essayCount ?? 1,
+      difficulty: input.difficulty ?? 'mixed',
+      context: input.context ?? '',
+      raw_text: input.rawText ?? '',
+      images: (input.imagePaths ?? []).map((storage_path) => ({ storage_path })),
+    },
+  });
+  if (!res || !Array.isArray(res.questions)) {
+    throw codeError('ai_bad_output');
+  }
+  return res;
+}
+
 export async function getProfileName(userId: string): Promise<string> {
   const profile = await getProfileById(userId);
   return profile?.full_name ?? '';

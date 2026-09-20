@@ -21,6 +21,9 @@ export interface StubStorageConfig {
   uploadError?: { message: string; code?: string } | null;
   error?: { message: string; code?: string } | null;
   removeError?: { message: string; code?: string } | null;
+  /** Bytes returned by storage download() stubs (defaults to [1,2,3]). */
+  downloadBytes?: number[] | null;
+  downloadError?: { message: string; code?: string } | null;
 }
 export interface StubConfig {
   user?: { id: string } | null;
@@ -89,6 +92,12 @@ export interface StubClientHandle {
           paths: string[],
         ): Promise<{
           data: { path: string }[] | null;
+          error: { message: string; code?: string } | null;
+        }>;
+        download(
+          path: string,
+        ): Promise<{
+          data: { arrayBuffer(): Promise<ArrayBuffer>; type?: string } | null;
           error: { message: string; code?: string } | null;
         }>;
       };
@@ -266,6 +275,18 @@ export function makeStubClient(cfg: StubConfig): StubClientHandle {
             return Promise.resolve({ data: null, error: s.removeError });
           }
           return Promise.resolve({ data: paths.map((path) => ({ path })), error: null });
+        },
+        download: (path: string) => {
+          storageCalls.push({ bucket, path, options: undefined });
+          const s = cfg.storage?.[bucket] ?? {};
+          if (s.downloadError) {
+            return Promise.resolve({ data: null, error: s.downloadError });
+          }
+          const bytes = new Uint8Array(s.downloadBytes ?? [1, 2, 3]);
+          return Promise.resolve({
+            data: { arrayBuffer: () => Promise.resolve(bytes.buffer), type: 'image/jpeg' },
+            error: null,
+          });
         },
       }),
     },

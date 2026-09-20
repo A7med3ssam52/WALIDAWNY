@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Pencil, Plus, Timer, Trash2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Pencil, Plus, Sparkles, Timer, Trash2 } from 'lucide-react';
 
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -17,6 +17,7 @@ import { useToast } from '../../components/Toast';
 import {
   createExamQuestion,
   deleteExamQuestion,
+  generateExamQuestions,
   getExamImageSignedUrls,
   getExamQuestions,
   getGeneralExamLeaderboard,
@@ -30,8 +31,11 @@ import {
   updateExamQuestion,
   uploadExamImage,
   uploadExamImageBytes,
+  type AiDifficulty,
+  type AiGenerateMode,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
+import { compressSuggestionImage } from '../../lib/imageCompress';
 import type {
   ExamAnswer,
   ExamAttempt,
@@ -42,6 +46,7 @@ import type {
 import { LeaderboardCard } from '../exams/LeaderboardCard';
 import { generalExamErrorMessage } from '../exams/generalExamUtils';
 import { clearPersisted, readPersisted, writePersisted } from '../../lib/usePersistedState';
+import { useAuth } from '../auth/AuthContext';
 
 const CHOICE_LABELS = ['أ', 'ب', 'ج', 'د'];
 const EMPTY_CHOICES = ['', '', '', ''];
@@ -159,6 +164,23 @@ export function GeneralExamDetailPage() {
 
   // leaderboard
   const [board, setBoard] = useState<GeneralExamLeaderboardRow[] | null>(null);
+
+  // AI generation — admin only (button hidden otherwise; the Edge Function
+  // re-enforces admin-only server-side).
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiMode, setAiMode] = useState<AiGenerateMode>('generate');
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiContext, setAiContext] = useState('');
+  const [aiRaw, setAiRaw] = useState('');
+  const [aiMcq, setAiMcq] = useState('5');
+  const [aiEssay, setAiEssay] = useState('1');
+  const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>('mixed');
+  const [aiFiles, setAiFiles] = useState<File[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiProgress, setAiProgress] = useState<string | null>(null);
 
   const loadExam = useCallback(async () => {
     if (!examId) return;
@@ -497,6 +519,107 @@ export function GeneralExamDetailPage() {
     }
   };
 
+  const handleAiGenerate = async () => {
+    if (!examId || !exam) return;
+    const mcq = Number(aiMcq);
+    const essay = Number(aiEssay);
+    if (aiMode === 'generate' && !aiTopic.trim()) {
+      setAiError('اكتب موضوع الامتحان أولاً');
+      return;
+    }
+    if (aiMode === 'format' && aiRaw.trim().length < 20) {
+      setAiError('الصق نصاً كافياً (20 حرفاً على الأقل)');
+      return;
+    }
+    if (
+      !Number.isInteger(mcq) || !Number.isInteger(essay) ||
+      mcq < 0 || mcq > 15 || essay < 0 || essay > 5 ||
+      mcq + essay < 1 || mcq + essay > 20
+    ) {
+      setAiError('الأعداد غير صالحة — بحد أقصى 20 سؤالاً في المرة');
+      return;
+    }
+    if (aiFiles.length > 3) {
+      setAiError('بحد أقصى 3 صور في المرة الواحدة');
+      return;
+    }
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      // 1) compress + upload attached images through the normal channel
+      setAiProgress(aiFiles.length > 0 ? 'ضغط ورفع الصور...' : null);
+      const paths: string[] = [];
+      for (const file of aiFiles) {
+        const invalid = isValidExamImage(file);
+        if (invalid) throw new Error(invalid);
+        const compressed = await compressSuggestionImage(file);
+        const compact = new File([compressed], file.name, {
+          type: compressed.type || file.type || 'image/jpeg',
+        });
+        paths.push(await uploadImageFile(examId, compact));
+      }
+      // 2) generate (draft questions only — nothing saved yet)
+      setAiProgress('التوليد بالذكاء الاصطناعي...');
+      const res = await generateExamQuestions({
+        mode: aiMode,
+        examId,
+        topic: aiTopic.trim(),
+        gradeName: exam.grade_name,
+        mcqCount: mcq,
+        essayCount: essay,
+        difficulty: aiDifficulty,
+        context: aiContext,
+        rawText: aiRaw,
+        imagePaths: paths,
+      });
+      // 3) direct save (admin decision: no preview step)
+      const baseOrder = (questions ?? []).reduce((max, q) => Math.max(max, q.sort_order ?? 0), 0) + 1;
+      let saved = 0;
+      let needReview = 0;
+      let failed = 0;
+      for (let i = 0; i < res.questions.length; i += 1) {
+        const generated = res.questions[i];
+        setAiProgress(`حفظ الأسئلة ${i + 1}/${res.questions.length}...`);
+        try {
+          await createExamQuestion({
+            examId,
+            type: generated.type,
+            prompt: generated.prompt,
+            choices: generated.choices,
+            correctIndex: generated.correct_index,
+            maxScore: generated.max_score,
+            sortOrder: baseOrder + i,
+            promptImagePath: generated.prompt_image_path,
+            choiceImagePaths: generated.choice_image_paths,
+          });
+          saved += 1;
+          if (generated.needs_review) needReview += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await Promise.all([loadQuestions(), loadExam()]);
+      if (failed === 0) {
+        showToast(
+          `تم توليد وحفظ ${saved} سؤال${needReview > 0 ? ` — ${needReview} منها يحتاج مراجعتك` : ''}`,
+          needReview > 0 ? 'warning' : 'success',
+        );
+        setAiOpen(false);
+        setAiTopic('');
+        setAiContext('');
+        setAiRaw('');
+        setAiFiles([]);
+      } else {
+        setAiError(`تم حفظ ${saved} سؤال وفشل ${failed} — راجع القائمة ثم أعد المحاولة للباقي`);
+      }
+    } catch (error) {
+      setAiError(generalExamErrorMessage(error));
+    } finally {
+      setAiBusy(false);
+      setAiProgress(null);
+    }
+  };
+
   const totalScore = (questions ?? []).reduce((sum, q) => sum + Number(q.max_score ?? 0), 0);
   const essayQuestions = (questions ?? []).filter((q) => q.type === 'essay');
   const pendingAttempts = (attempts ?? []).filter((a) => a.status === 'submitted');
@@ -551,6 +674,24 @@ export function GeneralExamDetailPage() {
 
         {tab === 'questions' ? (
           <div className="flex flex-col gap-4">
+            {isAdmin ? (
+              <div>
+                <Button
+                  variant="outline"
+                  icon={<Sparkles aria-hidden="true" className="h-4 w-4" />}
+                  onClick={() => {
+                    setAiError(null);
+                    setAiProgress(null);
+                    setAiOpen(true);
+                  }}
+                >
+                  توليد بالذكاء الاصطناعي
+                </Button>
+                <p className="mt-1 text-xs text-foreground-subtle">
+                  متاح للأدمن فقط — التوليد يُحفظ مباشرة في الامتحان.
+                </p>
+              </div>
+            ) : null}
             <Card title="سؤال جديد" subtitle="اختياري أو مقالي — مع صور اختيارية">
               {qPrompt.trim() ? (
                 <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold text-emerald-300">
@@ -829,6 +970,139 @@ export function GeneralExamDetailPage() {
         onConfirm={() => void handleDeleteQuestion()}
         onCancel={() => setDeletingQ(null)}
       />
+
+      <Modal
+        open={aiOpen}
+        title="توليد أسئلة بالذكاء الاصطناعي"
+        description="التوليد يُحفظ مباشرة في هذا الامتحان — راجع الأسئلة من القائمة بعد الحفظ."
+        confirmLabel="توليد وحفظ مباشر"
+        loading={aiBusy}
+        onConfirm={() => void handleAiGenerate()}
+        onCancel={() => setAiOpen(false)}
+      >
+        <div className="flex flex-col gap-3">
+          <div role="tablist" aria-label="نمط التوليد" className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { id: 'generate', label: 'توليد من موضوع' },
+                { id: 'format', label: 'تنسيق نص جاهز' },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={aiMode === item.id}
+                type="button"
+                onClick={() => setAiMode(item.id)}
+                className={`rounded-xl px-3 py-2.5 text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                  aiMode === item.id
+                    ? 'nav-pill-active text-white'
+                    : 'glass-card text-foreground-muted hover:text-foreground'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {aiMode === 'generate' ? (
+            <>
+              <Input
+                label="الموضوع"
+                value={aiTopic}
+                onChange={(e) => setAiTopic(e.target.value)}
+                placeholder="مثال: قانون أوم — التيار والجهد والمقاومة"
+                maxLength={300}
+              />
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-bold text-foreground">نص مرجعي (اختياري — يحسّن الدقة)</span>
+                <textarea
+                  value={aiContext}
+                  onChange={(e) => setAiContext(e.target.value)}
+                  rows={3}
+                  placeholder="الصق نص الدرس أو الملزمة هنا ليولّد منها"
+                  className="glass-input w-full rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                />
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  label="اختياري"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={15}
+                  value={aiMcq}
+                  onChange={(e) => setAiMcq(e.target.value)}
+                />
+                <Input
+                  label="مقالي"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={5}
+                  value={aiEssay}
+                  onChange={(e) => setAiEssay(e.target.value)}
+                />
+                <Select
+                  label="الصعوبة"
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value as AiDifficulty)}
+                >
+                  <option value="mixed">متنوعة</option>
+                  <option value="easy">سهلة</option>
+                  <option value="medium">متوسطة</option>
+                  <option value="hard">صعبة</option>
+                </Select>
+              </div>
+            </>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-bold text-foreground">النص الخام للأسئلة</span>
+              <textarea
+                value={aiRaw}
+                onChange={(e) => setAiRaw(e.target.value)}
+                rows={6}
+                placeholder={'الصق الأسئلة هنا — مثال:\n1- وحدة قياس التيار؟ أ) فولت ب) أمبير ... الإجابة: أمبير'}
+                className="glass-input w-full rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              />
+            </label>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <Input
+              label="صور مرفقة (اختياري — حتى 3)"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={(e) => setAiFiles(Array.from(e.target.files ?? []).slice(0, 3))}
+            />
+            {aiFiles.length > 0 ? (
+              <ul className="flex flex-col gap-1 text-xs">
+                {aiFiles.map((file, i) => (
+                  <li key={`${file.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-white/4 px-2 py-1.5">
+                    <span className="truncate font-bold text-foreground-muted">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAiFiles((prev) => prev.filter((_, j) => j !== i))}
+                      className="shrink-0 font-bold text-rose-300 hover:text-rose-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                    >
+                      إزالة
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="text-xs text-foreground-subtle">
+              تُضغط الصور تلقائياً قبل الإرسال، والذكاء الاصطناعي يكتب أسئلة عنها ويربطها بها.
+            </p>
+          </div>
+
+          {aiProgress ? (
+            <p role="status" className="text-sm font-bold text-sky-300">{aiProgress}</p>
+          ) : null}
+          {aiError ? <p role="alert" className="text-sm font-bold text-rose-300">{aiError}</p> : null}
+        </div>
+      </Modal>
 
       <Modal
         open={grading !== null}

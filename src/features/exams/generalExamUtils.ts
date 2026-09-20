@@ -133,9 +133,18 @@ export const GENERAL_EXAM_ERROR_MESSAGES: Record<string, string> = {
   // Edge Function (exam-images) codes — staff upload/preview path
   invalid_file_name: 'اسم الصورة غير مدعوم — أعد تسميتها بحروف وأرقام فقط (JPG/PNG/WebP)',
   file_too_large: 'حجم الصورة يتجاوز الحد المسموح (5 ميجابايت)',
-  forbidden: 'ليست لديك صلاحية رفع الصور',
+  forbidden: 'ليست لديك صلاحية لهذا الإجراء',
   upload_url_failed: 'فشل تجهيز رفع الصورة — حاول مرة أخرى',
   exam_image_upload_failed: 'فشل رفع الصورة — تحقق من الاتصال وحاول مجدداً',
+  // Admin-only AI generation codes
+  ai_not_configured: 'خدمة الذكاء الاصطناعي غير مفعلة بعد — أضف مفتاح Gemini أولاً',
+  ai_failed: 'تعذر التوليد — حاول مرة أخرى',
+  ai_bad_output: 'تعذر فهم مخرجات الذكاء الاصطناعي — حاول مجدداً',
+  invalid_topic: 'اكتب موضوع الامتحان أولاً',
+  invalid_text: 'الصق نصاً كافياً (20 حرفاً على الأقل)',
+  invalid_counts: 'الأعداد غير صالحة — بحد أقصى 20 سؤالاً في المرة',
+  invalid_image: 'صورة مرفقة غير صالحة',
+  image_too_large: 'الصورة المرفقة كبيرة — اختر صورة أصغر',
 };
 
 export function generalExamErrorMessage(error: unknown): string {

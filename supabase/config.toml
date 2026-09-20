@@ -47,6 +47,9 @@ verify_jwt = true
 [functions.get-exam-image-signed-urls]
 verify_jwt = true
 
+[functions.generate-exam-questions]
+verify_jwt = true
+
 [storage.buckets.boards]
 public = false
 file_size_limit = "10MiB"
