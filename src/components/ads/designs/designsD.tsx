@@ -15,13 +15,13 @@ export function Design16PromoOffer({ content, onClose }: AdDesignProps) {
         <span className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-400/25 bg-fuchsia-500/12 px-3 py-1 text-[11px] font-extrabold text-fuchsia-200">
           <Gift className="h-3.5 w-3.5" aria-hidden="true" /> عرض خاص لفترة محدودة
         </span>
-        <span aria-hidden="true" className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-500/30 to-indigo-500/30 shadow-[0_0_40px_-8px_rgba(217,70,239,0.7)]">
+        <span aria-hidden="true" className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-fuchsia-500/30 to-indigo-500/30 shadow-[0_0_40px_-8px_rgba(217,70,239,0.3)]">
           <Crown className="h-8 w-8 text-amber-300" aria-hidden="true" />
         </span>
         <h2 className="mt-3 font-display text-xl font-extrabold text-foreground">{content.title}</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-foreground-muted">{content.body}</p>
         <div className="mx-auto mt-3 flex max-w-xs items-center justify-center gap-2 text-xs">
-          <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-bold text-foreground-muted line-through">خصم 0%</span>
+          <span className="rounded-lg border border-white/10 bg-surface-muted px-3 py-1.5 font-bold text-foreground-muted line-through">خصم 0%</span>
           <span className="rounded-lg border border-emerald-400/25 bg-emerald-500/12 px-3 py-1.5 font-extrabold text-emerald-300">متاح الآن</span>
         </div>
         <div className="mx-auto mt-4 flex max-w-sm flex-col gap-2">
@@ -81,7 +81,7 @@ export function Design18PillCompact({ content, onClose }: AdDesignProps) {
             {content.link_label}
           </a>
         ) : (
-          <button type="button" onClick={onClose} className="inline-flex h-9 shrink-0 items-center rounded-full border border-white/12 bg-white/5 px-4 text-xs font-bold text-foreground-muted hover:text-foreground">
+          <button type="button" onClick={onClose} className="inline-flex h-9 shrink-0 items-center rounded-full border border-border bg-surface-muted px-4 text-xs font-bold text-foreground-muted hover:text-foreground">
             تم
           </button>
         )}
@@ -105,7 +105,7 @@ export function Design19DecisionDual({ content, onClose }: AdDesignProps) {
       <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-foreground-muted">{content.body}</p>
       <div className="mx-auto mt-5 grid max-w-md grid-cols-2 gap-2">
         <AdCta content={content} className="w-full !px-3" />
-        <button type="button" onClick={onClose} className="inline-flex h-11 items-center justify-center rounded-xl border border-white/12 bg-white/5 px-3 text-sm font-bold text-foreground hover:bg-white/10">
+        <button type="button" onClick={onClose} className="inline-flex h-11 items-center justify-center rounded-xl border border-border bg-surface-muted px-3 text-sm font-bold text-foreground hover:bg-border">
           قرار لاحقاً
         </button>
       </div>
@@ -123,15 +123,15 @@ export function Design20OfficialLetter({ content, onClose }: AdDesignProps) {
   return (
     <div dir="rtl" className="relative">
       <div aria-hidden="true" className={`h-1.5 w-full bg-gradient-to-l ${theme.accentBar}`} />
-      <div className="relative bg-[#faf7ef] p-6 text-[#1d1a33] sm:p-8 dark:bg-[#faf7ef]">
+      <div className="relative bg-surface p-6 text-foreground sm:p-8">
         <div className="flex items-start justify-between gap-4 pe-8">
           <div className="flex items-center gap-2.5">
-            <span aria-hidden="true" className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#1d1a33] text-amber-300">
+            <span aria-hidden="true" className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#29312B] text-gold">
               <FileBadge className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
               <p className="font-display text-sm font-extrabold">منصة وليد عوني التعليمية</p>
-              <p className="text-[11px] text-[#1d1a33]/60">بيان رسمي — {theme.label}</p>
+              <p className="text-[11px] text-foreground-subtle">بيان رسمي — {theme.label}</p>
             </div>
           </div>
           <span aria-hidden="true" className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center">
@@ -139,20 +139,20 @@ export function Design20OfficialLetter({ content, onClose }: AdDesignProps) {
             <Stamp className="h-6 w-6 text-rose-600" aria-hidden="true" />
           </span>
         </div>
-        <h2 className="mt-5 border-b-2 border-[#1d1a33]/10 pb-3 font-display text-lg font-extrabold">{content.title}</h2>
-        <p className="mt-3 text-sm leading-8 text-[#1d1a33]/80">{content.body}</p>
+        <h2 className="mt-5 border-b-2 border-border pb-3 font-display text-lg font-extrabold">{content.title}</h2>
+        <p className="mt-3 text-sm leading-8 text-foreground-muted">{content.body}</p>
         {content.link_url && content.link_label && /^https:\/\//.test(content.link_url) ? (
-          <a href={content.link_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1d1a33] px-5 text-sm font-bold text-white hover:bg-[#2b2660]">
+          <a href={content.link_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground hover:bg-primary-strong">
             {content.link_label}
           </a>
         ) : null}
         <AdSignature content={content} tone="paper" />
         {content.showSignature ? (
-          <p className="mt-1 text-[11px] text-[#1d1a33]/50">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+          <p className="mt-1 text-[11px] text-foreground-subtle">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
         ) : null}
       </div>
-      <div className="flex gap-2 bg-[#0e0b22] p-4">
-        <button type="button" onClick={onClose} className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-white/12 bg-white/5 px-5 text-sm font-bold text-foreground hover:bg-white/10">
+      <div className="flex gap-2 bg-[#1A1F1B] p-4">
+        <button type="button" onClick={onClose} className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-border bg-surface-muted px-5 text-sm font-bold text-foreground hover:bg-border">
           إغلاق البيان
         </button>
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail } from 'lucide-react';
 
+import { AvatarUploader } from '../../components/AvatarUploader';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Input } from '../../components/Input';
@@ -66,7 +67,20 @@ export function StudentProfilePage() {
 
   return (
     <LayoutShell title="الملف الشخصي" variant="sidebar" nav={<StudentNav />}>
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <Card title="الصورة الشخصية" subtitle="تظهر صورتك في شريط لوحة التحكم">
+          {loading ? (
+            <div className="flex items-center gap-4" aria-hidden="true">
+              <Skeleton className="h-24 w-24 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-10 w-48" />
+              </div>
+            </div>
+          ) : (
+            <AvatarUploader />
+          )}
+        </Card>
         <Card title="بياناتي" subtitle="يمكنك تعديل بياناتك المسجلة لدى المنصة">
           {loading ? (
             <div className="flex flex-col gap-4" aria-hidden="true">

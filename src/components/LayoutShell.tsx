@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { Bell, Menu, Search, X, Zap } from 'lucide-react';
 
 import { useAuth } from '../features/auth/AuthContext';
+import { AvatarImage } from './AvatarImage';
 import { BrandIcon } from './BrandIcon';
 import { Button } from './Button';
+import { ProfileCompletionModal } from './ProfileCompletionModal';
 import { useToast } from './Toast';
+import { ThemePicker } from '../theme/ThemePicker';
 
 interface LayoutShellProps {
   title: string;
@@ -15,6 +18,11 @@ interface LayoutShellProps {
   children: ReactNode;
   variant?: 'top' | 'sidebar';
   bottomNav?: ReactNode;
+  /** Full-screen mode: removes the outer frame padding and all max-width
+      caps so content uses the full viewport width. Defaults to true so
+      every dashboard/control panel is full-screen on all pages.
+      Pass `wide={false}` explicitly to opt back into the old boxed frame. */
+  wide?: boolean;
 }
 
 const roleLabels: Record<string, string> = {
@@ -24,14 +32,38 @@ const roleLabels: Record<string, string> = {
   admin: 'مدير',
 };
 
-function Brand() {
+function notificationsTarget(role: string | null): string {
+  if (role === 'student') return '/student/notifications';
+  if (role === 'admin') return '/admin/suggestions';
+  return '/walid/announcements';
+}
+
+function SidebarBrand() {
   return (
     <Link
       to="/"
-      className="group inline-flex items-center gap-2.5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      className="flex items-center gap-2.5 rounded-full px-1 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      aria-label="وليد عونى — الرئيسية"
     >
-      <BrandIcon className="h-9 w-9 transition-shadow duration-300 group-hover:shadow-[0_0_30px_-2px_rgba(129,140,248,0.9)]" />
-      <span className="hidden min-w-0 truncate font-display text-base font-bold text-foreground min-[480px]:inline">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <Zap aria-hidden="true" className="h-5 w-5" strokeWidth={2.4} />
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className="block truncate text-sm font-bold text-sidebar-foreground">وليد عونى</span>
+      </span>
+    </Link>
+  );
+}
+
+function TopBrand() {
+  return (
+    <Link
+      to="/"
+      className="inline-flex shrink-0 items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      aria-label="وليد عونى — الرئيسية"
+    >
+      <BrandIcon className="h-9 w-9" />
+      <span className="hidden min-w-0 truncate text-base font-bold text-foreground min-[480px]:inline">
         وليد عونى
       </span>
     </Link>
@@ -46,6 +78,7 @@ export function LayoutShell({
   children,
   variant = 'top',
   bottomNav,
+  wide = true,
 }: LayoutShellProps) {
   const { profile, role, user, signOut } = useAuth();
   const { showToast } = useToast();
@@ -55,6 +88,12 @@ export function LayoutShell({
   const displayName = profile?.full_name ?? user?.email ?? '';
   const roleLabel = role ? (roleLabels[role] ?? role) : '';
   const hasSidebar = variant === 'sidebar' && nav !== undefined;
+  const avatarInitial = displayName.trim().charAt(0) || 'و';
+  const todayLabel = new Intl.DateTimeFormat('ar', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date());
 
   const handleSignOut = async () => {
     try {
@@ -84,105 +123,177 @@ export function LayoutShell({
   }, [drawerOpen]);
 
   return (
-    <div className="min-h-screen">
+    <div dir="rtl" className={wide ? 'min-h-screen bg-background' : 'min-h-screen bg-background p-2 sm:p-4'}>
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:start-4 focus:top-4 focus:z-[300] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-indigo-700 focus:shadow-elevated"
+        className="sr-only focus:not-sr-only focus:absolute focus:start-4 focus:top-4 focus:z-[300] focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-strong"
       >
         تخطي إلى المحتوى الرئيسي
       </a>
 
-      <header className="glass-nav sticky top-0 z-40 backdrop-blur-[20px]">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-2 px-4 sm:gap-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            {hasSidebar ? (
-              <button
-                type="button"
-                aria-label="فتح القائمة"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-foreground-muted backdrop-blur transition-all hover:bg-white/10 hover:text-foreground hover:border-indigo-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-10 sm:w-10 lg:hidden"
-                onClick={() => setDrawerOpen(true)}
-              >
-                <Menu aria-hidden="true" className="h-5 w-5" />
-              </button>
-            ) : null}
-            <Brand />
-            {roleLabel ? (
-              <span className="hidden rounded-full border border-indigo-400/20 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 px-3 py-1 text-xs font-bold text-indigo-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(129,140,248,0.6)] backdrop-blur sm:inline">
-                {roleLabel}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden max-w-[26vw] truncate rounded-full border border-white/5 bg-white/5 px-3 py-1 text-sm font-medium text-foreground-muted sm:block sm:max-w-[30vw] lg:max-w-[40vw]">
-              {displayName}
-            </span>
-            <span className="max-w-[26vw] truncate text-sm font-bold text-foreground sm:hidden sm:max-w-[30vw] lg:max-w-[40vw]">
-              {displayName.split(' ')[0]}
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => void handleSignOut()} className="shrink-0 rounded-xl border border-white/5">
-              تسجيل الخروج
-            </Button>
-          </div>
-        </div>
-      </header>
+      <div
+        className={
+          wide
+            ? 'mx-auto flex min-h-screen w-full items-stretch gap-3 bg-shell p-3'
+            : 'mx-auto flex min-h-[calc(100vh-1rem)] w-full max-w-[1400px] items-stretch gap-3 rounded-[24px] bg-shell p-3 shadow-[0_20px_44px_-20px_rgb(0_0_0/0.5)] sm:min-h-[calc(100vh-2rem)]'
+        }
+      >
+        {hasSidebar ? (
+          <aside
+            aria-label="الشريط الجانبي"
+            className={`sticky hidden w-60 shrink-0 flex-col overflow-y-auto rounded-[20px] bg-sidebar p-3 text-sidebar-foreground lg:flex ${
+              wide ? 'top-3 max-h-[calc(100vh-1.5rem)]' : 'top-6 max-h-[calc(100vh-3.5rem)]'
+            }`}
+          >
+            <SidebarBrand />
+            <div className="mt-2 flex-1">{nav}</div>
+          </aside>
+        ) : null}
 
-      {hasSidebar ? (
-        <aside className="glass-card spotlight-card fixed inset-y-20 start-4 z-40 hidden w-60 overflow-y-auto rounded-2xl border-white/10 p-0 shadow-[0_18px_44px_-22px_rgba(2,1,10,0.9),0_0_40px_-12px_rgba(129,140,248,0.15)] lg:block">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          {nav}
-        </aside>
-      ) : null}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="rounded-[20px] border border-border bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.25)]">
+            <div className="flex min-h-16 flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4">
+              {hasSidebar ? (
+                <button
+                  type="button"
+                  aria-label="فتح القائمة"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-foreground transition-colors hover:bg-border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 lg:hidden"
+                  onClick={() => setDrawerOpen(true)}
+                >
+                  <Menu aria-hidden="true" className="h-5 w-5" />
+                </button>
+              ) : (
+                <TopBrand />
+              )}
+
+              <form
+                role="search"
+                aria-label="بحث سريع"
+                className="order-last flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-full border border-border bg-input px-3 sm:order-none sm:w-auto sm:max-w-xs"
+                onSubmit={(event) => event.preventDefault()}
+              >
+                <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-foreground-subtle" />
+                <input
+                  type="search"
+                  placeholder="بحث سريع..."
+                  aria-label="بحث سريع"
+                  className="h-full w-full min-w-0 bg-transparent text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none"
+                />
+              </form>
+
+              <div className="ms-auto flex min-w-0 items-center gap-2">
+                <span className="hidden text-xs font-medium text-foreground-subtle xl:inline">{todayLabel}</span>
+                <span className="hidden rounded-full border border-border bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground sm:inline">
+                  اليوم
+                </span>
+                <button
+                  type="button"
+                  aria-label="الإشعارات"
+                  onClick={() => navigate(notificationsTarget(role))}
+                  className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-foreground transition-colors hover:bg-border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  <Bell aria-hidden="true" className="h-5 w-5" />
+                  <span
+                    aria-hidden="true"
+                    className="absolute end-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-surface"
+                  />
+                </button>
+                <AvatarImage
+                  path={profile?.avatar_path}
+                  alt={displayName || 'الصورة الشخصية'}
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  fallback={
+                    <span
+                      aria-hidden="true"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
+                    >
+                      {avatarInitial}
+                    </span>
+                  }
+                />
+                <span className="hidden min-w-0 leading-tight md:block">
+                  <span className="block max-w-[12rem] truncate text-sm font-bold text-foreground">
+                    {displayName}
+                  </span>
+                  {roleLabel ? (
+                    <span className="block text-[11px] font-medium text-foreground-subtle">{roleLabel}</span>
+                  ) : null}
+                </span>
+                {roleLabel ? (
+                  <span className="rounded-full bg-surface-muted px-2.5 py-1 text-[11px] font-bold text-primary-strong md:hidden">
+                    {roleLabel}
+                  </span>
+                ) : null}
+                <ThemePicker />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleSignOut()}
+                  className="shrink-0 rounded-full border border-border"
+                >
+                  تسجيل الخروج
+                </Button>
+              </div>
+            </div>
+          </header>
+
+          {variant === 'top' && nav ? (
+            <div className="mt-3 rounded-[20px] border border-border bg-surface px-2 py-1">{nav}</div>
+          ) : null}
+
+          <main
+            id="main-content"
+            className={
+              wide
+                ? `w-full flex-1 px-2 py-5 sm:px-4 ${bottomNav ? 'pb-24 lg:pb-8' : ''}`
+                : `mx-auto w-full max-w-5xl flex-1 px-1 py-5 sm:px-3 ${bottomNav ? 'pb-24 lg:pb-8' : ''}`
+            }
+          >
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{title}</h1>
+                {subtitle ? <p className="mt-1 text-sm text-foreground-subtle">{subtitle}</p> : null}
+              </div>
+              {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+            </div>
+            {children}
+          </main>
+        </div>
+      </div>
 
       {hasSidebar && drawerOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="glass-overlay absolute inset-0 animate-fade-in" onClick={() => setDrawerOpen(false)} />
-          <div className="glass-panel absolute inset-y-0 start-0 flex w-72 max-w-[82vw] animate-slide-in-start flex-col">
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/8 px-4">
-              <Brand />
+          <div
+            className="absolute inset-0 animate-fade-in bg-[rgb(10_12_10/0.6)]"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <div className="absolute inset-y-0 start-0 flex w-72 max-w-[82vw] animate-slide-in-start flex-col overflow-y-auto rounded-e-[20px] bg-sidebar p-3 text-sidebar-foreground">
+            <div className="flex shrink-0 items-center justify-between">
+              <SidebarBrand />
               <button
                 ref={closeButtonRef}
                 type="button"
                 aria-label="إغلاق القائمة"
-                className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-10 sm:w-10"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                 onClick={() => setDrawerOpen(false)}
               >
                 <X aria-hidden="true" className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto" onClick={() => setDrawerOpen(false)}>
+            <div className="mt-2 flex-1" onClick={() => setDrawerOpen(false)}>
               {nav}
             </div>
           </div>
         </div>
       ) : null}
 
-      {variant === 'top' && nav ? (
-        <div className="border-b border-white/6 bg-white/3">{nav}</div>
-      ) : null}
-
-      <div className={hasSidebar ? 'lg:ps-72' : ''}>
-        <main
-          id="main-content"
-          className={`mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 ${variant === 'top' && nav ? 'pb-24 md:pb-0' : ''}`}
-        >
-          <div className="rise mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">
-                {title}
-              </h1>
-              {subtitle ? <p className="mt-1 text-sm text-foreground-subtle">{subtitle}</p> : null}
-            </div>
-            {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-          </div>
-          {children}
-        </main>
-      </div>
-
       {bottomNav ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/8 bg-[rgba(8,6,22,0.85)] backdrop-blur-[24px] lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface shadow-[0_-8px_24px_-12px_rgb(0_0_0/0.5)] lg:hidden">
           {bottomNav}
         </div>
       ) : null}
+
+      {role === 'student' ? <ProfileCompletionModal /> : null}
     </div>
   );
 }

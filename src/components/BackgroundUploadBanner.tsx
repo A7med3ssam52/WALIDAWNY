@@ -25,7 +25,7 @@ export function BackgroundUploadBanner() {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[180] px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-      <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-xl border border-white/10 bg-[rgba(16,13,40,0.92)] px-4 py-3 shadow-[0_24px_60px_-16px_rgba(2,1,10,0.9),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl">
+      <div className="pointer-events-auto mx-auto w-full max-w-lg rounded-[20px] border border-border bg-surface px-4 py-3 shadow-elevated">
         <p className="text-xs font-semibold text-foreground-muted">
           جاري رفع {active.length} فيديو في الخلفية
         </p>
@@ -62,7 +62,7 @@ export function BackgroundUploadBanner() {
                 type="button"
                 aria-label={`إلغاء رفع ${job.fileName}`}
                 onClick={() => void uploadManager.cancelJob(job.jobId)}
-                className="shrink-0 rounded-md p-1.5 text-foreground-subtle transition-colors hover:bg-white/5 hover:text-error focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                className="shrink-0 rounded-md p-1.5 text-foreground-subtle transition-colors hover:bg-surface-muted hover:text-error focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
               >
                 <X aria-hidden="true" className="h-4 w-4" />
               </button>

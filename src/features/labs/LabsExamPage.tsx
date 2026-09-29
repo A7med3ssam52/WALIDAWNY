@@ -148,7 +148,7 @@ export function LabsExamPage() {
         canonicalPath="/labs/exam"
         noIndex
       />
-      <header className="border-b border-white/8 bg-white/3">
+      <header className="border-b border-border bg-surface">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
           <Link
             to="/"
@@ -157,7 +157,7 @@ export function LabsExamPage() {
             <ArrowRight aria-hidden="true" className="h-4 w-4" />
             الرئيسية
           </Link>
-          <span className="flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-black text-amber-300">
+          <span className="flex items-center gap-1.5 rounded-full border border-[rgba(217,167,95,0.3)] bg-[rgba(217,167,95,0.1)] px-3 py-1 text-xs font-black text-warning">
             <FlaskConical aria-hidden="true" className="h-3.5 w-3.5" />
             وضع تجريبي — لا تُحفظ أي بيانات
           </span>
@@ -198,10 +198,10 @@ export function LabsExamPage() {
               <div
                 role="timer"
                 aria-live="polite"
-                className={`sticky top-0 z-10 flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 backdrop-blur-xl ${
+                className={`sticky top-0 z-10 flex items-center justify-between gap-2 rounded-[20px] border bg-surface px-4 py-3 shadow-medium ${
                   remainingMs < 30_000
-                    ? 'border-rose-400/40 bg-rose-500/15'
-                    : 'border-white/10 bg-[rgba(8,6,22,0.85)]'
+                    ? 'border-error/40 bg-error/[0.06]'
+                    : 'border-border'
                 }`}
               >
                 <span className="flex items-center gap-2 text-sm font-bold text-foreground">
@@ -236,16 +236,16 @@ export function LabsExamPage() {
                                 setChoices((prev) => ({ ...prev, [question.id]: choiceIndex }));
                               }}
                               aria-pressed={selected}
-                              className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-start text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                              className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-start text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/50 ${
                                 selected
-                                  ? 'border-primary/60 bg-primary/15 text-white'
-                                  : 'border-white/8 bg-white/3 text-foreground-muted hover:border-white/20 hover:text-foreground'
+                                  ? 'border-primary-strong bg-primary-soft text-foreground'
+                                  : 'border-border bg-surface text-foreground-muted hover:border-primary/50 hover:text-foreground'
                               }`}
                             >
                               <span
                                 aria-hidden="true"
                                 className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-black ${
-                                  selected ? 'bg-primary text-white' : 'bg-white/8 text-foreground-subtle'
+                                  selected ? 'bg-primary-strong text-white' : 'bg-surface-muted text-foreground-subtle'
                                 }`}
                               >
                                 {CHOICE_LABELS[choiceIndex]}
@@ -265,7 +265,7 @@ export function LabsExamPage() {
                         }}
                         rows={3}
                         placeholder="اكتب إجابتك هنا"
-                        className="glass-input mt-3 w-full rounded-xl border border-white/10 bg-white/4 px-3 py-3 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                        className="glass-input mt-3 w-full rounded-xl border border-border px-3 py-3 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/50"
                       />
                     )}
                   </Card>
@@ -273,9 +273,9 @@ export function LabsExamPage() {
               ))}
             </ol>
             {submitError ? (
-              <p role="alert" className="text-sm font-bold text-rose-300">{submitError}</p>
+              <p role="alert" className="text-sm font-bold text-error">{submitError}</p>
             ) : null}
-            <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/8 bg-[rgba(8,6,22,0.92)] p-3 backdrop-blur-xl">
+            <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 p-3 backdrop-blur">
               <div className="mx-auto max-w-3xl">
                 <Button size="lg" className="w-full" loading={submitting} onClick={() => handleSubmit(false)}>
                   إرسال الإجابات
@@ -299,9 +299,9 @@ export function LabsExamPage() {
                   aria-selected={resultTab === item.id}
                   type="button"
                   onClick={() => setResultTab(item.id)}
-                  className={`rounded-xl px-3 py-3 text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                  className={`rounded-xl px-3 py-3 text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/50 ${
                     resultTab === item.id
-                      ? 'nav-pill-active text-white'
+                      ? 'health-dark-card'
                       : 'glass-card text-foreground-muted hover:text-foreground'
                   }`}
                 >
@@ -315,7 +315,7 @@ export function LabsExamPage() {
                 <div className="flex items-center gap-3">
                   <span
                     aria-hidden="true"
-                    className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300"
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[rgba(127,191,142,0.3)] bg-[rgba(127,191,142,0.1)] text-success"
                   >
                     <CheckCircle2 className="h-6 w-6" />
                   </span>
@@ -363,9 +363,9 @@ export function LabsExamPage() {
                                 key={i}
                                 className={`rounded-lg px-2 py-1.5 ${
                                   isCorrect
-                                    ? 'bg-emerald-400/10 font-bold text-emerald-300'
+                                    ? 'bg-[rgba(127,191,142,0.1)] font-bold text-success'
                                     : isMine
-                                      ? 'bg-rose-400/10 text-rose-300'
+                                      ? 'bg-error/[0.07] text-error'
                                       : 'text-foreground-muted'
                                 }`}
                               >
@@ -378,7 +378,7 @@ export function LabsExamPage() {
                         </ul>
                       ) : (
                         <div className="mt-2 text-sm">
-                          <p className="whitespace-pre-wrap rounded-lg bg-white/4 px-2 py-1.5 text-foreground-muted">
+                          <p className="whitespace-pre-wrap rounded-lg bg-surface-muted px-2 py-1.5 text-foreground-muted">
                             إجابتك: {essays[question.id]?.trim() || '—'}
                           </p>
                           <p className="mt-1 text-xs text-foreground-subtle">

@@ -6,7 +6,7 @@ import { SEO, SITE_URL } from '../../lib/seo';
 
 export function TermsPage() {
   return (
-    <div className="min-h-screen" dir="rtl">
+    <div className="min-h-screen bg-background text-foreground" dir="rtl">
       <SeoHead
         title={SEO.terms.title}
         description={SEO.terms.description}
@@ -16,7 +16,7 @@ export function TermsPage() {
       />
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <Breadcrumbs items={[{ name: 'الشروط', url: `${SITE_URL}/terms` }]} className="mb-6" />
-        <h1 className="font-display text-3xl font-extrabold sm:text-4xl"><span className="text-gradient">الشروط والأحكام</span></h1>
+        <h1 className="font-display text-3xl font-extrabold text-foreground sm:text-4xl">الشروط والأحكام</h1>
         <p className="mt-2 text-xs text-foreground-subtle">آخر تحديث: 23 أغسطس 2026</p>
 
         <div className="glass-card mt-8 space-y-6 p-6 sm:p-8 text-sm leading-7 text-foreground-muted">
@@ -47,7 +47,7 @@ export function TermsPage() {
         </div>
 
         <div className="mt-8 flex gap-3">
-          <Link to="/privacy" className="text-sm font-bold text-indigo-300 hover:text-indigo-200">سياسة الخصوصية ←</Link>
+          <Link to="/privacy" className="text-sm font-bold text-primary-strong hover:underline">سياسة الخصوصية ←</Link>
           <Link to="/" className="text-sm font-bold text-foreground-muted hover:text-foreground">الرئيسية ←</Link>
         </div>
       </div>

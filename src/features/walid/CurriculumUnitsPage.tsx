@@ -261,7 +261,7 @@ export function CurriculumUnitsPage() {
       actions={
         <Link
           to="/walid/curriculum"
-          className="glass-soft inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-secondary-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-subtle transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
         >
           <DirectionalArrow direction="back" />
           العودة إلى الصفوف
@@ -298,7 +298,7 @@ export function CurriculumUnitsPage() {
                 <li
                   key={unit.id}
                   data-testid={`unit-row-${unit.id}`}
-                  className="glass-soft group flex flex-col overflow-hidden rounded-2xl border border-white/8 transition-all duration-200 hover:border-indigo-400/20 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.18)]"
+                  className="group flex border border-border bg-surface flex-col overflow-hidden rounded-2xl border border-border transition-all duration-200 hover:border-border"
                 >
                   <div className="flex min-w-0 items-center gap-3 px-4 py-3.5">
                     <OrderChip order={unit.sort_order} />
@@ -309,7 +309,7 @@ export function CurriculumUnitsPage() {
                         </span>
                         <UnitStatusBadge status={unit.status} />
                         {unit.is_free ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-300">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.1)] px-2 py-0.5 text-[11px] font-bold text-success">
                             <Gift aria-hidden="true" className="h-3 w-3" />
                             مجاني
                           </span>
@@ -317,10 +317,10 @@ export function CurriculumUnitsPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 border-t border-white/[0.06] bg-white/[0.02] px-2.5 py-2.5 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-3">
+                  <div className="flex flex-col gap-2 border-t border-border-muted bg-surface px-2.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-3">
                     <Link
                       to={`/walid/curriculum/${gradeId}/${unit.id}`}
-                      className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-4 text-sm font-bold text-white shadow-[0_4px_14px_-4px_rgba(99,102,241,0.5)] transition-all duration-200 hover:brightness-[1.07] hover:shadow-[0_6px_20px_-6px_rgba(99,102,241,0.6)] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-9 sm:w-auto sm:px-3.5 sm:text-[13px]"
+                      className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary-strong px-4 text-sm font-bold text-primary-foreground shadow-subtle transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-9 sm:w-auto sm:px-3.5 sm:text-[13px]"
                     >
                       <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
                       فتح الدروس
@@ -334,7 +334,7 @@ export function CurriculumUnitsPage() {
                             icon={<EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
                             onClick={() => void handleToggleUnitStatus(unit)}
                             disabled={togglingUnitId === unit.id}
-                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-amber-400/15 bg-amber-500/5 px-0 text-xs font-semibold text-amber-300 hover:border-amber-400/25 hover:bg-amber-500/10 hover:text-amber-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-border bg-surface-muted px-0 text-xs font-semibold text-warning hover:border-border hover:bg-surface-muted hover:text-warning sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
                           >
                             {togglingUnitId === unit.id ? 'جاري...' : 'إخفاء'}
                           </Button>
@@ -344,7 +344,7 @@ export function CurriculumUnitsPage() {
                             variant="ghost"
                             onClick={() => void handleToggleUnitStatus(unit)}
                             disabled={togglingUnitId === unit.id}
-                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-indigo-400/15 bg-indigo-500/5 px-0 text-xs font-semibold text-indigo-300 hover:border-indigo-400/25 hover:bg-indigo-500/10 hover:text-indigo-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                            className="h-9 justify-center whitespace-nowrap rounded-xl border border-border bg-surface-muted px-0 text-xs font-semibold text-primary-strong hover:border-border hover:bg-surface-muted hover:text-primary-strong sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
                           >
                             {togglingUnitId === unit.id ? 'جاري...' : 'نشر'}
                           </Button>
@@ -354,7 +354,7 @@ export function CurriculumUnitsPage() {
                           variant="ghost"
                           icon={<Pencil aria-hidden="true" className="h-3.5 w-3.5" />}
                           onClick={() => openEditUnit(unit)}
-                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-white/8 bg-white/[0.03] px-0 text-xs font-semibold text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                          className="h-9 justify-center whitespace-nowrap rounded-xl border border-border bg-surface-muted px-0 text-xs font-semibold text-foreground-muted hover:border-border hover:bg-surface-muted hover:text-foreground sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
                         >
                           تعديل
                         </Button>
@@ -373,8 +373,8 @@ export function CurriculumUnitsPage() {
                         }
                         className={`h-9 justify-center whitespace-nowrap rounded-xl border px-0 text-xs font-semibold sm:h-8 sm:w-auto sm:px-3 sm:text-xs ${
                           unit.is_free
-                            ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
-                            : 'border-white/8 bg-white/[0.03] text-foreground-muted hover:border-white/12 hover:bg-white/8 hover:text-foreground'
+                            ? 'border-emerald-400/20 bg-[rgba(127,191,142,0.1)] text-success hover:bg-surface-muted'
+                            : 'border-border bg-surface-muted text-foreground-muted hover:border-border hover:bg-surface-muted hover:text-foreground'
                         }`}
                       >
                         {freeTogglingId === unit.id ? (
@@ -404,7 +404,7 @@ export function CurriculumUnitsPage() {
                         variant="ghost"
                         icon={<Trash2 aria-hidden="true" className="h-3.5 w-3.5" />}
                         onClick={() => setDeletingUnit({ unit })}
-                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-rose-400/10 bg-rose-500/5 px-0 text-xs font-semibold text-rose-300 hover:border-rose-400/20 hover:bg-rose-500/10 hover:text-rose-200 sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
+                        className="h-9 justify-center whitespace-nowrap rounded-xl border border-border bg-surface-muted px-0 text-xs font-semibold text-error hover:border-border hover:bg-surface-muted hover:text-error sm:h-8 sm:w-auto sm:px-3 sm:text-xs"
                       >
                         حذف
                       </Button>
@@ -436,7 +436,7 @@ export function CurriculumUnitsPage() {
                       <li
                         key={unit.id}
                         data-testid={`deleted-unit-row-${unit.id}`}
-                        className="glass-soft flex items-center justify-between gap-3 rounded-xl border border-white/8 p-3"
+                        className="flex border border-border bg-surface-muted items-center justify-between gap-3 rounded-xl border border-border p-3"
                       >
                         <span className="truncate text-sm text-foreground-muted">{unit.name}</span>
                         <Button

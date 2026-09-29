@@ -26,7 +26,12 @@ import {
   getPresenceDailyCounts,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
-import type { DailyActiveStudent, MostActiveStudent, OnlineStudent, PresenceDailyCount } from '../../types/database';
+import type {
+  DailyActiveStudent,
+  MostActiveStudent,
+  OnlineStudent,
+  PresenceDailyCount,
+} from '../../types/database';
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -206,14 +211,16 @@ export function PresencePage() {
         <div
           role="tablist"
           aria-label="تبويبات المتابعة"
-          className="flex w-full flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/4 p-1 sm:w-fit"
+          className="flex w-full flex-wrap items-center gap-1 rounded-xl border border-border-muted bg-surface-muted p-1 sm:w-fit"
         >
           <button
             role="tab"
             aria-selected={activeTab === 'live'}
             onClick={() => setActiveTab('live')}
             className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
-              activeTab === 'live' ? 'nav-pill-active font-bold text-white' : 'text-foreground-muted hover:text-foreground'
+              activeTab === 'live'
+                ? 'nav-pill-active font-bold'
+                : 'text-foreground-muted hover:text-foreground'
             }`}
             data-testid="presence-tab-live"
           >
@@ -224,7 +231,9 @@ export function PresencePage() {
             aria-selected={activeTab === 'daily'}
             onClick={() => setActiveTab('daily')}
             className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
-              activeTab === 'daily' ? 'nav-pill-active font-bold text-white' : 'text-foreground-muted hover:text-foreground'
+              activeTab === 'daily'
+                ? 'nav-pill-active font-bold'
+                : 'text-foreground-muted hover:text-foreground'
             }`}
             data-testid="presence-tab-daily"
           >
@@ -238,7 +247,9 @@ export function PresencePage() {
               void loadRanking();
             }}
             className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
-              activeTab === 'ranking' ? 'nav-pill-active font-bold text-white' : 'text-foreground-muted hover:text-foreground'
+              activeTab === 'ranking'
+                ? 'nav-pill-active font-bold'
+                : 'text-foreground-muted hover:text-foreground'
             }`}
             data-testid="presence-tab-ranking"
           >
@@ -249,11 +260,15 @@ export function PresencePage() {
         {activeTab === 'live' ? (
           <Card
             title="الطلاب المتصلون الآن"
-            subtitle={online === null ? 'جاري التحميل...' : `${filteredOnline?.length ?? 0} طالب أونلاين — آخر تحديث: ${new Date().toLocaleTimeString('ar-EG')}`}
+            subtitle={
+              online === null
+                ? 'جاري التحميل...'
+                : `${filteredOnline?.length ?? 0} طالب أونلاين — آخر تحديث: ${new Date().toLocaleTimeString('ar-EG')}`
+            }
             actions={
               <button
                 onClick={() => void loadLive()}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                className="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
               >
                 تحديث الآن
               </button>
@@ -274,7 +289,7 @@ export function PresencePage() {
                 <select
                   value={gradeFilter}
                   onChange={(e) => setGradeFilter(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                  className="rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-foreground shadow-subtle focus:border-primary-strong focus:outline-none"
                 >
                   <option value="">كل الصفوف</option>
                   {grades.map((g) => (
@@ -332,11 +347,18 @@ export function PresencePage() {
                         <TableCell label="متصل منذ">{formatDuration(row.minutes_online)}</TableCell>
                         <TableCell label="يعمل الآن">
                           <div className="flex flex-col gap-1">
-                            <span className="text-sm font-medium text-foreground">{pathLabel(row.current_path)}</span>
+                            <span className="text-sm font-medium text-foreground">
+                              {pathLabel(row.current_path)}
+                            </span>
                             {row.lesson_title ? (
-                              <span className="text-xs text-foreground-subtle">{row.lesson_title}</span>
+                              <span className="text-xs text-foreground-subtle">
+                                {row.lesson_title}
+                              </span>
                             ) : null}
-                            <span className="font-mono text-[11px] text-foreground-subtle" dir="ltr">
+                            <span
+                              className="font-mono text-[11px] text-foreground-subtle"
+                              dir="ltr"
+                            >
                               {friendlyPath(row.current_path)}
                             </span>
                           </div>
@@ -356,7 +378,7 @@ export function PresencePage() {
                         <TableCell label="الإجراء">
                           <Link
                             to={`/admin/presence/${row.student_id}`}
-                            className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                            className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                             data-testid={`presence-history-${row.student_id}`}
                           >
                             السجل
@@ -379,19 +401,19 @@ export function PresencePage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setDailyDate(toISODate(new Date()))}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${dailyDate === toISODate(new Date()) ? 'bg-primary text-white' : 'border border-white/10 bg-white/5 text-foreground hover:bg-white/10'}`}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${dailyDate === toISODate(new Date()) ? 'bg-primary text-primary-foreground' : 'border border-border bg-surface text-foreground shadow-subtle hover:bg-surface-muted'}`}
                   >
                     اليوم
                   </button>
                   <button
                     onClick={() => setDailyDate(addDays(toISODate(new Date()), -1))}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${dailyDate === addDays(toISODate(new Date()), -1) ? 'bg-primary text-white' : 'border border-white/10 bg-white/5 text-foreground hover:bg-white/10'}`}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${dailyDate === addDays(toISODate(new Date()), -1) ? 'bg-primary text-primary-foreground' : 'border border-border bg-surface text-foreground shadow-subtle hover:bg-surface-muted'}`}
                   >
                     أمس
                   </button>
                   <button
                     onClick={() => setDailyDate(addDays(toISODate(new Date()), -2))}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                    className="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                   >
                     قبل يومين
                   </button>
@@ -402,12 +424,12 @@ export function PresencePage() {
                       value={dailyDate}
                       max={toISODate(new Date())}
                       onChange={(e) => setDailyDate(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                      className="rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                       data-testid="daily-date-picker"
                     />
                     <button
                       onClick={() => void loadDaily(dailyDate)}
-                      className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                      className="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                     >
                       تحديث
                     </button>
@@ -425,7 +447,9 @@ export function PresencePage() {
                   />
                   <div className="flex items-end">
                     <p className="text-xs text-foreground-subtle">
-                      {dailyRows ? `${dailyRows.length} طالب دخلوا يوم ${dailyDate}` : 'جاري التحميل...'}
+                      {dailyRows
+                        ? `${dailyRows.length} طالب دخلوا يوم ${dailyDate}`
+                        : 'جاري التحميل...'}
                     </p>
                   </div>
                 </div>
@@ -456,86 +480,112 @@ export function PresencePage() {
               )}
 
               {dailyError ? (
-                <ErrorState message="تعذر تحميل سجل اليوم" onRetry={() => void loadDaily(dailyDate)} />
+                <ErrorState
+                  message="تعذر تحميل سجل اليوم"
+                  onRetry={() => void loadDaily(dailyDate)}
+                />
               ) : dailyLoading || dailyRows === null ? (
                 <div className="flex flex-col gap-3" aria-hidden="true">
                   {Array.from({ length: 5 }, (_, i) => (
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : (() => {
-                const filtered = dailySearch.trim()
-                  ? dailyRows.filter(
-                      (r) =>
-                        r.full_name.toLowerCase().includes(dailySearch.trim().toLowerCase()) ||
-                        r.phone.includes(dailySearch.trim()),
-                    )
-                  : dailyRows;
-                if (filtered.length === 0) {
+              ) : (
+                (() => {
+                  const filtered = dailySearch.trim()
+                    ? dailyRows.filter(
+                        (r) =>
+                          r.full_name.toLowerCase().includes(dailySearch.trim().toLowerCase()) ||
+                          r.phone.includes(dailySearch.trim()),
+                      )
+                    : dailyRows;
+                  if (filtered.length === 0) {
+                    return (
+                      <EmptyState
+                        title={
+                          dailyRows.length === 0 ? 'لا يوجد حضور في هذا اليوم' : 'لا نتائج للبحث'
+                        }
+                        description={
+                          dailyRows.length === 0
+                            ? 'لم يدخل أي طالب المنصة في هذا التاريخ.'
+                            : 'جرّب تغيير البحث.'
+                        }
+                      />
+                    );
+                  }
                   return (
-                    <EmptyState
-                      title={dailyRows.length === 0 ? 'لا يوجد حضور في هذا اليوم' : 'لا نتائج للبحث'}
-                      description={dailyRows.length === 0 ? 'لم يدخل أي طالب المنصة في هذا التاريخ.' : 'جرّب تغيير البحث.'}
-                    />
-                  );
-                }
-                return (
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableHeadCell>#</TableHeadCell>
-                        <TableHeadCell>الطالب</TableHeadCell>
-                        <TableHeadCell>الصف</TableHeadCell>
-                        <TableHeadCell>الجلسات</TableHeadCell>
-                        <TableHeadCell>الوقت في اليوم</TableHeadCell>
-                        <TableHeadCell>أول دخول</TableHeadCell>
-                        <TableHeadCell>آخر ظهور</TableHeadCell>
-                        <TableHeadCell>الإجراء</TableHeadCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {filtered.map((row, idx) => (
-                        <TableRow key={row.student_id} data-testid={`daily-row-${row.student_id}`}>
-                          <TableCell label="#">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-foreground">
-                              {idx + 1}
-                            </span>
-                          </TableCell>
-                          <TableCell label="الطالب">
-                            <div className="flex flex-col">
-                              <span className="font-medium text-foreground">{row.full_name}</span>
-                              <span className="font-mono text-xs text-foreground-subtle" dir="ltr">
-                                {row.phone}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell label="الصف">{row.grade_name ?? '—'}</TableCell>
-                          <TableCell label="الجلسات">{row.total_sessions}</TableCell>
-                          <TableCell label="الوقت">
-                            <span className="font-medium text-foreground">
-                              {row.total_hours < 1 ? `${Math.round(row.total_seconds / 60)} دقيقة` : `${row.total_hours} ساعة`}
-                            </span>
-                          </TableCell>
-                          <TableCell label="أول دخول">{row.first_seen_at ? formatDateTime(row.first_seen_at) : '—'}</TableCell>
-                          <TableCell label="آخر ظهور">{row.last_seen_at ? formatDateTime(row.last_seen_at) : '—'}</TableCell>
-                          <TableCell label="الإجراء">
-                            <Link
-                              to={`/admin/presence/${row.student_id}`}
-                              className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
-                            >
-                              السجل
-                            </Link>
-                          </TableCell>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableHeadCell>#</TableHeadCell>
+                          <TableHeadCell>الطالب</TableHeadCell>
+                          <TableHeadCell>الصف</TableHeadCell>
+                          <TableHeadCell>الجلسات</TableHeadCell>
+                          <TableHeadCell>الوقت في اليوم</TableHeadCell>
+                          <TableHeadCell>أول دخول</TableHeadCell>
+                          <TableHeadCell>آخر ظهور</TableHeadCell>
+                          <TableHeadCell>الإجراء</TableHeadCell>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                );
-              })()}
+                      </TableHead>
+                      <TableBody>
+                        {filtered.map((row, idx) => (
+                          <TableRow
+                            key={row.student_id}
+                            data-testid={`daily-row-${row.student_id}`}
+                          >
+                            <TableCell label="#">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-muted text-xs font-bold text-foreground">
+                                {idx + 1}
+                              </span>
+                            </TableCell>
+                            <TableCell label="الطالب">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-foreground">{row.full_name}</span>
+                                <span
+                                  className="font-mono text-xs text-foreground-subtle"
+                                  dir="ltr"
+                                >
+                                  {row.phone}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell label="الصف">{row.grade_name ?? '—'}</TableCell>
+                            <TableCell label="الجلسات">{row.total_sessions}</TableCell>
+                            <TableCell label="الوقت">
+                              <span className="font-medium text-foreground">
+                                {row.total_hours < 1
+                                  ? `${Math.round(row.total_seconds / 60)} دقيقة`
+                                  : `${row.total_hours} ساعة`}
+                              </span>
+                            </TableCell>
+                            <TableCell label="أول دخول">
+                              {row.first_seen_at ? formatDateTime(row.first_seen_at) : '—'}
+                            </TableCell>
+                            <TableCell label="آخر ظهور">
+                              {row.last_seen_at ? formatDateTime(row.last_seen_at) : '—'}
+                            </TableCell>
+                            <TableCell label="الإجراء">
+                              <Link
+                                to={`/admin/presence/${row.student_id}`}
+                                className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
+                              >
+                                السجل
+                              </Link>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  );
+                })()
+              )}
             </Card>
 
             {/* Last 7 days overview */}
-            <Card title="نظرة آخر 7 أيام" subtitle="عدد الطلاب النشطين كل يوم — يغطي من 6 أيام سابقة حتى اليوم المحدد">
+            <Card
+              title="نظرة آخر 7 أيام"
+              subtitle="عدد الطلاب النشطين كل يوم — يغطي من 6 أيام سابقة حتى اليوم المحدد"
+            >
               {dailyCounts === null ? (
                 <div className="flex flex-col gap-3" aria-hidden="true">
                   {Array.from({ length: 3 }, (_, i) => (
@@ -557,29 +607,38 @@ export function PresencePage() {
                     <TableBody>
                       {dailyCounts.map((d) => {
                         const isSelected = d.day === dailyDate;
-                        const maxActive = Math.max(1, ...dailyCounts.map((x) => Number(x.active_students)));
+                        const maxActive = Math.max(
+                          1,
+                          ...dailyCounts.map((x) => Number(x.active_students)),
+                        );
                         const pct = (Number(d.active_students) / maxActive) * 100;
                         return (
                           <TableRow key={d.day} data-testid={`daily-count-${d.day}`}>
                             <TableCell label="اليوم">
-                              <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                              <span
+                                className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
+                              >
                                 {d.day} {isSelected ? '← المحدد' : ''}
                               </span>
                             </TableCell>
                             <TableCell label="نشطون">
                               <div className="flex items-center gap-2">
-                                <div className="h-2 w-20 overflow-hidden rounded-full bg-white/10">
+                                <div className="h-2 w-20 overflow-hidden rounded-full bg-border-muted">
                                   <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
                                 </div>
-                                <span className="text-sm font-bold text-foreground">{d.active_students}</span>
+                                <span className="text-sm font-bold text-foreground">
+                                  {d.active_students}
+                                </span>
                               </div>
                             </TableCell>
                             <TableCell label="الجلسات">{d.total_sessions}</TableCell>
-                            <TableCell label="الساعات">{(Number(d.total_seconds) / 3600).toFixed(1)}</TableCell>
+                            <TableCell label="الساعات">
+                              {(Number(d.total_seconds) / 3600).toFixed(1)}
+                            </TableCell>
                             <TableCell label="">
                               <button
                                 onClick={() => setDailyDate(d.day)}
-                                className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                                className="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                               >
                                 عرض
                               </button>
@@ -602,7 +661,10 @@ export function PresencePage() {
                 ))}
               </div>
             ) : mostActive.length === 0 ? (
-              <EmptyState title="لا توجد بيانات نشاط بعد" description="سيظهر الترتيب بعد بدء تسجيل الجلسات." />
+              <EmptyState
+                title="لا توجد بيانات نشاط بعد"
+                description="سيظهر الترتيب بعد بدء تسجيل الجلسات."
+              />
             ) : (
               <Table>
                 <TableHead>
@@ -626,7 +688,7 @@ export function PresencePage() {
                       </TableCell>
                       <TableCell label="الطالب">
                         <div className="flex items-center gap-2">
-                          {idx < 3 ? <Trophy className="h-4 w-4 text-amber-400" /> : null}
+                          {idx < 3 ? <Trophy className="h-4 w-4 text-amber-600" /> : null}
                           <div className="flex flex-col">
                             <span className="font-medium text-foreground">{row.full_name}</span>
                             <span className="font-mono text-xs text-foreground-subtle" dir="ltr">
@@ -639,7 +701,9 @@ export function PresencePage() {
                       <TableCell label="الجلسات">{row.total_sessions}</TableCell>
                       <TableCell label="إجمالي الوقت">
                         <span className="font-medium text-foreground">
-                          {row.total_hours < 1 ? `${Math.round(row.total_seconds / 60)} دقيقة` : `${row.total_hours} ساعة`}
+                          {row.total_hours < 1
+                            ? `${Math.round(row.total_seconds / 60)} دقيقة`
+                            : `${row.total_hours} ساعة`}
                         </span>
                       </TableCell>
                       <TableCell label="آخر ظهور">
@@ -648,7 +712,7 @@ export function PresencePage() {
                       <TableCell label="الإجراء">
                         <Link
                           to={`/admin/presence/${row.student_id}`}
-                          className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-white/10"
+                          className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                         >
                           السجل
                         </Link>

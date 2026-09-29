@@ -18,7 +18,9 @@ describe('SuggestionImageThumb popup preview', () => {
     const user = userEvent.setup();
     renderApp('/admin/suggestions');
 
-    const button = await screen.findByTestId('suggestion-image-button');
+    const buttons = await screen.findAllByTestId('suggestion-image-button');
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
+    const button = buttons[0];
     expect(screen.queryByRole('link', { name: /معاينة/ })).not.toBeInTheDocument();
 
     await user.click(button);

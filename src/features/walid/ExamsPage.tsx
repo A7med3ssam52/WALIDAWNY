@@ -721,12 +721,12 @@ export function ExamsPage() {
       nav={<RoleNav />}
     >
       <div className="flex flex-col gap-4">
-        <section className="glass-card spotlight-card rise relative overflow-hidden p-4 sm:p-6">
+        <section className="glass-card rise relative overflow-hidden p-4 sm:p-6">
           <div className="relative flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <span
                 aria-hidden="true"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_0_26px_-6px_rgba(129,140,248,0.85)]"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-strong text-primary-foreground"
               >
                 <ClipboardList className="h-5 w-5" />
               </span>
@@ -810,7 +810,7 @@ export function ExamsPage() {
         </section>
 
         <div className="grid items-start gap-4 lg:grid-cols-2">
-          <section className="glass-card spotlight-card rise relative overflow-hidden p-4 sm:p-6">
+          <section className="glass-card rise relative overflow-hidden p-4 sm:p-6">
             <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-foreground">اختبارات الدرس المختار</h2>
@@ -828,7 +828,7 @@ export function ExamsPage() {
               <ListSkeleton />
             ) : (
               <div className="flex flex-col gap-4">
-                <div className="glass-soft rounded-xl border border-indigo-400/15 bg-indigo-400/[0.04] p-3">
+                <div className="glass-soft rounded-xl border border-border bg-surface-muted p-3">
                   <div className="grid gap-3 sm:grid-cols-3">
                     <Input
                       label="عنوان الاختبار"
@@ -875,8 +875,8 @@ export function ExamsPage() {
                           data-testid={`exam-row-${exam.id}`}
                           className={`relative overflow-hidden rounded-xl border p-3 transition-all duration-200 ${
                             isSelected
-                              ? 'border-indigo-400/40 bg-gradient-to-br from-indigo-500/[0.16] to-fuchsia-500/[0.12] shadow-[0_0_30px_-12px_rgba(99,102,241,0.6)]'
-                              : 'glass-soft border-white/8 hover:border-indigo-400/20'
+                              ? 'border-primary-strong bg-primary-soft'
+                              : 'border border-border bg-surface-muted'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
@@ -916,7 +916,7 @@ export function ExamsPage() {
                                 variant="ghost"
                                 icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
                                 onClick={() => setDeletingExam({ exam })}
-                                className="text-error hover:bg-rose-500/10 hover:text-error"
+                                className="text-error hover:bg-surface-muted hover:text-error"
                               >
                                 حذف
                               </Button>
@@ -931,7 +931,7 @@ export function ExamsPage() {
             )}
           </section>
 
-          <section className="glass-card spotlight-card rise relative overflow-hidden p-4 sm:p-6">
+          <section className="glass-card rise relative overflow-hidden p-4 sm:p-6">
             <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-foreground">أسئلة الاختبار المختار</h2>
@@ -984,7 +984,7 @@ export function ExamsPage() {
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
                       onChange={(event) => setQuestionPromptImageFile(event.target.files?.[0] ?? null)}
-                      className="mt-1 block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground"
+                      className="mt-1 block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-primary-strong file:px-4 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground"
                     />
                     {questionPromptImageFile ? (
                       <p className="mt-1 text-xs text-foreground-subtle">تم اختيار: {questionPromptImageFile.name}</p>
@@ -1011,7 +1011,7 @@ export function ExamsPage() {
                               const file = event.target.files?.[0] ?? null;
                               setQuestionChoiceImageFiles((prev) => prev.map((f, i) => (i === index ? file : f)));
                             }}
-                            className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+                            className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-surface-muted file:px-2 file:py-1 file:text-xs"
                           />
                           {questionChoiceImageFiles[index] ? (
                             <span className="text-xs text-foreground-subtle truncate">{questionChoiceImageFiles[index]?.name}</span>
@@ -1066,7 +1066,7 @@ export function ExamsPage() {
                       <li
                         key={question.id}
                         data-testid={`question-row-${question.id}`}
-                        className="glass-soft rounded-xl border border-white/8 p-3"
+                        className="glass-soft rounded-xl border border-border p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -1085,7 +1085,7 @@ export function ExamsPage() {
                                 alt={`صورة السؤال ${index + 1}`}
                                 loading="lazy"
                                 data-testid={`question-prompt-image-${question.id}`}
-                                className="mt-2 max-h-48 w-full max-w-sm rounded-lg border border-white/10 object-contain"
+                                className="mt-2 max-h-48 w-full max-w-sm rounded-lg border border-border object-contain"
                               />
                             ) : null}
                             {question.type === 'mcq' ? (
@@ -1102,7 +1102,7 @@ export function ExamsPage() {
                                         alt={`صورة الخيار ${CHOICE_LABELS[choiceIndex]}`}
                                         loading="lazy"
                                         data-testid={`question-choice-image-${question.id}-${choiceIndex}`}
-                                        className="h-20 w-20 rounded-md border border-white/10 object-cover"
+                                        className="h-20 w-20 rounded-md border border-border object-cover"
                                       />
                                     ) : null}
                                   </li>
@@ -1125,7 +1125,7 @@ export function ExamsPage() {
                                 variant="ghost"
                                 icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
                                 onClick={() => setDeletingQuestion({ question })}
-                                className="text-error hover:bg-rose-500/10 hover:text-error"
+                                className="text-error hover:bg-surface-muted hover:text-error"
                               >
                                 حذف
                               </Button>
@@ -1141,7 +1141,7 @@ export function ExamsPage() {
           </section>
         </div>
 
-        <section className="glass-card spotlight-card rise relative overflow-hidden p-4 sm:p-6">
+        <section className="glass-card rise relative overflow-hidden p-4 sm:p-6">
           <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-foreground">محاولات الطلاب</h2>
@@ -1167,7 +1167,7 @@ export function ExamsPage() {
                   <li
                     key={attempt.id}
                     data-testid={`attempt-row-${attempt.id}`}
-                    className="glass-soft rounded-xl border border-white/8 p-3"
+                    className="glass-soft rounded-xl border border-border p-3"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -1203,7 +1203,7 @@ export function ExamsPage() {
                       </div>
                     </div>
                     {answers.length > 0 ? (
-                      <div className="mt-3 flex flex-col gap-1.5 border-t border-white/8 pt-3">
+                      <div className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3">
                         {answers.map((answer) => {
                           const question = questions?.find((item) => item.id === answer.question_id);
                           if (!question) {
@@ -1220,7 +1220,7 @@ export function ExamsPage() {
                               </span>{' '}
                               {preview}
                               {answer.score != null ? (
-                                <span className="ms-2 font-semibold text-emerald-300">
+                                <span className="ms-2 font-semibold text-success">
                                   ({answer.score})
                                 </span>
                               ) : null}
@@ -1331,7 +1331,7 @@ export function ExamsPage() {
                   <img
                     src={imageUrlsByQuestion[editingQuestion!.question.id]!.promptUrl!}
                     alt="صورة السؤال الحالية"
-                    className="h-12 w-12 rounded object-cover border border-white/10"
+                    className="h-12 w-12 rounded object-cover border border-border"
                   />
                 ) : null}
                 <Button
@@ -1353,7 +1353,7 @@ export function ExamsPage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               onChange={(event) => setEditQuestionPromptImageFile(event.target.files?.[0] ?? null)}
-              className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+              className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-surface-muted file:px-2 file:py-1 file:text-xs"
             />
             {editQuestionPromptImageFile ? (
               <span className="text-xs text-foreground-subtle">{editQuestionPromptImageFile.name}</span>
@@ -1378,7 +1378,7 @@ export function ExamsPage() {
                         <img
                           src={imageUrlsByQuestion[editingQuestion!.question.id]!.choiceUrls![index]!}
                           alt={`صورة الخيار ${CHOICE_LABELS[index]}`}
-                          className="h-10 w-10 rounded object-cover border border-white/10"
+                          className="h-10 w-10 rounded object-cover border border-border"
                         />
                       ) : null}
                       <Button
@@ -1403,7 +1403,7 @@ export function ExamsPage() {
                       const file = event.target.files?.[0] ?? null;
                       setEditQuestionChoiceImageFiles((prev) => prev.map((f, i) => (i === index ? file : f)));
                     }}
-                    className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+                    className="block w-full text-xs text-foreground-muted file:me-2 file:rounded file:border-0 file:bg-surface-muted file:px-2 file:py-1 file:text-xs"
                   />
                   {editQuestionChoiceImageFiles[index] ? (
                     <span className="text-xs text-foreground-subtle">{editQuestionChoiceImageFiles[index]?.name}</span>

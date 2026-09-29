@@ -6,7 +6,7 @@ import { SEO, SITE_URL } from '../../lib/seo';
 
 export function PrivacyPage() {
   return (
-    <div className="min-h-screen" dir="rtl">
+    <div className="min-h-screen bg-background text-foreground" dir="rtl">
       <SeoHead
         title={SEO.privacy.title}
         description={SEO.privacy.description}
@@ -16,7 +16,7 @@ export function PrivacyPage() {
       />
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <Breadcrumbs items={[{ name: 'الخصوصية', url: `${SITE_URL}/privacy` }]} className="mb-6" />
-        <h1 className="font-display text-3xl font-extrabold sm:text-4xl"><span className="text-gradient">سياسة الخصوصية</span></h1>
+        <h1 className="font-display text-3xl font-extrabold text-foreground sm:text-4xl">سياسة الخصوصية</h1>
         <p className="mt-2 text-xs text-foreground-subtle">آخر تحديث: 23 أغسطس 2026 — منصة وليد عونى WALIDAWNY</p>
 
         <div className="glass-card mt-8 space-y-6 p-6 sm:p-8 text-sm leading-7 text-foreground-muted">
@@ -47,7 +47,7 @@ export function PrivacyPage() {
         </div>
 
         <div className="mt-8 flex gap-3">
-          <Link to="/terms" className="text-sm font-bold text-indigo-300 hover:text-indigo-200">الشروط والأحكام ←</Link>
+          <Link to="/terms" className="text-sm font-bold text-primary-strong hover:underline">الشروط والأحكام ←</Link>
           <Link to="/" className="text-sm font-bold text-foreground-muted hover:text-foreground">الرئيسية ←</Link>
         </div>
       </div>

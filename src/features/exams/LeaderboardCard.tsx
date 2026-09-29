@@ -6,9 +6,9 @@ import { Skeleton } from '../../components/Skeleton';
 import type { GeneralExamLeaderboardRow } from '../../types/database';
 
 const RANK_STYLES: Record<number, string> = {
-  1: 'bg-amber-400/15 text-amber-300 border-amber-400/30',
-  2: 'bg-slate-300/10 text-slate-200 border-slate-300/25',
-  3: 'bg-orange-400/10 text-orange-300 border-orange-400/25',
+  1: 'bg-[rgba(217,167,95,0.1)] text-warning border-[rgba(217,167,95,0.3)]',
+  2: 'bg-surface-muted text-foreground-muted border-border',
+  3: 'bg-[rgba(208,138,90,0.08)] text-warning border-[rgba(208,138,90,0.25)]',
 };
 
 function formatScore(value: number | null): string {
@@ -54,12 +54,12 @@ export function LeaderboardCard({
       <ol className="flex flex-col gap-2">
         {rows.map((row) => {
           const isMe = highlightStudentId != null && row.student_id === highlightStudentId;
-          const rankStyle = RANK_STYLES[row.rank] ?? 'bg-white/4 text-foreground-muted border-white/8';
+          const rankStyle = RANK_STYLES[row.rank] ?? 'bg-surface-muted text-foreground-muted border-border-muted';
           return (
             <li
               key={row.student_id}
               className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
-                isMe ? 'border-primary/50 bg-primary/10' : 'border-white/6 bg-white/3'
+                isMe ? 'border-primary/50 bg-primary-soft/40' : 'border-border-muted bg-surface-muted'
               }`}
             >
               <span

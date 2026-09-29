@@ -79,6 +79,26 @@ describe('LandingPage', () => {
     expect(screen.getAllByRole('link', { name: 'تواصل لتفعيل الوحدة' })).toHaveLength(1);
   });
 
+  it('filters units by grade and shows the Manara band with real counts', async () => {
+    mockRpc('get_public_settings', {
+      platform_name: 'وليد عونى',
+      whatsapp_number: '01000000000',
+      whatsapp_default_message: 'مرحبًا',
+    });
+    mockRpc('get_public_unit_prices', [
+      { unit_id: 'unit-1', unit_name: 'الوحدة الأولى', grade_name: 'الصف الأول', base_price: 300, platform_fee: 50, total_price: 350 },
+      { unit_id: 'unit-2', unit_name: 'الوحدة الثانية', grade_name: 'الصف الثاني', base_price: 200, platform_fee: 50, total_price: 250 },
+    ]);
+    renderApp('/');
+
+    expect(await screen.findByRole('heading', { name: 'وحداتك كلها مدى الحياة' })).toBeInTheDocument();
+    expect(await screen.findByText('الوحدة الأولى')).toBeInTheDocument();
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.click(screen.getByTestId('landing-filter-الصف الثاني'));
+    expect(screen.getByText('الوحدة الثانية')).toBeInTheDocument();
+    expect(screen.queryByText('الوحدة الأولى')).not.toBeInTheDocument();
+  });
+
   it('shows an error state when the public settings cannot be loaded', async () => {
     mockRpcError('get_public_settings', 'connection failed');
     renderApp('/');
@@ -87,7 +107,7 @@ describe('LandingPage', () => {
   });
 
   it('redirects an authenticated student away from the landing page', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/');
 
     await waitFor(() => {

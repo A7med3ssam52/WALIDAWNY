@@ -97,14 +97,14 @@ export function StudentPresenceHistoryPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/admin/presence"
-            className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-white/10"
+            className="rounded-xl border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground shadow-subtle hover:bg-surface-muted"
           >
             ← العودة للمتواجدين
           </Link>
           {profile ? (
             <Link
               to={`/walid/students/${studentId}`}
-              className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-white/10"
+              className="rounded-xl border border-border bg-surface px-3 py-1.5 text-sm font-medium text-foreground shadow-subtle hover:bg-surface-muted"
             >
               ملف الطالب
             </Link>
@@ -189,7 +189,7 @@ export function StudentPresenceHistoryPage() {
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={() => void load(page + 1)}
-                    className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-foreground hover:bg-white/10"
+                    className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground shadow-subtle hover:bg-surface-muted"
                     disabled={rows.length < PAGE_SIZE}
                   >
                     التالي

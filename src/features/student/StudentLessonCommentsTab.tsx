@@ -145,10 +145,10 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
 
   return (
     <div className="flex flex-col gap-4" data-testid="lesson-comments-tab">
-      <Card className="conic-ring">
+      <Card>
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-300"><MessageSquareText aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent-soft text-accent-strong"><MessageSquareText aria-hidden="true" className="h-4 w-4" /></span>
             <span className="text-sm font-bold text-foreground">أضف تعليقك</span>
           </div>
           <textarea
@@ -194,8 +194,8 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
             return (
               <div
                 key={comment.id}
-                className={`group rounded-xl border p-4 backdrop-blur transition-all duration-300 hover:shadow-[0_8px_24px_-12px_rgba(2,1,10,0.5)] ${
-                  isReply ? 'ms-6 border-indigo-400/20 bg-indigo-500/10' : 'border-white/10 bg-white/5 hover:border-white/15 hover:bg-white/8'
+                className={`group rounded-xl border border-border bg-surface p-4 transition-colors ${
+                  isReply ? 'ms-6 bg-surface-muted' : 'hover:border-primary/50'
                 }`}
                 data-testid={`comment-${comment.id}`}
               >
@@ -232,7 +232,7 @@ export function StudentLessonCommentsTab({ lessonId, userId }: StudentLessonComm
                           }}
                           rows={2}
                           maxLength={500}
-                          className="w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          className="w-full rounded-lg border border-border bg-surface p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                           placeholder="اكتب ردك هنا..."
                           data-testid={`reply-input-${comment.id}`}
                         />

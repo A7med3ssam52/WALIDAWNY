@@ -6,10 +6,10 @@ import { fetchActiveAnnouncement, type Announcement, type AnnouncementVariant } 
 import { safeJsonParseObject, safeSetJson } from '../lib/safeStorage';
 
 const VARIANT_STYLES: Record<AnnouncementVariant, string> = {
-  info: 'bg-gradient-to-r from-blue-500/90 to-blue-600/90 border-blue-400/30',
-  warning: 'bg-gradient-to-r from-amber-500/90 to-amber-600/90 border-amber-400/30',
-  success: 'bg-gradient-to-r from-emerald-500/90 to-emerald-600/90 border-emerald-400/30',
-  error: 'bg-gradient-to-r from-red-500/90 to-red-600/90 border-red-400/30',
+  info: 'bg-[rgba(127,184,217,0.1)] border-[rgba(127,184,217,0.3)]',
+  warning: 'bg-[rgba(217,167,95,0.1)] border-[rgba(217,167,95,0.3)]',
+  success: 'bg-[rgba(127,191,142,0.1)] border-[rgba(127,191,142,0.3)]',
+  error: 'bg-[rgba(232,139,139,0.1)] border-[rgba(232,139,139,0.3)]',
 };
 
 const VARIANT_ICONS: Record<AnnouncementVariant, ReactElement> = {
@@ -87,16 +87,16 @@ export function AnnouncementBanner() {
     >
       <div className="pointer-events-auto mx-auto w-full max-w-5xl px-4">
         <div
-          className={`relative flex items-center gap-3 rounded-xl border px-4 py-3 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.4)] text-white ${variantClass}`}
+          className={`relative flex items-center gap-3 rounded-xl border px-4 py-3 shadow-medium text-foreground ${variantClass}`}
           dir="rtl"
         >
-          <span className="flex-shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/15" aria-hidden="true">
+          <span className="flex-shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-surface-muted" aria-hidden="true">
             {Icon}
           </span>
 
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm leading-snug">{announcement.title}</p>
-            <p className="mt-0.5 text-sm text-white/90 leading-snug">{announcement.body}</p>
+            <p className="mt-0.5 text-sm text-foreground-muted leading-snug">{announcement.body}</p>
           </div>
 
           {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
@@ -104,7 +104,7 @@ export function AnnouncementBanner() {
               href={announcement.link_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               {announcement.link_label}
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -115,18 +115,12 @@ export function AnnouncementBanner() {
             <button
               type="button"
               onClick={handleDismiss}
-              className="flex-shrink-0 rounded-lg p-1.5 text-white/70 transition-colors hover:bg-white/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              className="flex-shrink-0 rounded-lg p-1.5 text-foreground-subtle transition-colors hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               aria-label="إخفاء الإعلان"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
-
-          <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 hidden md:block">
-            <svg className="h-3 w-3 text-current" fill="currentColor" viewBox="0 0 10 6" aria-hidden="true">
-              <path d="M5 0L10 6H0Z" />
-            </svg>
-          </span>
         </div>
       </div>
     </div>

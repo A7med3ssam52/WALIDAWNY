@@ -30,24 +30,24 @@ const typeConfig: Record<
   { className: string; role: 'status' | 'alert'; icon: ReactNode }
 > = {
   success: {
-    className: 'glass-tile-success text-emerald-200',
+    className: 'border-emerald-600/25',
     role: 'status',
-    icon: <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-300" />,
+    icon: <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" />,
   },
   info: {
-    className: 'glass-tile-info text-sky-200',
+    className: 'border-sky-600/25',
     role: 'status',
-    icon: <Info aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-300" />,
+    icon: <Info aria-hidden="true" className="h-4 w-4 shrink-0 text-sky-600" />,
   },
   warning: {
-    className: 'glass-tile-warning text-amber-200',
+    className: 'border-amber-600/30',
     role: 'status',
-    icon: <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-300" />,
+    icon: <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />,
   },
   error: {
-    className: 'glass-tile-error text-rose-200',
+    className: 'border-error/30',
     role: 'alert',
-    icon: <XCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-rose-300" />,
+    icon: <XCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-error" />,
   },
 };
 
@@ -98,7 +98,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <div
               key={item.id}
               role={config.role}
-              className={`pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-xl border bg-[rgba(16,13,40,0.92)] px-3 py-2.5 text-sm font-medium shadow-[0_24px_60px_-16px_rgba(2,1,10,0.9),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl animate-slide-in-top ${config.className}`}
+              className={`pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm font-medium text-foreground shadow-elevated animate-slide-in-top ${config.className}`}
             >
               {config.icon}
               <span className="flex-1">{item.message}</span>
@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 type="button"
                 aria-label="إغلاق الإشعار"
                 onClick={() => dismiss(item.id)}
-                className="rounded-sm p-3.5 text-foreground-subtle transition-colors hover:bg-foreground/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                className="rounded-lg p-3.5 text-foreground-subtle transition-colors hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
               >
                 <X aria-hidden="true" className="h-4 w-4" />
               </button>

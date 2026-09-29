@@ -6,8 +6,7 @@ interface TableProps extends HTMLAttributes<HTMLTableElement> {
 
 export function Table({ dense = false, className, children, ...rest }: TableProps) {
   return (
-    <div className="glass-card spotlight-card relative overflow-hidden p-0">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flat-card glass-card overflow-hidden p-0">
       <div className="overflow-x-auto">
         <table
           data-density={dense ? 'dense' : 'normal'}
@@ -26,7 +25,7 @@ type TableHeadProps = HTMLAttributes<HTMLTableSectionElement>;
 export function TableHead({ className, children, ...rest }: TableHeadProps) {
   return (
     <thead
-      className={`border-b border-white/8 bg-gradient-to-r from-white/5 via-white/3 to-transparent text-start backdrop-blur ${className ?? ''}`}
+      className={`border-b border-border bg-surface-muted text-start ${className ?? ''}`}
       {...rest}
     >
       {children}
@@ -49,7 +48,7 @@ type TableRowProps = HTMLAttributes<HTMLTableRowElement>;
 export function TableRow({ className, children, ...rest }: TableRowProps) {
   return (
     <tr
-      className={`group/row border-b border-white/5 transition-all duration-200 last:border-0 hover:bg-gradient-to-r hover:from-indigo-500/[0.07] hover:via-purple-500/[0.04] hover:to-transparent hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${className ?? ''}`}
+      className={`group/row border-b border-border-muted transition-colors duration-200 last:border-0 hover:bg-surface-muted ${className ?? ''}`}
       {...rest}
     >
       {children}

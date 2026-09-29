@@ -12,7 +12,7 @@ import { renderApp } from '../test/utils';
 describe('SuggestionsCta', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     try {
       localStorage.removeItem('suggestions-submitted');
     } catch {

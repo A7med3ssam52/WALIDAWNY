@@ -1,10 +1,11 @@
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   expectRpcCall,
   mockRpcError,
+  mockState,
   resetMockState,
   setAuthenticatedStudent,
 } from '../../test/supabase-mock';
@@ -31,7 +32,8 @@ describe('StudentProfilePage', () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByText('student@example.com')).toBeInTheDocument();
+      // Shown both on the page and inside the completion modal.
+      expect(screen.getAllByText('student@example.com')).toHaveLength(2);
     });
     expect(screen.queryByLabelText('البريد الإلكتروني')).not.toBeInTheDocument();
     expect(screen.getByText(/لا يمكن تعديله/)).toBeInTheDocument();
@@ -79,8 +81,7 @@ describe('StudentProfilePage', () => {
     expect(expectRpcCall('update_own_profile')).toBeUndefined();
   });
 
-  it('shows an error toast when the profile save fails due to a network error', async () => {
-    mockRpcError('update_own_profile', 'network error');
+  it('shows an error toast when the profile save fails due to a network error', async () => {    mockRpcError('update_own_profile', 'network error');
     const user = userEvent.setup();
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
@@ -97,5 +98,73 @@ describe('StudentProfilePage', () => {
       await screen.findByText('تعذر تحديث البيانات. حاول مرة أخرى لاحقًا'),
     ).toBeInTheDocument();
     expect(screen.queryByText('تم تحديث بياناتك بنجاح')).not.toBeInTheDocument();
+  });
+
+  it('uploads a new avatar and shows it in the profile and the header', async () => {
+    renderWithProviders(<StudentProfilePage />, '/student/profile');
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+    });
+    expect(screen.queryByTestId('avatar-image')).not.toBeInTheDocument();
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('اختيار صورة شخصية'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(expectRpcCall('set_my_avatar')).toEqual({ p_path: 'user-test-1/avatar.jpg' });
+    }, { timeout: 10000 });
+    expect(await screen.findByText('تم تحديث صورتك الشخصية بنجاح')).toBeInTheDocument();
+    // Profile preview + dashboard header both render the photo.
+    await waitFor(
+      () => {
+        expect(screen.getAllByTestId('avatar-image')).toHaveLength(2);
+      },
+      { timeout: 10000 },
+    );
+  });
+
+  it('rejects an invalid avatar file without uploading', async () => {
+    renderWithProviders(<StudentProfilePage />, '/student/profile');
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+    });
+
+    const file = new File([new Uint8Array([1])], 'photo.gif', { type: 'image/gif' });
+    fireEvent.change(screen.getByLabelText('اختيار صورة شخصية'), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText('الصورة يجب أن تكون JPG أو PNG أو WEBP')).toBeInTheDocument();
+    expect(expectRpcCall('set_my_avatar')).toBeUndefined();
+  });
+
+  it('removes the avatar and falls back to the initial', async () => {
+    const existing = mockState.profiles.find((row) => row.id === 'user-test-1');
+    if (existing) {
+      existing.avatar_path = 'user-test-1/avatar.jpg';
+    }
+    const { getRpcCalls } = await import('../../test/supabase-mock');
+    renderWithProviders(<StudentProfilePage />, '/student/profile');
+
+    await waitFor(
+      () => {
+        expect(screen.getAllByTestId('avatar-image')).toHaveLength(2);
+      },
+      { timeout: 10000 },
+    );
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'حذف الصورة' }));
+
+    await waitFor(() => {
+      expect(getRpcCalls().some((call) => call.fn === 'remove_my_avatar')).toBe(true);
+    });
+    expect(await screen.findByText('تم حذف صورتك الشخصية')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('avatar-image')).not.toBeInTheDocument();
+    });
   });
 });

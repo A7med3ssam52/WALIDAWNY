@@ -297,7 +297,7 @@ export function GeneralExamTakePage() {
             </ul>
             <div className="mt-4">
               {timeState === 'upcoming' ? (
-                <p className="text-sm font-bold text-sky-300">
+                <p className="text-sm font-bold text-info">
                   الامتحان يبدأ {exam.starts_at ? formatDateTime(exam.starts_at) : ''} — عُد في الميعاد.
                 </p>
               ) : timeState === 'ended' ? (
@@ -330,10 +330,10 @@ export function GeneralExamTakePage() {
             <div
               role="timer"
               aria-live="polite"
-              className={`sticky top-0 z-10 flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 backdrop-blur-xl ${
+              className={`sticky top-0 z-10 flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 ${
                 remainingMs < 5 * 60_000
-                  ? 'border-rose-400/40 bg-rose-500/15'
-                  : 'border-white/10 bg-[rgba(8,6,22,0.85)]'
+                  ? 'border-[rgba(232,139,139,0.35)] bg-[rgba(232,139,139,0.06)]'
+                  : 'border-border bg-surface'
               }`}
             >
               <span className="flex items-center gap-2 text-sm font-bold text-foreground">
@@ -357,7 +357,7 @@ export function GeneralExamTakePage() {
                     <img
                       src={imageUrls[question.id].promptUrl ?? ''}
                       alt="صورة السؤال"
-                      className="mt-2 max-h-56 w-full rounded-xl border border-white/10 object-contain"
+                      className="mt-2 max-h-56 w-full rounded-xl border border-border object-contain"
                       loading="lazy"
                     />
                   ) : null}
@@ -372,16 +372,16 @@ export function GeneralExamTakePage() {
                             type="button"
                             onClick={() => setAnswers((prev) => ({ ...prev, [question.id]: choiceIndex }))}
                             aria-pressed={selected}
-                            className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-start text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                            className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-start text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                               selected
-                                ? 'border-primary/60 bg-primary/15 text-white'
-                                : 'border-white/8 bg-white/3 text-foreground-muted hover:border-white/20 hover:text-foreground'
+                                ? 'border-primary/60 bg-primary/15 text-foreground'
+                                : 'border-border bg-surface text-foreground-muted hover:border-primary/50 hover:text-foreground'
                             }`}
                           >
                             <span
                               aria-hidden="true"
                               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-black ${
-                                selected ? 'bg-primary text-white' : 'bg-white/8 text-foreground-subtle'
+                                selected ? 'bg-primary text-white' : 'bg-surface-muted text-foreground-subtle'
                               }`}
                             >
                               {CHOICE_LABELS[choiceIndex]}
@@ -401,14 +401,14 @@ export function GeneralExamTakePage() {
                       onChange={(event) => setEssayTexts((prev) => ({ ...prev, [question.id]: event.target.value }))}
                       rows={4}
                       placeholder="اكتب إجابتك هنا"
-                      className="glass-input mt-3 w-full rounded-xl border border-white/10 bg-white/4 px-3 py-3 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                      className="glass-input mt-3 w-full rounded-xl border border-border bg-surface px-3 py-3 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                     />
                   )}
                 </Card>
               </li>
             ))}
           </ol>
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/8 bg-[rgba(8,6,22,0.92)] p-3 backdrop-blur-xl lg:bottom-auto lg:sticky lg:rounded-2xl lg:border">
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface p-3 lg:bottom-auto lg:sticky lg:rounded-2xl lg:border">
             <Button size="lg" className="w-full" loading={submitting} onClick={() => void handleSubmit(false)}>
               إرسال الإجابات
             </Button>
@@ -431,7 +431,7 @@ export function GeneralExamTakePage() {
                 aria-selected={resultTab === item.id}
                 type="button"
                 onClick={() => setResultTab(item.id)}
-                className={`rounded-xl px-3 py-3 text-sm font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                className={`rounded-xl px-3 py-3 text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                   resultTab === item.id
                     ? 'nav-pill-active text-white'
                     : 'glass-card text-foreground-muted hover:text-foreground'
@@ -450,7 +450,7 @@ export function GeneralExamTakePage() {
               <div className="flex items-center gap-3">
                 <span
                   aria-hidden="true"
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300"
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[rgba(127,191,142,0.1)] text-success"
                 >
                   <CheckCircle2 className="h-6 w-6" />
                 </span>
@@ -519,9 +519,9 @@ export function GeneralExamTakePage() {
                                 key={i}
                                 className={`rounded-lg px-2 py-1.5 ${
                                   isCorrect
-                                    ? 'bg-emerald-400/10 font-bold text-emerald-300'
+                                    ? 'bg-[rgba(127,191,142,0.08)] font-bold text-success'
                                     : isMine
-                                      ? 'bg-rose-400/10 text-rose-300'
+                                      ? 'bg-[rgba(232,139,139,0.06)] text-error'
                                       : 'text-foreground-muted'
                                 }`}
                               >
@@ -534,7 +534,7 @@ export function GeneralExamTakePage() {
                         </ul>
                       ) : (
                         <div className="mt-2 text-sm">
-                          <p className="whitespace-pre-wrap rounded-lg bg-white/4 px-2 py-1.5 text-foreground-muted">
+                          <p className="whitespace-pre-wrap rounded-lg bg-surface-muted px-2 py-1.5 text-foreground-muted">
                             إجابتك: {row.my_answer_text || '—'}
                           </p>
                           <p className="mt-1 font-bold text-foreground">

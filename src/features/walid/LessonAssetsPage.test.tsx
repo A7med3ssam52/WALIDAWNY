@@ -1,4 +1,4 @@
-﻿import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -789,7 +789,7 @@ describe('LessonAssetsPage — video section', () => {
 
   it('blocks students via the route guard', async () => {
     resetMockState();
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/walid/lessons/lesson-1');
 
     expect(await screen.findByRole('heading', { name: 'لوحة الطالب' })).toBeInTheDocument();

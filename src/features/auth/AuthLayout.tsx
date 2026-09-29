@@ -28,17 +28,11 @@ function BrandMark({ className }: { className?: string }) {
 
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div dir="rtl" className="flex min-h-screen flex-col">
+    <div dir="rtl" className="flex min-h-screen flex-col bg-background">
       <h1 className="sr-only">وليد عونى</h1>
       <div className="mx-auto w-full max-w-md px-4 pt-6 sm:px-6 lg:hidden">
         <div className="flex items-center justify-center gap-2.5">
-          <span className="relative inline-flex">
-            <span
-              aria-hidden="true"
-              className="conic-ring absolute -inset-1 rounded-2xl opacity-80"
-            />
-            <BrandMark className="relative h-10 w-10" />
-          </span>
+          <BrandMark className="h-10 w-10" />
           <span className="font-display text-base font-bold text-foreground">
             وليد عونى
           </span>
@@ -46,24 +40,14 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       <div className="flex flex-1">
-        <aside className="relative hidden w-[45%] max-w-xl flex-col justify-between overflow-hidden border-e border-white/8 p-10 lg:flex bg-gradient-to-b from-white/[0.04] to-transparent backdrop-blur">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0"
-          >
-            <div className="absolute -start-24 -top-24 h-80 w-80 animate-orb rounded-full bg-indigo-600/30 blur-3xl" />
-            <div className="absolute -bottom-32 -end-20 h-96 w-96 animate-orb rounded-full bg-fuchsia-600/25 blur-3xl [animation-delay:2s]" />
-            <div className="absolute start-1/3 top-1/2 h-72 w-72 animate-pulse-soft rounded-full bg-cyan-500/15 blur-3xl" />
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-          </div>
-
+        <aside className="health-sidebar relative m-4 hidden w-[45%] max-w-xl flex-col justify-between overflow-hidden rounded-[20px] p-10 lg:flex">
           <div className="relative flex items-center gap-3">
             <BrandMark className="h-11 w-11" />
             <div>
-              <span className="block font-display text-lg font-bold text-foreground">
+              <span className="block font-display text-lg font-bold text-white">
                 وليد عونى
               </span>
-              <span className="mt-0.5 block text-xs text-foreground-subtle">
+              <span className="health-sidebar-muted mt-0.5 block text-xs">
                 تعلّم. تابع. تواصل.
               </span>
             </div>
@@ -71,16 +55,16 @@ export function AuthLayout({ children }: { children: ReactNode }) {
 
           <ul className="relative flex flex-col gap-6">
             {valueProps.map((item) => (
-              <li key={item.title} className="group flex items-start gap-3">
+              <li key={item.title} className="flex items-start gap-3">
                 <span
                   aria-hidden="true"
-                  className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-fuchsia-500/25 text-indigo-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_24px_-6px_rgba(129,140,248,0.6)] transition-transform duration-300 group-hover:scale-110"
+                  className="health-lime-card mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
                 >
                   <item.icon className="h-5 w-5" />
                 </span>
                 <span>
-                  <span className="block text-sm font-bold text-foreground">{item.title}</span>
-                  <span className="mt-1 block text-sm leading-6 text-foreground-muted">
+                  <span className="block text-sm font-bold text-white">{item.title}</span>
+                  <span className="health-sidebar-muted mt-1 block text-sm leading-6">
                     {item.description}
                   </span>
                 </span>
@@ -89,28 +73,18 @@ export function AuthLayout({ children }: { children: ReactNode }) {
           </ul>
 
           <div className="relative">
-            <span className="glass-soft inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold text-indigo-300 shadow-[0_0_24px_-8px_rgba(129,140,248,0.8)]">
-              <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-fuchsia-300" />
+            <span className="health-lime-card inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold">
+              <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
               تجربة تعليمية متكاملة
             </span>
-            <p className="mt-4 text-xs text-foreground-subtle">
+            <p className="health-sidebar-muted mt-4 text-xs">
               © {new Date().getFullYear()} وليد عونى. جميع الحقوق محفوظة
             </p>
           </div>
         </aside>
 
-        <main className="relative flex flex-1 items-center justify-center overflow-hidden p-4 sm:p-8">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0"
-          >
-            <div className="conic-ring absolute start-1/2 top-6 h-72 w-72 -translate-x-1/2 rounded-full opacity-40 blur-[1px]" />
-            <div className="absolute start-10 top-10 h-56 w-56 animate-orb rounded-full bg-purple-600/15 blur-3xl" />
-            <div className="absolute bottom-10 end-10 h-64 w-64 animate-orb rounded-full bg-indigo-600/15 blur-3xl [animation-delay:3s]" />
-            <div className="absolute end-1/4 top-1/3 h-2 w-2 animate-particle rounded-full bg-indigo-300/60 shadow-[0_0_10px_2px_rgba(129,140,248,0.5)]" />
-            <div className="absolute start-1/4 bottom-1/4 h-1.5 w-1.5 animate-particle rounded-full bg-fuchsia-300/60 shadow-[0_0_10px_2px_rgba(217,70,239,0.5)] [animation-delay:1s]" />
-          </div>
-          <div className="relative w-full max-w-md animate-scale-in rise">{children}</div>
+        <main className="relative flex flex-1 items-center justify-center p-4 sm:p-8">
+          <div className="health-shell w-full max-w-md rounded-[20px] border border-border p-4 animate-scale-in sm:p-6">{children}</div>
         </main>
       </div>
     </div>

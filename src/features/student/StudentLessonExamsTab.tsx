@@ -219,11 +219,11 @@ export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLess
                   const promptUrl = imageUrlsByExam[exam.id]?.[question.id]?.promptUrl ?? null;
                   const choiceUrls = imageUrlsByExam[exam.id]?.[question.id]?.choiceUrls ?? null;
                   return (
-                    <div
-                      key={question.id}
-                      className="glass-card rounded-xl border-white/10 p-4"
-                      data-testid={`exam-question-${question.id}`}
-                    >
+                      <div
+                        key={question.id}
+                        className="glass-card rounded-xl p-4"
+                        data-testid={`exam-question-${question.id}`}
+                      >
                       <p className="font-medium text-foreground">
                         {questionIndex + 1}. {question.prompt}
                       </p>
@@ -233,7 +233,7 @@ export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLess
                           alt={`صورة السؤال ${questionIndex + 1}`}
                           loading="lazy"
                           data-testid={`exam-question-prompt-image-${question.id}`}
-                          className="mt-3 max-h-64 w-full max-w-md rounded-lg border border-white/10 object-contain"
+                          className="mt-3 max-h-64 w-full max-w-md rounded-lg border border-border object-contain"
                         />
                       ) : null}
                       {question.type === 'mcq' ? (
@@ -248,7 +248,7 @@ export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLess
                                 className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                                   answers[question.id] === choiceIndex
                                     ? 'border-primary/50 bg-primary/10 text-foreground'
-                                    : 'border-white/10 bg-white/4 text-foreground-muted hover:border-white/20 hover:text-foreground'
+                                    : 'border-border bg-surface text-foreground-muted hover:border-primary/50 hover:text-foreground'
                                 }`}
                               >
                                 <input
@@ -268,7 +268,7 @@ export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLess
                                     alt={`صورة الخيار ${choiceIndex + 1}`}
                                     loading="lazy"
                                     data-testid={`exam-choice-image-${question.id}-${choiceIndex}`}
-                                    className="h-16 w-16 shrink-0 rounded-md border border-white/10 object-cover"
+                                    className="h-16 w-16 shrink-0 rounded-md border border-border object-cover"
                                   />
                                 ) : null}
                               </label>
@@ -286,7 +286,7 @@ export function StudentLessonExamsTab({ lessonId, onExamSubmitted }: StudentLess
                             }))
                           }
                           rows={3}
-                          className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          className="mt-3 w-full rounded-lg border border-border bg-surface p-3 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                           placeholder="اكتب إجابتك هنا..."
                         />
                       )}

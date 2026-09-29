@@ -224,7 +224,7 @@ export function UnitsPage() {
               </Link>
             </div>
             {progressTotal > 0 ? (
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-500"
                   style={{
@@ -308,7 +308,7 @@ export function UnitsPage() {
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h2 className="font-display text-lg font-bold text-foreground">
                     وحدات مجانية
-                    <span className="ms-2 text-sm font-normal text-emerald-300">مجاني — متاحة بدون كود</span>
+                    <span className="ms-2 text-sm font-normal text-success">مجاني — متاحة بدون كود</span>
                     <span className="ms-2 text-sm font-normal text-foreground-muted">({freeUnits.length})</span>
                   </h2>
                 </div>
@@ -366,7 +366,7 @@ export function UnitsPage() {
             ) : null}
 
             {/* Redeem Code Section */}
-            <GridCard className="glass-accent-border">
+            <GridCard>
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
                   <KeyRound className="h-5 w-5" />
@@ -377,7 +377,7 @@ export function UnitsPage() {
                 </div>
               </div>
 
-              <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.04] p-4">
+              <div className="mb-5 rounded-xl border border-border bg-surface-muted p-4">
                 <h4 className="flex items-center gap-2 font-display text-sm font-bold text-foreground">
                   <Receipt className="h-4 w-4 text-primary" />
                   طريقة الحصول على كود التفعيل
@@ -388,7 +388,7 @@ export function UnitsPage() {
                   <span className="font-mono font-semibold text-foreground">WLDN-XXXX</span> مباشرة.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
+                  <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
                     <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
                       <Wallet className="h-3.5 w-3.5" />
                       تحويل على المحفظة
@@ -407,7 +407,7 @@ export function UnitsPage() {
                             window.setTimeout(() => setWalletCopied(false), 2000);
                           }
                         }}
-                        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/12 bg-white/5 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                        className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                       >
                         {walletCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                         {walletCopied ? 'تم النسخ' : 'نسخ'}
@@ -421,7 +421,7 @@ export function UnitsPage() {
                       {WALLET_NUMBER}
                     </a>
                   </div>
-                  <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
+                  <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
                     <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground-muted">
                       <CreditCard className="h-3.5 w-3.5" />
                       تحويل عبر إنستاباي
@@ -440,15 +440,15 @@ export function UnitsPage() {
                       href={INSTAPAY_URL}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex w-fit items-center gap-1 rounded-md border border-white/12 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-white/10"
+                      className="inline-flex w-fit items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       فتح رابط إنستاباي
                     </a>
                   </div>
                 </div>
-                <div className="mt-4 flex flex-col gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="flex items-center gap-2 text-sm font-medium text-emerald-100">
+                <div className="mt-4 flex flex-col gap-3 rounded-lg border border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.08)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="flex items-center gap-2 text-sm font-medium text-success">
                     <Send className="h-4 w-4 shrink-0" />
                     بعد التحويل، أرسل الإيصال على واتساب ليصلك الكود
                   </p>

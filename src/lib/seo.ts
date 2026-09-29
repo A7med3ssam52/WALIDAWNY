@@ -14,7 +14,7 @@ export const OG_IMAGE = `${SITE_URL}/og-image.jpg`;
 export const OG_IMAGE_WIDTH = 1200;
 export const OG_IMAGE_HEIGHT = 630;
 export const TWITTER_CARD = 'summary_large_image' as const;
-export const THEME_COLOR = '#070513';
+export const THEME_COLOR = '#14171c';
 
 // Central SEO config per public route
 export const SEO = {

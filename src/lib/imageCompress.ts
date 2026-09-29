@@ -1,8 +1,12 @@
-/** Client-side image validation + compression for the suggestions inbox (0075). */
+/** Client-side image validation + compression for uploads (suggestions inbox 0075, student avatars 0082). */
 
 export const SUGGESTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const SUGGESTION_IMAGE_MAX_DIMENSION = 1600;
 export const SUGGESTION_IMAGE_QUALITY = 0.82;
+
+export const AVATAR_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const AVATAR_IMAGE_MAX_DIMENSION = 512;
+export const AVATAR_IMAGE_QUALITY = 0.8;
 
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -42,6 +46,32 @@ function loadImage(url: string, timeoutMs = 3000): Promise<HTMLImageElement> {
  * canvas work (or anything throws) so submit never breaks on upload.
  */
 export async function compressSuggestionImage(file: File): Promise<Blob> {
+  return compressImage(file, SUGGESTION_IMAGE_MAX_DIMENSION, SUGGESTION_IMAGE_QUALITY);
+}
+
+/** Arabic validation message for avatar files, or null when acceptable. */
+export function validateAvatarImage(file: File): string | null {
+  if (!SUPPORTED_TYPES.has(file.type)) {
+    return 'الصورة يجب أن تكون JPG أو PNG أو WEBP';
+  }
+  if (file.size <= 0) {
+    return 'ملف الصورة فارغ';
+  }
+  if (file.size > AVATAR_IMAGE_MAX_BYTES) {
+    return 'حجم الصورة كبير — الحد الأقصى 2MB';
+  }
+  return null;
+}
+
+/**
+ * Downscales to {@link AVATAR_IMAGE_MAX_DIMENSION} and re-encodes as
+ * JPEG. Falls back to the original file on any canvas failure.
+ */
+export async function compressAvatarImage(file: File): Promise<Blob> {
+  return compressImage(file, AVATAR_IMAGE_MAX_DIMENSION, AVATAR_IMAGE_QUALITY);
+}
+
+async function compressImage(file: File, maxDimension: number, quality: number): Promise<Blob> {
   try {
     if (typeof document === 'undefined') return file;
     const url = URL.createObjectURL(file);
@@ -49,8 +79,8 @@ export async function compressSuggestionImage(file: File): Promise<Blob> {
       const img = await loadImage(url);
       const scale = Math.min(
         1,
-        SUGGESTION_IMAGE_MAX_DIMENSION / Math.max(1, img.naturalWidth || img.width),
-        SUGGESTION_IMAGE_MAX_DIMENSION / Math.max(1, img.naturalHeight || img.height),
+        maxDimension / Math.max(1, img.naturalWidth || img.width),
+        maxDimension / Math.max(1, img.naturalHeight || img.height),
       );
       const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
       const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
@@ -61,7 +91,7 @@ export async function compressSuggestionImage(file: File): Promise<Blob> {
       if (!ctx) return file;
       ctx.drawImage(img, 0, 0, width, height);
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob((b) => resolve(b), 'image/jpeg', SUGGESTION_IMAGE_QUALITY),
+        canvas.toBlob((b) => resolve(b), 'image/jpeg', quality),
       );
       return blob ?? file;
     } finally {

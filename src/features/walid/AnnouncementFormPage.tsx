@@ -431,7 +431,7 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
   const Icon = variantIcons[announcement.variant] ?? variantIcons.info;
 
   return (
-    <div className="relative flex min-h-[320px] items-center justify-center rounded-xl bg-black/50 p-4 backdrop-blur-sm" dir="rtl">
+    <div className="relative flex min-h-[320px] items-center justify-center rounded-xl bg-black/50 p-4" dir="rtl">
       <div className={`relative w-full max-w-lg rounded-2xl border p-6 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.6)] text-white bg-gradient-to-r ${style}`}>
         {announcement.dismissible && (
           <span className="absolute left-3 top-3 rounded-lg p-1.5 text-white/70" aria-hidden="true">
@@ -447,7 +447,7 @@ function AnnouncementPreview({ announcement }: { announcement: Announcement }) {
           <p className="mt-2 text-sm leading-6 text-white/90 whitespace-pre-wrap">{announcement.body}</p>
 
           {announcement.link_url && announcement.link_label && /^https:\/\//.test(announcement.link_url) && (
-            <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-gray-900 shadow-lg">
+            <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-surface px-5 py-2.5 text-sm font-bold text-foreground shadow-lg">
               {announcement.link_label}
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

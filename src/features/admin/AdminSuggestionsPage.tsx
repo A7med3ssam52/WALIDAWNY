@@ -110,7 +110,7 @@ interface SuggestionCardProps {
 function SuggestionCard({ row, isNew, statusBusy, onStatusChange, onDelete }: SuggestionCardProps) {
   return (
     <article
-      className={`glass-card flex flex-col gap-3 p-4 sm:p-5 ${isNew ? 'border-emerald-400/30 bg-emerald-500/[0.05]' : ''}`}
+      className={`glass-card flex flex-col gap-3 p-4 sm:p-5 ${isNew ? 'border-[rgba(127,191,142,0.3)] bg-[rgba(127,191,142,0.06)]' : ''}`}
       data-testid={`suggestion-card-${row.id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -124,10 +124,10 @@ function SuggestionCard({ row, isNew, statusBusy, onStatusChange, onDelete }: Su
         </span>
       </div>
 
-      <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.03] px-3 py-2">
+      <div className="flex items-center gap-2.5 rounded-xl bg-surface-muted px-3 py-2">
         <span
           aria-hidden="true"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 text-sm font-bold text-indigo-200"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[rgba(147,184,132,0.22)] bg-[rgba(147,184,132,0.12)] text-sm font-bold text-primary-strong"
         >
           {(row.student_name || '؟').trim().charAt(0)}
         </span>
@@ -146,7 +146,7 @@ function SuggestionCard({ row, isNew, statusBusy, onStatusChange, onDelete }: Su
         <SuggestionImageThumb path={row.image_path} title={row.title} />
       ) : null}
 
-      <div className="flex items-center gap-2 border-t border-white/5 pt-3">
+      <div className="flex items-center gap-2 border-t border-border-muted pt-3">
         <div className="min-w-0 flex-1">
           <StatusSelect
             row={row}
@@ -445,7 +445,7 @@ export function AdminSuggestionsPage() {
                   <TableRow
                     key={row.id}
                     data-testid={`suggestion-row-${row.id}`}
-                    className={isNewRow(row) ? 'bg-emerald-500/[0.06]' : undefined}
+                    className={isNewRow(row) ? 'bg-[rgba(127,191,142,0.06)]' : undefined}
                   >
                     <TableCell label="الطالب">
                       <p className="font-bold text-foreground">{row.student_name || '—'}</p>

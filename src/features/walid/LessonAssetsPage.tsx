@@ -925,7 +925,7 @@ export function LessonAssetsPage() {
       actions={
         <Link
           to="/walid/curriculum"
-          className="glass-soft inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-secondary-foreground transition-colors hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-subtle transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
         >
           <DirectionalArrow direction="back" />
           العودة إلى المنهج
@@ -1008,7 +1008,7 @@ export function LessonAssetsPage() {
                       <li
                         key={video.id}
                         data-testid={`video-row-${video.id}`}
-                        className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"
+                        className="flex border border-border bg-surface-muted flex-wrap items-center justify-between gap-3 rounded-lg p-3"
                       >
                         <div className="flex min-w-0 items-start gap-3">
                           {isBunnyReady ? (
@@ -1149,7 +1149,7 @@ export function LessonAssetsPage() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
+                  <div className="flex flex-col gap-2 border-t border-border pt-3">
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex min-w-56 flex-1 flex-col gap-1">
                         <label
@@ -1166,7 +1166,7 @@ export function LessonAssetsPage() {
                           placeholder="https://www.youtube.com/watch?v=..."
                           value={youtubeUrl}
                           onChange={(event) => setYoutubeUrl(event.target.value)}
-                          className="block w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
+                          className="block w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
                         />
                       </div>
                       <div className="flex min-w-56 flex-1 flex-col gap-1">
@@ -1183,7 +1183,7 @@ export function LessonAssetsPage() {
                           placeholder="عنوان الفيديو"
                           value={youtubeTitle}
                           onChange={(event) => setYoutubeTitle(event.target.value)}
-                          className="block w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
+                          className="block w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle focus:border-primary-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong/40"
                         />
                       </div>
                       <Button
@@ -1234,7 +1234,7 @@ export function LessonAssetsPage() {
                 ref={pdfFileInputRef}
                 data-testid="pdf-upload-input"
                 onChange={(event) => handleFileChange(event)}
-                className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] file:transition-[filter] hover:file:brightness-110"
+                className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-primary-strong file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-subtle file:transition-colors"
               />
             </div>
             {uploadError ? (
@@ -1302,7 +1302,7 @@ export function LessonAssetsPage() {
                   <li
                     key={comment.id}
                     data-testid={`staff-comment-${comment.id}`}
-                    className={`glass-soft flex flex-wrap items-start justify-between gap-3 rounded-lg p-3 ${
+                    className={`flex border border-border bg-surface-muted flex-wrap items-start justify-between gap-3 rounded-lg p-3 ${
                       isReply ? 'ms-6 border-primary/15 bg-primary/5' : ''
                     }`}
                   >
@@ -1329,7 +1329,7 @@ export function LessonAssetsPage() {
                       icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
                       onClick={() => void handleDeleteComment(comment)}
                       disabled={isDeleting || comment.status === 'removed'}
-                      className="shrink-0 text-error hover:bg-rose-500/10 hover:text-error"
+                      className="shrink-0 text-error hover:bg-surface-muted hover:text-error"
                     >
                       {isDeleting ? 'جاري الحذف...' : 'حذف'}
                     </Button>
@@ -1384,7 +1384,7 @@ export function LessonAssetsPage() {
                     <div
                       key={board.id}
                       data-testid={`board-card-${board.id}`}
-                      className="glass-soft flex flex-col overflow-hidden rounded-lg"
+                      className="flex border border-border bg-surface-muted flex-col overflow-hidden rounded-lg"
                     >
                       <button
                         type="button"
@@ -1404,7 +1404,7 @@ export function LessonAssetsPage() {
                         ) : (
                           <span
                             data-testid={`board-img-${board.id}`}
-                            className="flex h-28 w-full items-center justify-center rounded-t-lg bg-white/5"
+                            className="flex h-28 w-full items-center justify-center rounded-t-lg bg-surface-muted"
                             aria-hidden="true"
                           >
                             <ImageIcon className="h-8 w-8 text-foreground-subtle" />
@@ -1495,7 +1495,7 @@ export function LessonAssetsPage() {
                     aria-label="اختيار صورة السبورة"
                     data-testid="board-upload-input"
                     onChange={handleBoardFileChange}
-                    className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-gradient-to-br file:from-primary file:to-accent file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] file:transition-[filter] hover:file:brightness-110"
+                    className="block w-full max-w-md text-sm text-foreground-muted file:me-3 file:rounded-md file:border-0 file:bg-primary-strong file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground file:shadow-subtle file:transition-colors"
                   />
                 </div>
                 {boardUploadError ? (
@@ -1545,7 +1545,7 @@ export function LessonAssetsPage() {
                 <li
                   key={pdf.id}
                   data-testid={`pdf-row-${pdf.id}`}
-                  className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"
+                  className="flex border border-border bg-surface-muted flex-wrap items-center justify-between gap-3 rounded-lg p-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground" dir="rtl">
@@ -1621,7 +1621,7 @@ export function LessonAssetsPage() {
               {preview.error}
             </p>
           ) : preview?.url ? (
-            <div className="glass-card overflow-hidden rounded-2xl border-white/15 p-1.5">
+            <div className="rounded-[20px] border border-border bg-surface p-1.5 shadow-subtle">
               <VideoPlayer src={preview.url} />
             </div>
           ) : null}

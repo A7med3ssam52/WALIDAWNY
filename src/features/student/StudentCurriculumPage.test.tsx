@@ -18,7 +18,7 @@ import { renderApp } from '../../test/utils';
 
 function baseSetup() {
   resetMockState();
-  setAuthenticatedStudent({ grade_id: 'grade-1' });
+  setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
   mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
   mockState.units.push(
     makeUnit({ id: 'unit-1', grade_id: 'grade-1', name: 'الوحدة الأولى', status: 'published' }),
@@ -148,7 +148,7 @@ describe('StudentCurriculumPage', () => {
 
   it('prompts to set the grade when the student has no grade', async () => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: null });
+    setAuthenticatedStudent({ grade_id: null, avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/student/curriculum');
 
     expect(await screen.findByText(/لم يتم تحديد صفك الدراسي/)).toBeInTheDocument();

@@ -10,7 +10,7 @@ export function Spinner({ label = 'جاري التحميل' }: SpinnerProps) {
     >
       <span
         aria-hidden="true"
-        className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500/25 border-t-indigo-300 shadow-[0_0_18px_-4px_rgba(99,102,241,0.6)]"
+        className="h-6 w-6 animate-spin rounded-full border-2 border-primary/25 border-t-primary-strong"
       />
       <span className="text-sm">{label}</span>
     </div>

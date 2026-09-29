@@ -26,7 +26,7 @@ export function AdGhostButton({ label, onClose }: { label: string; onClose: () =
     <button
       type="button"
       onClick={onClose}
-      className="inline-flex h-11 items-center justify-center rounded-xl border border-white/12 bg-white/5 px-5 text-sm font-bold text-foreground-muted backdrop-blur transition-colors hover:bg-white/10 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      className="inline-flex h-11 items-center justify-center rounded-xl border border-border bg-surface-muted px-5 text-sm font-bold text-foreground-muted transition-colors hover:bg-border hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
     >
       {label}
     </button>

@@ -70,7 +70,7 @@ export function CurriculumPage() {
               isAssistant ? undefined : (
                 <Link
                   to="/walid/grades"
-                  className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-gradient-to-br from-primary to-accent px-4 text-sm font-semibold text-primary-foreground shadow-[0_8px_18px_-6px_rgba(99,102,241,0.5)] transition-[filter] hover:brightness-110"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary-strong px-4 text-sm font-semibold text-primary-foreground shadow-subtle transition-[filter]"
                 >
                   <GraduationCap aria-hidden="true" className="h-4 w-4" />
                   إدارة الصفوف
@@ -84,12 +84,12 @@ export function CurriculumPage() {
               <li
                 key={grade.id}
                 data-testid={`grade-row-${grade.id}`}
-                className="glass-soft flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 p-3 transition-all duration-200 hover:border-indigo-400/20"
+                className="flex border border-border bg-surface-muted flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3 transition-all duration-200 hover:border-border"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <span
                     aria-hidden="true"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/25 to-fuchsia-500/25 text-indigo-300"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[rgba(147,184,132,0.22)] bg-[rgba(147,184,132,0.12)] text-primary-strong"
                   >
                     <GraduationCap className="h-5 w-5" />
                   </span>

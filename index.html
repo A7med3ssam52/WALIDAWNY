@@ -16,7 +16,7 @@
     <meta name="author" content="وليد عونى" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta name="language" content="Arabic" />
-    <meta name="theme-color" content="#070513" />
+    <meta name="theme-color" content="#14171c" />
     <link rel="canonical" href="https://walidawny.com/" />
     <link rel="alternate" hreflang="ar-EG" href="https://walidawny.com/" />
     <link rel="alternate" hreflang="x-default" href="https://walidawny.com/" />
@@ -116,6 +116,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Apply saved comfort theme before React paints (avoids color flash).
+      // Any of the 6 palette ids is accepted; unknown values fall back to
+      // the 'midnight' (calm blue night) default.
+      try {
+        var savedTheme = localStorage.getItem('walidawny-theme-v2');
+        if (savedTheme && /^[a-z0-9-]+$/.test(savedTheme)) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+        } else {
+          document.documentElement.setAttribute('data-theme', 'midnight');
+        }
+        var savedMode = localStorage.getItem('walidawny-mode-v2');
+        document.documentElement.setAttribute('data-mode', savedMode === 'dark' ? 'dark' : 'light');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'midnight');
+        document.documentElement.setAttribute('data-mode', 'light');
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -127,7 +127,7 @@ function seedBasic() {
 describe('Lesson-17 progress fixes', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: 'grade-1' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
     hlsMock.handlers.length = 0;
     hlsMock.sources.length = 0;
     vi.unstubAllGlobals();

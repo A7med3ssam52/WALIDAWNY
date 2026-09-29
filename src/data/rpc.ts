@@ -2465,3 +2465,84 @@ export async function getSuggestionImageSignedUrl(path: string): Promise<string 
   }
   return data?.signedUrl ?? null;
 }
+
+const AVATAR_IMAGE_BUCKET = 'avatars';
+const AVATAR_SIGNED_URL_TTL_SECONDS = 3600;
+
+/** In-memory cache of avatar signed URLs (path -> { url, expiresAt }). */
+const avatarUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
+export function invalidateAvatarUrl(path?: string | null): void {
+  if (path) {
+    avatarUrlCache.delete(path);
+  } else {
+    avatarUrlCache.clear();
+  }
+}
+
+/** Fixed storage path for a user's avatar — one object per user, overwritten on re-upload. */
+export function avatarPathFor(userId: string): string {
+  return `${userId}/avatar.jpg`;
+}
+
+/** Direct Storage upload of a compressed avatar (0082 fixed-path INSERT/UPDATE policy). */
+export async function uploadMyAvatar(userId: string, blob: Blob): Promise<string> {
+  const path = avatarPathFor(userId);
+  const { error } = await getSupabaseClient()
+    .storage.from(AVATAR_IMAGE_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) {
+    throw error;
+  }
+  invalidateAvatarUrl(path);
+  return path;
+}
+
+/** Binds the uploaded avatar to the caller's profile (server-pinned path). */
+export async function setMyAvatar(path: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_my_avatar', { p_path: path });
+  if (error) {
+    throw error;
+  }
+  invalidateAvatarUrl(path);
+}
+
+/** Clears the avatar binding and removes the object best-effort. */
+export async function removeMyAvatar(): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('remove_my_avatar');
+  if (error) {
+    throw error;
+  }
+  invalidateAvatarUrl();
+}
+
+/**
+ * Staff bulk reminder for students without a photo.
+ * Returns the number of newly inserted notifications.
+ */
+export async function remindMissingAvatars(): Promise<number> {
+  const { data, error } = await getSupabaseClient().rpc('remind_missing_avatars');
+  if (error) {
+    throw error;
+  }
+  return Number(data ?? 0);
+}
+
+/** Cached signed read URL for an avatar (owner + staff SELECT policy). */
+export async function getAvatarSignedUrl(path: string): Promise<string | null> {
+  const cached = avatarUrlCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+  const { data, error } = await getSupabaseClient()
+    .storage.from(AVATAR_IMAGE_BUCKET)
+    .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS);
+  if (error) {
+    return null;
+  }
+  const url = data?.signedUrl ?? null;
+  if (url) {
+    avatarUrlCache.set(path, { url, expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000 });
+  }
+  return url;
+}

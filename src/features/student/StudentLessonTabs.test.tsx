@@ -78,7 +78,7 @@ function seedLessonPage() {
 describe('StudentLessonPage — exams tab', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: 'grade-1' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
     hlsMock.handlers.length = 0;
   });
 
@@ -228,7 +228,7 @@ describe('StudentLessonPage — exams tab', () => {
 describe('StudentLessonPage — comments tab', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: 'grade-1' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
     hlsMock.handlers.length = 0;
   });
 

@@ -266,7 +266,7 @@ export function GradesPage() {
                           variant="ghost"
                           icon={<Trash2 aria-hidden="true" className="h-4 w-4" />}
                           onClick={() => setDeleting({ grade })}
-                          className="text-error hover:bg-rose-500/10 hover:text-error"
+                          className="text-error hover:bg-surface-muted hover:text-error"
                         >
                           حذف
                         </Button>

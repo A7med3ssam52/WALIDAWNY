@@ -276,8 +276,8 @@ export function StudentCurriculumPage() {
                       {gradeName}
                     </p>
                     {[...unitMap.entries()].map(([unitName, lessons]) => (
-                      <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-                        <div className="px-3 py-2 bg-white/[0.03] border-b border-white/5">
+                      <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-border bg-surface-muted overflow-hidden">
+                        <div className="px-3 py-2 bg-surface border-b border-border-muted">
                           <p className="text-sm font-medium text-foreground">{unitName}</p>
                         </div>
                         <ul className="divide-y divide-border-muted">
@@ -288,7 +288,7 @@ export function StudentCurriculumPage() {
                               <li key={lesson.lesson_id}>
                                 <Link
                                   to={`/student/lessons/${lesson.lesson_id}`}
-                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                                   data-testid={`trial-lesson-${lesson.lesson_id}`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
@@ -378,7 +378,7 @@ export function StudentCurriculumPage() {
         />
 
         {/* Progress Overview */}
-        <GridCard className="glass-accent-border">
+        <GridCard>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
@@ -390,7 +390,7 @@ export function StudentCurriculumPage() {
               </div>
             </div>
             <div className="flex items-center gap-4 w-full sm:w-auto">
-              <div className="h-2 flex-1 max-w-xs overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_2px_rgba(2,1,10,0.6)]">
+              <div className="h-2 flex-1 max-w-xs overflow-hidden rounded-full bg-surface-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-500"
                   style={{ width: `${progressPercent}%` }}
@@ -429,8 +429,8 @@ export function StudentCurriculumPage() {
                     {gradeName}
                   </p>
                   {[...unitMap.entries()].map(([unitName, lessons]) => (
-                    <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-                      <div className="px-3 py-2 bg-white/[0.03] border-b border-white/5">
+                    <div key={`${gradeName}-${unitName}`} className="rounded-xl border border-border bg-surface-muted overflow-hidden">
+                      <div className="px-3 py-2 bg-surface border-b border-border-muted">
                         <p className="text-sm font-medium text-foreground">{unitName}</p>
                       </div>
                       <ul className="divide-y divide-border-muted">
@@ -443,7 +443,7 @@ export function StudentCurriculumPage() {
                               <li key={lesson.lesson_id}>
                                 <Link
                                   to={`/student/lessons/${lesson.lesson_id}`}
-                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                                   data-testid={`trial-lesson-${lesson.lesson_id}`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
@@ -505,19 +505,19 @@ export function StudentCurriculumPage() {
                       redeemError={redeemByUnit[unit.id]?.error ?? null}
                     />
                     {trialLessons.length > 0 ? (
-                      <div className="mt-4 border-t border-white/5 pt-4">
+                      <div className="mt-4 border-t border-border-muted pt-4">
                         <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                           <PlayCircle className="h-4 w-4 text-primary" aria-hidden="true" />
                           درس مجاني متاح بدون تفعيل
                         </p>
-                        <ul className="divide-y divide-border-muted overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+                        <ul className="divide-y divide-border-muted overflow-hidden rounded-xl border border-border bg-surface-muted">
                           {trialLessons.map((lesson) => {
                             const progress = progressByLesson.get(lesson.id);
                             return (
                               <li key={lesson.id}>
                                 <Link
                                   to={`/student/lessons/${lesson.id}`}
-                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                  className="flex items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                                   data-testid={`curriculum-lesson-${lesson.id}`}
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
@@ -548,7 +548,7 @@ export function StudentCurriculumPage() {
                     type="button"
                     id={`unit-${unit.id}`}
                     onClick={() => toggleUnit(unit.id)}
-                    className="w-full flex items-center justify-between gap-3 p-4 -mx-4 -my-4 rounded-lg hover:bg-white/3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                    className="w-full flex items-center justify-between gap-3 p-4 -mx-4 -my-4 rounded-lg hover:bg-surface-muted transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                     aria-expanded={expanded}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -567,7 +567,7 @@ export function StudentCurriculumPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <div className="h-2 w-32 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-2 w-32 overflow-hidden rounded-full bg-surface-muted">
                         <div
                           className="h-full rounded-full bg-primary"
                           style={{ width: `${unitProgress}%` }}
@@ -584,7 +584,7 @@ export function StudentCurriculumPage() {
                   </button>
 
                   {expanded && (
-                    <div className="animate-slide-in-top px-4 pb-4 border-t border-white/5">
+                    <div className="animate-slide-in-top px-4 pb-4 border-t border-border-muted">
                       <ul className="divide-y divide-border-muted">
                         {unitLessons.map((lesson) => {
                           const progress = progressByLesson.get(lesson.id);
@@ -592,11 +592,11 @@ export function StudentCurriculumPage() {
                             <li key={lesson.id}>
                               <Link
                                 to={`/student/lessons/${lesson.id}`}
-                                className="flex items-center justify-between gap-3 rounded-lg px-1 py-3 transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
+                                className="flex items-center justify-between gap-3 rounded-lg px-1 py-3 transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                                 data-testid={`curriculum-lesson-${lesson.id}`}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-foreground-muted">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-foreground-muted">
                                     <PlayCircle className="h-4 w-4" />
                                   </div>
                                   <span className="text-sm text-foreground truncate">{lesson.title}</span>

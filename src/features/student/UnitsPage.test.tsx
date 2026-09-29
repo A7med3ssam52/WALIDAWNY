@@ -17,7 +17,7 @@ import { renderApp } from '../../test/utils';
 describe('UnitsPage', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: 'grade-1' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
     mockState.grades.push(makeGrade({ id: 'grade-1', name: 'الصف الأول' }));
     mockState.units.push(
       makeUnit({ id: 'unit-1', grade_id: 'grade-1', name: 'الوحدة الأولى', status: 'published' }),
@@ -171,7 +171,7 @@ it('shows only published units with the purchased section and open link', async 
     expect(await screen.findByText('لقد قمت بتفعيل هذه الوحدة بالفعل')).toBeInTheDocument();
   });
 
-  it('rejects redeeming when the student account is disabled', async () => {
+  it('locks redeeming when the student account is disabled', async () => {
     mockState.profiles.forEach((profile) => {
       if (profile.id === 'user-test-1') {
         profile.status = 'disabled';
@@ -180,19 +180,13 @@ it('shows only published units with the purchased section and open link', async 
     mockState.unitCodes.push(makeUnitCode({ id: 'code-1', unit_id: 'unit-2' }));
     renderApp('/student/units');
 
-    fireEvent.change(await screen.findByLabelText('كود التفعيل'), {
-      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'تفعيل' }));
-
-    expect(
-      await screen.findByText('ليست لديك صلاحية للتفعيل — تأكد من تفعيل حسابك'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('suspended-account-block')).toBeInTheDocument();
+    expect(screen.queryByLabelText('كود التفعيل')).not.toBeInTheDocument();
   });
 
   it('prompts to set the grade when the student has no grade', async () => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: null });
+    setAuthenticatedStudent({ grade_id: null, avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/student/units');
 
     expect(await screen.findByText(/لم يتم تحديد صفك الدراسي/)).toBeInTheDocument();

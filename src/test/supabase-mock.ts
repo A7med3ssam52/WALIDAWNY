@@ -156,6 +156,7 @@ export function makeProfile(overrides: Partial<AnyRecord> = {}): AnyRecord {
     role: 'student',
     status: 'active',
     suspension_reason: null,
+    avatar_path: null,
     deleted_at: null,
     created_at: '2026-01-01T10:00:00.000Z',
     updated_at: '2026-01-01T10:00:00.000Z',
@@ -707,7 +708,11 @@ function createQueryBuilder(table: string): QueryBuilder {
     }
     rows = applyFilters(tableRows(table));
     if (single) {
-      return { data: rows[0] ?? null, error: null };
+      // Return a copy like a real network response: callers must never
+      // observe later in-place mutations through a previously read row
+      // (otherwise React bails out on identical references).
+      const row = rows[0] ?? null;
+      return { data: row ? { ...row } : null, error: null };
     }
     return { data: rows, error: null };
   };
@@ -2041,6 +2046,93 @@ function createMockClient() {
   const SUGGESTION_KINDS = ['issue', 'suggestion', 'other'];
   const SUGGESTION_STATUSES = ['new', 'reviewed', 'planned', 'done', 'rejected'];
 
+  const applyOwnProfileRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
+    if (fn !== 'update_own_profile') {
+      return null;
+    }
+    const uid = currentUserId();
+    const profile = state.profiles.find((item) => item.id === uid);
+    if (!uid || !profile) {
+      return error('permission_denied');
+    }
+    for (const key of ['full_name', 'phone', 'guardian_phone', 'address'] as const) {
+      const argKey = `p_${key}`;
+      if (args?.[argKey] !== undefined) {
+        profile[key] = args[argKey];
+      }
+    }
+    return { data: null, error: null };
+  };
+
+  const applyAvatarRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {    const uid = currentUserId();
+    const profile = state.profiles.find((item) => item.id === uid);
+    const role = String(profile?.role ?? '');
+    const isStudent = role === 'student' && profile?.status === 'active' && !profile?.deleted_at;
+    const isStaff = role === 'admin' || role === 'mr_walid';
+    if (fn === 'set_my_avatar') {
+      if (!uid || !isStudent || !profile) {
+        return error('permission_denied');
+      }
+      const path = String(args?.p_path ?? '');
+      if (path !== `${uid}/avatar.jpg`) {
+        return error('invalid_avatar_path');
+      }
+      if (!state.storageUploads.some((item) => item.bucket === 'avatars' && item.path === path)) {
+        return error('avatar_missing');
+      }
+      profile.avatar_path = path;
+      return { data: null, error: null };
+    }
+    if (fn === 'remove_my_avatar') {
+      if (!uid || !isStudent || !profile) {
+        return error('permission_denied');
+      }
+      const path = String(profile.avatar_path ?? '');
+      profile.avatar_path = null;
+      if (path) {
+        state.storageUploads = state.storageUploads.filter(
+          (item) => !(item.bucket === 'avatars' && item.path === path),
+        );
+      }
+      return { data: null, error: null };
+    }
+    if (fn === 'remind_missing_avatars') {
+      if (!uid || !isStaff || !profile) {
+        return error('permission_denied');
+      }
+      let inserted = 0;
+      for (const student of state.profiles) {
+        if (
+          student.role !== 'student' ||
+          student.status !== 'active' ||
+          student.deleted_at ||
+          student.avatar_path
+        ) {
+          continue;
+        }
+        const dedup = `avatar_required:${student.id}`;
+        if (state.notifications.some((item) => item.dedup_key === dedup)) {
+          continue;
+        }
+        state.notifications.push(
+          makeNotification({
+            id: `notif-avatar-${student.id}`,
+            user_id: student.id,
+            type: 'avatar_required',
+            title: 'الصورة الشخصية مطلوبة',
+            body: 'ارفع صورتك الشخصية من صفحة الملف الشخصي لفتح كامل أقسام المنصة.',
+            dedup_key: dedup,
+            entity_type: null,
+            entity_id: null,
+          }),
+        );
+        inserted += 1;
+      }
+      return { data: inserted, error: null };
+    }
+    return null;
+  };
+
   const applySuggestionsRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     const uid = currentUserId();
     const profile = state.profiles.find((item) => item.id === uid);
@@ -2419,6 +2511,14 @@ function createMockClient() {
     const boards = applyBoardsRpc(fn, args);
     if (boards) {
       return boards;
+    }
+    const avatar = applyAvatarRpc(fn, args);
+    if (avatar) {
+      return avatar;
+    }
+    const ownProfile = applyOwnProfileRpc(fn, args);
+    if (ownProfile) {
+      return ownProfile;
     }
     const suggestions = applySuggestionsRpc(fn, args);
     if (suggestions) {

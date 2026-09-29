@@ -49,7 +49,7 @@ export function PricingPublicPage() {
   }, [prices]);
 
   return (
-    <div className="min-h-screen" dir="rtl">
+    <div className="min-h-screen bg-background text-foreground" dir="rtl">
       <SeoHead
         title={SEO.pricing.title}
         description={SEO.pricing.description}
@@ -62,10 +62,10 @@ export function PricingPublicPage() {
         <Breadcrumbs items={[{ name: 'الأسعار', url: `${SITE_URL}/pricing` }]} className="mb-6" />
 
         <header className="text-center">
-          <span className="glass-soft inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold text-indigo-300">
+          <span className="health-lime-card inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold">
             <Tag className="h-3.5 w-3.5" /> شراء دائم WLDN
           </span>
-          <h1 className="mt-3 font-display text-3xl font-extrabold sm:text-5xl"><span className="text-gradient">أسعار الوحدات</span></h1>
+          <h1 className="mt-3 font-display text-3xl font-extrabold text-foreground sm:text-5xl">أسعار الوحدات</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-foreground-muted">
             اشترِ الوحدة مرة واحدة وافتحها مدى الحياة — أو فعّل بكود WLDN من الأستاذ. الأسعار تشمل رسوم المنصة وضمان وصول دائم للمحتوى بعد التفعيل.
           </p>
@@ -74,19 +74,19 @@ export function PricingPublicPage() {
         <section className="glass-card mt-8 p-6 sm:p-8">
           <h2 className="font-display text-lg font-bold text-foreground">كيف يعمل التسعير؟</h2>
           <ul className="mt-3 grid gap-2 text-sm leading-6 text-foreground-muted sm:grid-cols-2">
-            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-300" /> سعر الوحدة = سعر أساسي + رسوم منصة ثابتة</li>
-            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-300" /> كود WLDN-XXXX يفتح الوحدة للأبد بدون تجديد</li>
-            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-300" /> تواصل واتساب للحصول على الكود بعد الدفع</li>
-            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-300" /> مشاهدة غير محدودة للفيديو والملازم والسبورات</li>
+            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" /> سعر الوحدة = سعر أساسي + رسوم منصة ثابتة</li>
+            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" /> كود WLDN-XXXX يفتح الوحدة للأبد بدون تجديد</li>
+            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" /> تواصل واتساب للحصول على الكود بعد الدفع</li>
+            <li className="flex gap-2"><CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" /> مشاهدة غير محدودة للفيديو والملازم والسبورات</li>
           </ul>
           <div className="mt-4 flex flex-wrap gap-3">
-            <Link to="/how-it-works" className="text-sm font-bold text-indigo-300 hover:text-indigo-200">كيف أفعّل الكود؟ ←</Link>
+            <Link to="/how-it-works" className="text-sm font-bold text-primary-strong hover:underline">كيف أفعّل الكود؟ ←</Link>
             <Link to="/faq" className="text-sm font-bold text-foreground-muted hover:text-foreground">الأسئلة الشائعة ←</Link>
           </div>
         </section>
 
         {error ? (
-          <div className="mt-8 rounded-xl border border-error/25 bg-error/10 p-6 text-center text-sm text-error">
+          <div className="glass-tile-error mt-8 rounded-[20px] border p-6 text-center text-sm font-bold text-error">
             تعذر تحميل الأسعار — حاول تحديث الصفحة أو تواصل عبر واتساب.
           </div>
         ) : prices === null ? (
@@ -98,25 +98,27 @@ export function PricingPublicPage() {
                 <h2 className="font-display text-xl font-bold text-foreground">{gradeName}</h2>
                 <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {units.map((u) => (
-                    <div key={u.unit_id} className="glass-card conic-ring spotlight-card p-5">
-                      <BookOpen className="h-5 w-5 text-indigo-300" />
+                    <div key={u.unit_id} className="glass-card p-5">
+                      <span className="card-chip inline-flex h-9 w-9 items-center justify-center">
+                        <BookOpen className="h-4 w-4" />
+                      </span>
                       <h3 className="mt-2 font-display text-sm font-bold text-foreground">{u.unit_name}</h3>
                       <p className="mt-1 text-xs text-foreground-subtle">{gradeName}</p>
                       {u.is_free ? (
                         <>
-                          <p className="mt-2 font-display text-2xl font-extrabold text-emerald-300">مجاني</p>
-                          <p className="text-xs text-emerald-300">متاح لجميع الطلاب بدون كود</p>
-                          <span className="mt-2 inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">مجاني</span>
+                          <p className="mt-2 font-display text-2xl font-extrabold text-success">مجاني</p>
+                          <p className="text-xs text-success">متاح لجميع الطلاب بدون كود</p>
+                          <span className="mt-2 inline-flex rounded-full border border-[rgba(127,191,142,0.3)] bg-[rgba(127,191,142,0.1)] px-3 py-1 text-xs font-bold text-success">مجاني</span>
                         </>
                       ) : (
                         <>
-                          <p className="mt-2 font-display text-2xl font-extrabold text-gradient" dir="ltr">
+                          <p className="mt-2 font-display text-2xl font-extrabold text-foreground" dir="ltr">
                             {formatPrice(u.total_price)} <span className="text-sm">ج.م</span>
                           </p>
                           <p className="text-xs text-foreground-subtle">
                             أساسي {formatPrice(u.base_price)} + رسوم {formatPrice(u.platform_fee)}
                           </p>
-                          <Link to="/faq#codes" className="mt-3 inline-flex text-xs font-bold text-indigo-300 hover:text-indigo-200">تفاصيل التفعيل ←</Link>
+                          <Link to="/faq#codes" className="mt-3 inline-flex text-xs font-bold text-primary-strong hover:underline">تفاصيل التفعيل ←</Link>
                         </>
                       )}
                     </div>
@@ -129,14 +131,14 @@ export function PricingPublicPage() {
           <p className="mt-8 text-center text-sm text-foreground-muted">لا توجد وحدات منشورة حالياً — تواصل عبر واتساب لمعرفة المتاح.</p>
         )}
 
-        <section className="mt-10 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <h2 className="font-display text-lg font-bold text-foreground">أسئلة سريعة عن الأسعار</h2>
-          <ul className="mt-3 space-y-3 text-sm leading-6 text-foreground-muted">
-            <li><strong className="text-foreground">هل السعر نهائي؟</strong> نعم، السعر المعروض هو الإجمالي شامل رسوم المنصة — لا مصاريف مخفية.</li>
-            <li><strong className="text-foreground">هل يمكن شراء أكثر من وحدة؟</strong> نعم، كل وحدة بكود منفصل WLDN-XXXX وكلها مدى الحياة.</li>
-            <li><strong className="text-foreground">ماذا بعد الدفع؟</strong> يصلك كود WLDN عبر واتساب، تفعله في لوحة الطالب وتشاهد فوراً.</li>
+        <section className="health-dark-card mt-10 rounded-[20px] p-6">
+          <h2 className="font-display text-lg font-bold">أسئلة سريعة عن الأسعار</h2>
+          <ul className="mt-3 space-y-3 text-sm leading-6 text-white/80">
+            <li><strong className="text-lime">هل السعر نهائي؟</strong> نعم، السعر المعروض هو الإجمالي شامل رسوم المنصة — لا مصاريف مخفية.</li>
+            <li><strong className="text-lime">هل يمكن شراء أكثر من وحدة؟</strong> نعم، كل وحدة بكود منفصل WLDN-XXXX وكلها مدى الحياة.</li>
+            <li><strong className="text-lime">ماذا بعد الدفع؟</strong> يصلك كود WLDN عبر واتساب، تفعله في لوحة الطالب وتشاهد فوراً.</li>
           </ul>
-          <Link to="/faq" className="mt-4 inline-block text-sm font-bold text-indigo-300">كل الأسئلة ←</Link>
+          <Link to="/faq" className="mt-4 inline-block text-sm font-bold text-lime hover:underline">كل الأسئلة ←</Link>
         </section>
       </div>
     </div>

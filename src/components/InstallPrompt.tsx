@@ -163,7 +163,7 @@ export function InstallPrompt() {
           type="button"
           aria-label="إغلاق"
           onClick={handleDismiss}
-          className="absolute end-3 top-3 rounded-lg p-2 text-foreground-subtle transition-colors hover:bg-white/6 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+          className="absolute end-3 top-3 rounded-lg p-2 text-foreground-subtle transition-colors hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           <X aria-hidden="true" className="h-4 w-4" />
         </button>
@@ -172,7 +172,7 @@ export function InstallPrompt() {
           <img
             src="/icons/icon-192.png"
             alt=""
-            className="h-16 w-16 shrink-0 rounded-2xl ring-1 ring-white/15 shadow-[0_0_30px_-6px_rgba(129,140,248,0.85)]"
+            className="h-16 w-16 shrink-0 rounded-2xl ring-1 ring-border"
           />
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary-soft px-2.5 py-0.5 text-[0.65rem] font-bold text-primary">
@@ -192,9 +192,9 @@ export function InstallPrompt() {
             {iosSteps.map(({ icon: Icon, label }, index) => (
               <li
                 key={label}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium text-foreground"
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-sm font-medium text-foreground"
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_6px_16px_-6px_rgba(124,58,237,0.8)]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <Icon aria-hidden="true" className="h-4 w-4" />
                 </span>
                 <span className="flex-1 leading-relaxed">{label}</span>
@@ -211,7 +211,7 @@ export function InstallPrompt() {
               {installFeatures.map(({ icon: Icon, label }) => (
                 <div
                   key={label}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2 py-3 text-center"
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-surface-muted px-2 py-3 text-center"
                 >
                   <Icon aria-hidden="true" className="h-4 w-4 text-primary" />
                   <span className="text-[0.7rem] font-semibold leading-tight text-foreground-muted">

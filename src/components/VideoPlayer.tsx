@@ -133,7 +133,7 @@ export function VideoPlayer({
   // عرض ErrorState بدل محاولة التحميل عند src غير صالح — يمنع hls.loadSource("") نهائيًا
   if (!isValidSrc) {
     return (
-      <div className="glass-card conic-ring spotlight-card relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35)]">
+      <div className="glass-card relative overflow-hidden rounded-[20px] p-1.5">
         <ErrorState message="تعذر تحميل الفيديو — رابط غير صالح" />
       </div>
     );
@@ -141,7 +141,7 @@ export function VideoPlayer({
 
   if (unsupported) {
     return (
-      <div className="glass-card conic-ring spotlight-card relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35)]">
+      <div className="glass-card relative overflow-hidden rounded-[20px] p-1.5">
         <ErrorState message="متصفحك لا يدعم تشغيل الفيديو (HLS). جرّب متصفحًا أحدث مثل Chrome أو Safari." />
       </div>
     );
@@ -149,14 +149,10 @@ export function VideoPlayer({
 
   return (
     <div
-      className="glass-card conic-ring spotlight-card group relative overflow-hidden rounded-2xl border-white/15 p-1.5 shadow-[0_0_40px_-12px_rgba(129,140,248,0.35),0_18px_44px_-22px_rgba(2,1,10,0.9)] transition-shadow duration-500 hover:shadow-[0_0_50px_-10px_rgba(129,140,248,0.5),0_28px_60px_-20px_rgba(2,1,10,0.95)]"
+      className="glass-card relative overflow-hidden rounded-[20px] p-1.5"
       data-testid="lesson-video-frame"
     >
-      {/* ambient glow behind video */}
-      <div aria-hidden="true" className="pointer-events-none absolute -inset-6 -z-10 bg-gradient-to-br from-indigo-600/15 via-purple-600/10 to-cyan-500/10 blur-2xl opacity-60 group-hover:opacity-80 transition-opacity duration-700" />
-      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-950 via-[#1e1b4b] to-violet-950">
-        {/* subtle top highlight */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="relative overflow-hidden rounded-xl bg-black">
         <video
           ref={videoRef}
           controls
@@ -177,14 +173,14 @@ export function VideoPlayer({
         {isBuffering ? (
           <div
             role="status"
-            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#070513]/70 backdrop-blur-[6px]"
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[rgb(16_24_40/0.55)]"
           >
             <span aria-hidden="true" className="relative flex h-12 w-12 items-center justify-center">
-              <span className="absolute inset-0 rounded-full border border-white/10" />
-              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-400 border-r-purple-400 animate-spin" />
-              <span className="h-2 w-2 rounded-full bg-white shadow-[0_0_12px_2px_rgba(129,140,248,0.8)]" />
+              <span className="absolute inset-0 rounded-full border border-white/20" />
+              <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-white animate-spin" />
+              <span className="h-2 w-2 rounded-full bg-white" />
             </span>
-            <span className="rounded-full border border-white/10 bg-white/10 px-4 py-1.5 text-xs font-bold tracking-wide text-white/95 shadow-[0_0_20px_-6px_rgba(129,140,248,0.6)] backdrop-blur">
+            <span className="rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-bold tracking-wide text-white">
               جاري تحميل الفيديو
             </span>
           </div>

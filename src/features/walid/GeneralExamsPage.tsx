@@ -332,9 +332,9 @@ export function GeneralExamsPage() {
           onChange={(event) => setForm((prev) => ({ ...prev, passing: event.target.value }))}
         />
       </div>
-      <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/3 px-3 py-3 text-sm font-bold">
+      <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-surface-muted px-3 py-3 text-sm font-bold">
         <span className="flex items-center gap-2">
-          <Trophy aria-hidden="true" className="h-4 w-4 text-amber-300" />
+          <Trophy aria-hidden="true" className="h-4 w-4 text-warning" />
           إظهار قايمة الأوائل للطلاب
         </span>
         <input
@@ -344,7 +344,7 @@ export function GeneralExamsPage() {
           className="h-5 w-5 accent-indigo-500"
         />
       </label>
-      {error ? <p role="alert" className="text-sm font-bold text-rose-300">{error}</p> : null}
+      {error ? <p role="alert" className="text-sm font-bold text-error">{error}</p> : null}
     </div>
   );
 
@@ -365,12 +365,12 @@ export function GeneralExamsPage() {
       }
     >
       <div className="flex flex-col gap-4">
-        <section className="glass-card spotlight-card relative overflow-hidden p-4 sm:p-6">
+        <section className="glass-card relative overflow-hidden p-4 sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex items-center gap-3">
               <span
                 aria-hidden="true"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 text-white shadow-[0_0_26px_-6px_rgba(129,140,248,0.85)]"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-strong text-primary-foreground"
               >
                 <ClipboardList className="h-5 w-5" />
               </span>
@@ -487,7 +487,7 @@ export function GeneralExamsPage() {
         onCancel={() => setCreateOpen(false)}
       >
         {form.title.trim() ? (
-          <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold text-emerald-300">
+          <p className="mb-3 rounded-xl border border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.08)] px-3 py-2 text-xs font-bold text-success">
             مسودتك محفوظة تلقائياً على هذا الجهاز — يمكنك الإغلاق والعودة لإكمالها.
           </p>
         ) : null}

@@ -177,10 +177,10 @@ export function StudentSuggestionsPage() {
 
         {configLoaded && (bannerMessage || !isOpen) ? (
           <div
-            className="glass-card flex items-start gap-3 border-indigo-400/25 bg-gradient-to-br from-indigo-500/12 to-fuchsia-500/8 p-4 sm:p-5"
+            className="glass-card flex items-start gap-3 p-4 sm:p-5"
             data-testid="suggestions-banner"
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 text-white">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-strong">
               <Megaphone className="h-5 w-5" aria-hidden="true" />
             </span>
             <p className="text-sm leading-7 text-foreground">
@@ -257,7 +257,7 @@ export function StudentSuggestionsPage() {
                     <img
                       src={imagePreview}
                       alt="معاينة الصورة المرفقة"
-                      className="h-20 w-28 rounded-lg border border-white/10 object-cover"
+                      className="h-20 w-28 rounded-lg border border-border object-cover"
                     />
                     <Button
                       variant="ghost"
@@ -272,7 +272,7 @@ export function StudentSuggestionsPage() {
                 ) : (
                   <label
                     htmlFor="suggestion-image"
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-sm font-bold text-foreground-muted transition-colors hover:border-indigo-400/40 hover:text-foreground"
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-bold text-foreground-muted transition-colors hover:border-primary-strong hover:text-foreground"
                   >
                     <ImagePlus className="h-4 w-4" aria-hidden="true" />
                     إرفاق سكرين شوت

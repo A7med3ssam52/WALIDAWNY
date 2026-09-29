@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, KeyRound, PackageOpen, User, TrendingUp, Headset, GraduationCap, MessageCircle, Clock } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  HeartPulse,
+  KeyRound,
+  PackageOpen,
+  User,
+  TrendingUp,
+  Headset,
+  GraduationCap,
+  MessageCircle,
+  Clock,
+} from 'lucide-react';
 
 import { ErrorState } from '../../components/ErrorState';
 import { LayoutShell } from '../../components/LayoutShell';
@@ -22,8 +34,19 @@ import {
   listUnitsForGrade,
 } from '../../data/rpc';
 import { buildWhatsAppLink, formatPrice } from '../../lib/format';
-import type { Progress, PublicSettings, PublicUnitPrice, Unit, UnitPurchaseWithUnit } from '../../types/database';
+import type {
+  Progress,
+  PublicSettings,
+  PublicUnitPrice,
+  Unit,
+  UnitPurchaseWithUnit,
+} from '../../types/database';
 import { useAuth } from '../auth/AuthContext';
+
+const DONUT_COMPLETED = 'var(--color-chart-2)';
+const DONUT_ACTIVE = 'var(--color-chart-3)';
+const DONUT_REMAINING = 'var(--color-chart-1)';
+const DONUT_TRACK = 'var(--color-chart-track)';
 
 function StatsSkeleton() {
   return (
@@ -33,6 +56,118 @@ function StatsSkeleton() {
       ))}
     </div>
   );
+}
+
+function HealthSkeleton() {
+  return (
+    <div className="grid gap-4 lg:grid-cols-3" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flat-card glass-card p-4">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="mx-auto mt-4 h-36 w-36 rounded-full" />
+          <Skeleton className="mt-4 h-4 w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Donut بثلاث شرائح: مكتمل (بنفسجي) / جاري (أسود) / متبقي (لايم) — من بيانات التقدم الحقيقية. */
+function ProgressDonut({
+  completed,
+  active,
+  remaining,
+}: {
+  completed: number;
+  active: number;
+  remaining: number;
+}) {
+  const total = completed + active + remaining;
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+  const segments = useMemo(() => {
+    if (total <= 0) return [];
+    const raw = [
+      { value: completed, color: DONUT_COMPLETED },
+      { value: active, color: DONUT_ACTIVE },
+      { value: remaining, color: DONUT_REMAINING },
+    ];
+    let offset = 0;
+    return raw
+      .filter((seg) => seg.value > 0)
+      .map((seg) => {
+        const fraction = seg.value / total;
+        const item = { ...seg, dash: fraction * circumference, offset };
+        offset += fraction * circumference;
+        return item;
+      });
+  }, [completed, active, remaining, total, circumference]);
+
+  return (
+    <div
+      className="relative mx-auto h-40 w-40"
+      data-testid="health-donut"
+      role="img"
+      aria-label={`تقدم الوحدات: ${completed} مكتمل، ${active} جاري، ${remaining} متبقي`}
+    >
+      <svg viewBox="0 0 160 160" className="h-full w-full -rotate-90">
+        <circle cx="80" cy="80" r={radius} fill="none" stroke={DONUT_TRACK} strokeWidth="22" />
+        {segments.map((seg, index) => (
+          <circle
+            key={index}
+            cx="80"
+            cy="80"
+            r={radius}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth="22"
+            strokeDasharray={`${seg.dash} ${circumference - seg.dash}`}
+            strokeDashoffset={-seg.offset}
+            strokeLinecap="butt"
+          />
+        ))}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-display text-3xl font-extrabold tabular-nums text-foreground">
+          {completed}
+        </span>
+        <span className="text-xs font-bold text-foreground-muted">مكتمل</span>
+      </div>
+    </div>
+  );
+}
+
+/** شبكة التزام: نقاط بنفسجي/لايم حسب النسبة المحسوبة من الداتا، والباقي رمادي. */
+function CommitmentDots({ percent }: { percent: number }) {
+  const total = 30;
+  const filled = Math.round((Math.min(100, Math.max(0, percent)) / 100) * total);
+  const purpleCount = Math.round(filled * 0.65);
+  return (
+    <div className="grid grid-cols-6 gap-2" aria-hidden="true" data-testid="health-commitment-dots">
+      {Array.from({ length: total }, (_, i) => {
+        const color =
+          i < filled
+            ? i < purpleCount
+              ? DONUT_COMPLETED
+              : DONUT_REMAINING
+            : 'var(--color-chart-track)';
+        return (
+          <span key={i} className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        );
+      })}
+    </div>
+  );
+}
+
+type RangeKey = 'month' | 'week' | 'all';
+
+function inRange(row: Progress, range: RangeKey): boolean {
+  if (range === 'all') return true;
+  const stamp = row.last_watched_at ?? row.updated_at;
+  const time = stamp ? Date.parse(stamp) : NaN;
+  if (Number.isNaN(time)) return true;
+  const days = range === 'week' ? 7 : 30;
+  return Date.now() - time <= days * 24 * 60 * 60 * 1000;
 }
 
 export function StudentDashboardPage() {
@@ -46,6 +181,7 @@ export function StudentDashboardPage() {
   const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [progressRows, setProgressRows] = useState<Progress[] | null>(null);
+  const [range, setRange] = useState<RangeKey>('month');
 
   useEffect(() => {
     let active = true;
@@ -134,13 +270,27 @@ export function StudentDashboardPage() {
   const displayName = profile?.full_name ?? user?.email ?? '';
   const totalSpent = (purchases ?? []).reduce((sum, purchase) => sum + purchase.total_price, 0);
   const unitsCount = purchases?.length ?? 0;
-  // Fix #13 — ملخص تقدم في لوحة الطالب.
+  // ملخص تقدم من بيانات التقدم الحقيقية.
   const completedLessonsCount = (progressRows ?? []).filter((p) => p.is_completed).length;
   const inProgressCount = (progressRows ?? []).filter(
     (p) => !p.is_completed && Number(p.percent_completed) > 0,
   ).length;
+  const trackedTotal = progressRows?.length ?? 0;
+  const trackedRemaining = Math.max(0, trackedTotal - completedLessonsCount - inProgressCount);
   const priceById = new Map(prices.map((price) => [price.unit_id, price]));
   const purchasedUnitIds = new Set((purchases ?? []).map((purchase) => purchase.unit_id));
+  const unpurchasedUnitsCount = Math.max(0, (gradeUnits?.length ?? 0) - unitsCount);
+  // شريحة "متبقي" من الداتا الحقيقية: المتبقي المتتبع، أو وحدات الصف غير المفعلة عند غياب التقدم.
+  const remainingCount = trackedTotal > 0 ? trackedRemaining : unpurchasedUnitsCount;
+  const donutTotal = completedLessonsCount + inProgressCount + remainingCount;
+  const progressPercent =
+    trackedTotal > 0 ? Math.round((completedLessonsCount / trackedTotal) * 100) : 0;
+  // مؤشر الالتزام من الداتا: نسبة الإكمال، أو نسبة التفعيل عند غياب التقدم.
+  const activationPercent =
+    (gradeUnits?.length ?? 0) > 0 ? Math.round((unitsCount / (gradeUnits?.length ?? 1)) * 100) : 0;
+  const commitment = trackedTotal > 0 ? progressPercent : activationPercent;
+  const rangedRows = (progressRows ?? []).filter((row) => inRange(row, range));
+  const chartRows = rangedRows.slice(0, 12);
 
   const isLoading = purchases === null || settings === null;
 
@@ -150,10 +300,11 @@ export function StudentDashboardPage() {
       subtitle={displayName ? `مرحبًا، ${displayName}` : undefined}
       variant="sidebar"
       nav={<StudentNav />}
+      wide
     >
       <div className="flex flex-col gap-6">
         <PageHeader
-          title="لوحة التحكم"
+          title="نظرة عامة على التعلم"
           subtitle="متابعة تقدمك وإدارة وحداتك بكل سهولة"
           icon={<TrendingUp className="h-5 w-5" />}
         />
@@ -164,26 +315,285 @@ export function StudentDashboardPage() {
         {/* === امتحان عام جارٍ — يظهر فقط أثناء وجود امتحان حي === */}
         <LiveExamCard />
 
+        {/* === الصف الأول: نظرة عامة (Donut + النشاط + الالتزام) === */}
+        {progressRows === null ? (
+          <HealthSkeleton />
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="flat-card glass-card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="health-kpi-label">تقدم الوحدات</p>
+                  <p className="mt-1 font-display text-xl font-extrabold tabular-nums text-foreground">
+                    {donutTotal}{' '}
+                    <span className="text-xs font-bold text-foreground-muted">درس</span>
+                  </p>
+                </div>
+              </div>
+              <div className="mt-2">
+                <ProgressDonut
+                  completed={completedLessonsCount}
+                  active={inProgressCount}
+                  remaining={remainingCount}
+                />
+              </div>
+              <ul className="mt-4 flex flex-col gap-2 text-sm">
+                <li className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-bold text-foreground">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: DONUT_COMPLETED }}
+                      aria-hidden="true"
+                    />
+                    مكتمل
+                  </span>
+                  <span className="font-bold tabular-nums text-foreground">
+                    {completedLessonsCount}
+                  </span>
+                </li>
+                <li className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-bold text-foreground">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: DONUT_ACTIVE }}
+                      aria-hidden="true"
+                    />
+                    جاري
+                  </span>
+                  <span className="font-bold tabular-nums text-foreground">{inProgressCount}</span>
+                </li>
+                <li className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-bold text-foreground">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: DONUT_REMAINING }}
+                      aria-hidden="true"
+                    />
+                    متبقي
+                  </span>
+                  <span className="font-bold tabular-nums text-foreground">{remainingCount}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="flat-card glass-card flex flex-col p-4" data-testid="health-activity">
+              <p className="health-kpi-label">معدل الإنجاز</p>
+              <div className="flex items-center gap-2">
+                <HeartPulse aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-strong" />
+                <p className="font-display text-3xl font-extrabold tabular-nums text-foreground">
+                  {progressPercent}
+                  <span className="text-base font-bold text-foreground-muted">٪</span>
+                </p>
+              </div>
+              <p className="mt-1 text-xs text-foreground-muted">
+                {trackedTotal > 0
+                  ? `${completedLessonsCount} درسًا مكتملًا من ${trackedTotal}`
+                  : 'ابدأ أول درس لحساب معدل إنجازك'}
+              </p>
+              <div className="my-4 border-t border-border-muted" />
+              <p className="health-kpi-label">النشاط</p>
+              <div className="flex items-center gap-2">
+                <Activity aria-hidden="true" className="h-5 w-5 shrink-0 text-primary-strong" />
+                <p className="font-display text-3xl font-extrabold tabular-nums text-foreground">
+                  {inProgressCount + completedLessonsCount}
+                </p>
+              </div>
+              <p className="mt-1 text-xs text-foreground-muted">
+                {inProgressCount} قيد المشاهدة · {unitsCount} وحدة مفعلة
+              </p>
+            </div>
+
+            <div className="flat-card glass-card flex flex-col p-4" data-testid="health-commitment">
+              <p className="health-kpi-label">مؤشر الالتزام</p>
+              <p className="font-display text-3xl font-extrabold tabular-nums text-foreground">
+                {commitment}
+                <span className="text-base font-bold text-foreground-muted">٪</span>
+              </p>
+              <div className="mt-4 flex-1">
+                <CommitmentDots percent={commitment} />
+              </div>
+              <p className="mt-4 text-xs leading-6 text-foreground-muted">
+                {trackedTotal > 0
+                  ? 'محسوب من دروسك المكتملة مقابل إجمالي الدروس المتتبعة'
+                  : unitsCount > 0
+                    ? 'محسوب من وحداتك المفعلة مقابل وحدات صفك — ابدأ المذاكرة لرفعه'
+                    : 'فعّل وحدتك وابدأ أول درس لقياس التزامك'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* === الصف الثاني: تقدم الدروس + تحليل الأداء === */}
+        {progressRows !== null ? (
+          <div className="grid gap-4 lg:grid-cols-5">
+            <GridCard className="lg:col-span-3" data-testid="dashboard-progress-summary">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-display text-base font-bold text-foreground">تقدم الدروس</h2>
+                  <p className="mt-0.5 text-sm text-foreground-muted">
+                    {`${completedLessonsCount} درسًا مكتملًا${inProgressCount > 0 ? ` · ${inProgressCount} قيد المشاهدة` : ''}`}
+                  </p>
+                </div>
+                <Link
+                  to="/student/curriculum"
+                  className="text-sm font-medium text-primary-strong hover:underline"
+                >
+                  متابعة المنهج
+                </Link>
+              </div>
+              <div className="mt-4 flex flex-col gap-4">
+                <div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-foreground">مكتمل</span>
+                    <span className="font-bold tabular-nums text-foreground">
+                      {completedLessonsCount}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-500"
+                      style={{
+                        backgroundColor: DONUT_COMPLETED,
+                        width: `${donutTotal > 0 ? Math.round((completedLessonsCount / donutTotal) * 100) : 0}%`,
+                      }}
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={donutTotal}
+                      aria-valuenow={completedLessonsCount}
+                      aria-label="تقدم الدروس"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-foreground">جاري</span>
+                    <span className="font-bold tabular-nums text-foreground">
+                      {inProgressCount}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-500"
+                      style={{
+                        backgroundColor: DONUT_ACTIVE,
+                        width: `${donutTotal > 0 ? Math.round((inProgressCount / donutTotal) * 100) : 0}%`,
+                      }}
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={donutTotal}
+                      aria-valuenow={inProgressCount}
+                      aria-label="دروس جارية"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-foreground">متبقي</span>
+                    <span className="font-bold tabular-nums text-foreground">{remainingCount}</span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-500"
+                      style={{
+                        backgroundColor: DONUT_REMAINING,
+                        width: `${donutTotal > 0 ? Math.round((remainingCount / donutTotal) * 100) : 0}%`,
+                      }}
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={donutTotal}
+                      aria-valuenow={remainingCount}
+                      aria-label="دروس متبقية"
+                    />
+                  </div>
+                </div>
+              </div>
+            </GridCard>
+
+            <div
+              className="flat-card glass-card p-4 lg:col-span-2"
+              data-testid="health-performance"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-bold text-foreground">تحليل الأداء</h2>
+                <select
+                  aria-label="النطاق الزمني"
+                  value={range}
+                  onChange={(event) => setRange(event.target.value as RangeKey)}
+                  className="rounded-full border border-border-muted bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground"
+                >
+                  <option value="month">شهري</option>
+                  <option value="week">أسبوعي</option>
+                  <option value="all">الكل</option>
+                </select>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <p className="font-display text-3xl font-extrabold tabular-nums text-primary-strong">
+                  {progressPercent}
+                  <span className="text-base font-bold text-foreground-subtle">٪</span>
+                </p>
+                <span className="h-8 w-px bg-border" aria-hidden="true" />
+                <p className="text-sm font-bold text-foreground">
+                  {completedLessonsCount}/{trackedTotal}{' '}
+                  <span className="font-normal text-foreground-subtle">درس</span>
+                </p>
+              </div>
+              {chartRows.length > 0 ? (
+                <div
+                  className="mt-4 flex h-28 items-end gap-2"
+                  role="img"
+                  aria-label="رسم أداء الدروس"
+                >
+                  {chartRows.map((row) => {
+                    const value = Math.min(100, Math.max(0, Number(row.percent_completed) || 0));
+                    return (
+                      <div
+                        key={row.id}
+                        className="flex-1 rounded-sm"
+                        title={`${Math.round(value)}٪`}
+                        style={{
+                          height: `${Math.max(8, value)}%`,
+                          backgroundColor: 'var(--color-chart-1)',
+                          opacity: row.is_completed ? 1 : 0.35 + 0.5 * (value / 100),
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-foreground-subtle">
+                  {range === 'all'
+                    ? 'لا يوجد نشاط بعد — ابدأ أول درس وستظهر أعمدتك هنا'
+                    : 'لا يوجد نشاط في هذه الفترة — جرّب نطاقًا آخر'}
+                </p>
+              )}
+              <p className="mt-3 text-xs text-foreground-subtle">
+                {unreadNotifications > 0
+                  ? `لديك ${unreadNotifications} إشعار غير مقروء بانتظارك`
+                  : 'أعمدة الرسم = نسب مشاهدتك للدروس من بيانات تقدمك'}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         {/* === قسم الدعم البارز — فني + أكاديمي === */}
         <section
           aria-label="مركز الدعم"
           className="grid gap-4 md:grid-cols-2"
           data-testid="support-section"
         >
-          <div className="glass-card conic-ring spotlight-card relative overflow-hidden p-5 sm:p-6">
-            <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-[0_8px_20px_-8px_rgba(99,102,241,0.6)]">
-                <Headset className="h-6 w-6" />
-              </span>
+          <div className="flat-card glass-card p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <Headset aria-hidden="true" className="h-6 w-6 shrink-0 text-accent-strong" />
               <div className="min-w-0 flex-1">
                 <h3 className="font-display text-base font-bold text-foreground">الدعم الفني</h3>
                 <p className="mt-1 text-sm leading-6 text-foreground-muted">
-                  مشاكل تسجيل الدخول، تفعيل الكود، الدفع، أو تشغيل الفيديو — نرد خلال دقائق في ساعات العمل
+                  مشاكل تسجيل الدخول، تفعيل الكود، الدفع، أو تشغيل الفيديو — نرد خلال دقائق في ساعات
+                  العمل
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
                   <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>يومياً 10ص – 10م</span>
-                  <span className="h-1 w-1 rounded-full bg-white/20" aria-hidden="true" />
+                  <span className="h-1 w-1 rounded-full bg-border" aria-hidden="true" />
                   <span>رد سريع</span>
                 </div>
               </div>
@@ -191,32 +601,33 @@ export function StudentDashboardPage() {
             <a
               href={buildWhatsAppLink(
                 '01226771154',
-                'مرحبا، أواجه مشكلة تقنية في المنصة (تسجيل الدخول / تفعيل الكود / الدفع / الفيديو). حسابي: ' + (profile?.full_name ?? user?.email ?? ''),
+                'مرحبا، أواجه مشكلة تقنية في المنصة (تسجيل الدخول / تفعيل الكود / الدفع / الفيديو). حسابي: ' +
+                  (profile?.full_name ?? user?.email ?? ''),
               )}
               target="_blank"
               rel="noreferrer"
               data-testid="support-technical-link"
-              className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white sm:w-auto"
+              className="btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold sm:w-auto"
             >
               <WhatsAppIcon className="h-4 w-4" />
               تواصل واتساب — دعم فني
             </a>
           </div>
 
-          <div className="glass-card relative overflow-hidden border-amber-500/20 p-5 sm:p-6">
-            <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_8px_20px_-8px_rgba(245,158,11,0.5)]">
-                <GraduationCap className="h-6 w-6" />
-              </span>
+          <div className="flat-card glass-card p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <GraduationCap aria-hidden="true" className="h-6 w-6 shrink-0 text-warning" />
               <div className="min-w-0 flex-1">
-                <h3 className="font-display text-base font-bold text-foreground">الدعم الأكاديمي</h3>
+                <h3 className="font-display text-base font-bold text-foreground">
+                  الدعم الأكاديمي
+                </h3>
                 <p className="mt-1 text-sm leading-6 text-foreground-muted">
                   أسئلة عن الشرح، المنهج، الواجبات والامتحانات — المدرس يرد عليك مباشرة
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-foreground-subtle">
                   <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>رد خلال ساعات</span>
-                  <span className="h-1 w-1 rounded-full bg-white/20" aria-hidden="true" />
+                  <span className="h-1 w-1 rounded-full bg-border" aria-hidden="true" />
                   <span>متابعة يومية</span>
                 </div>
               </div>
@@ -225,12 +636,14 @@ export function StudentDashboardPage() {
               <a
                 href={buildWhatsAppLink(
                   settings.whatsapp_number,
-                  'مرحبا أستاذ وليد، لدي سؤال أكاديمي عن المنهج. حسابي: ' + (profile?.full_name ?? user?.email ?? '') + ' — ',
+                  'مرحبا أستاذ وليد، لدي سؤال أكاديمي عن المنهج. حسابي: ' +
+                    (profile?.full_name ?? user?.email ?? '') +
+                    ' — ',
                 )}
                 target="_blank"
                 rel="noreferrer"
                 data-testid="support-academic-link"
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-sm font-bold text-amber-100 transition-colors hover:bg-amber-500/15 sm:w-auto"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-5 py-3 text-sm font-bold text-warning transition-colors hover:bg-warning/15 sm:w-auto"
               >
                 <WhatsAppIcon className="h-4 w-4" />
                 تواصل واتساب — دعم أكاديمي
@@ -257,14 +670,22 @@ export function StudentDashboardPage() {
               value={formatPrice(totalSpent)}
               icon={<TrendingUp className="h-5 w-5" />}
               variant="success"
-              trend={unitsCount > 0 ? { label: 'من مشترياتك', value: unitsCount, positive: true } : undefined}
+              trend={
+                unitsCount > 0
+                  ? { label: 'من مشترياتك', value: unitsCount, positive: true }
+                  : undefined
+              }
             />
             <StatCard
               title="الإشعارات غير المقروءة"
               value={unreadNotifications}
               icon={<Bell className="h-5 w-5" />}
               variant={unreadNotifications > 0 ? 'warning' : 'default'}
-              trend={unreadNotifications > 0 ? { label: 'جديد', value: unreadNotifications, positive: true } : undefined}
+              trend={
+                unreadNotifications > 0
+                  ? { label: 'جديد', value: unreadNotifications, positive: true }
+                  : undefined
+              }
             />
             <StatCard
               title="حالة الحساب"
@@ -275,131 +696,104 @@ export function StudentDashboardPage() {
           </div>
         )}
 
-        {/* Fix #13 — ملخص تقدم الدروس */}
-        <GridCard data-testid="dashboard-progress-summary">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-display text-base font-bold text-foreground">تقدم الدروس</h2>
-              <p className="mt-0.5 text-sm text-foreground-muted">
-                {progressRows === null
-                  ? 'جاري تحميل تقدمك...'
-                  : `${completedLessonsCount} درسًا مكتملًا${inProgressCount > 0 ? ` · ${inProgressCount} قيد المشاهدة` : ''}`}
-              </p>
-            </div>
-            <Link
-              to="/student/curriculum"
-              className="text-sm font-medium text-primary-strong hover:underline"
-            >
-              متابعة المنهج
-            </Link>
-          </div>
-          {progressRows !== null && progressRows.length > 0 ? (
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-500"
-                style={{
-                  width: `${Math.round((completedLessonsCount / progressRows.length) * 100)}%`,
-                }}
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={progressRows.length}
-                aria-valuenow={completedLessonsCount}
-                aria-label="تقدم الدروس"
-              />
-            </div>
-          ) : null}
-        </GridCard>
-
         <div data-testid="grade-units-section">
           <GridCard>
-          {gradeUnitsError ? (
-            <ErrorState
-              message="تعذر تحميل وحدات صفك"
-              onRetry={() => void loadGradeUnits()}
-            />
-          ) : gradeUnits === null ? (
-            <div className="flex flex-col gap-3" aria-hidden="true">
-              {[0, 1].map((i) => (
-                <Skeleton key={i} className="h-20 w-full rounded-lg" />
-              ))}
-            </div>
-          ) : !profile?.grade_id ? (
-            <div className="text-center py-8">
-              <PackageOpen className="h-10 w-10 mx-auto text-foreground-subtle" aria-hidden="true" />
-              <p className="mt-3 text-foreground-muted">لم يتم تحديد صفك الدراسي — تواصل مع الأستاذ</p>
-            </div>
-          ) : gradeUnits.length === 0 ? (
-            <div className="text-center py-8">
-              <PackageOpen className="h-10 w-10 mx-auto text-foreground-subtle" aria-hidden="true" />
-              <p className="mt-3 text-foreground-muted">لا توجد وحدات متاحة في صفك بعد</p>
-              <Link
-                to="/student/units"
-                className="mt-4 btn-primary inline-flex items-center gap-2"
-              >
-                <PackageOpen className="h-4 w-4" />
-                تصفح الوحدات المتاحة
-              </Link>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h2 className="font-display text-lg font-bold text-foreground">
-                  وحدات صفك
-                  <span className="ms-2 text-sm font-normal text-foreground-muted">
-                    ({gradeUnits.length})
-                  </span>
-                </h2>
+            {gradeUnitsError ? (
+              <ErrorState message="تعذر تحميل وحدات صفك" onRetry={() => void loadGradeUnits()} />
+            ) : gradeUnits === null ? (
+              <div className="flex flex-col gap-3" aria-hidden="true">
+                {[0, 1].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : !profile?.grade_id ? (
+              <div className="text-center py-8">
+                <PackageOpen
+                  className="h-10 w-10 mx-auto text-foreground-subtle"
+                  aria-hidden="true"
+                />
+                <p className="mt-3 text-foreground-muted">
+                  لم يتم تحديد صفك الدراسي — تواصل مع الأستاذ
+                </p>
+              </div>
+            ) : gradeUnits.length === 0 ? (
+              <div className="text-center py-8">
+                <PackageOpen
+                  className="h-10 w-10 mx-auto text-foreground-subtle"
+                  aria-hidden="true"
+                />
+                <p className="mt-3 text-foreground-muted">لا توجد وحدات متاحة في صفك بعد</p>
                 <Link
                   to="/student/units"
-                  className="text-sm font-medium text-primary-strong hover:underline transition-colors"
+                  className="mt-4 btn-primary inline-flex items-center gap-2"
                 >
-                  عرض الكل
+                  <PackageOpen className="h-4 w-4" />
+                  تصفح الوحدات المتاحة
                 </Link>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {gradeUnits.map((unit) => {
-                  const price = priceById.get(unit.id);
-                  const isPurchased = purchasedUnitIds.has(unit.id);
-                  return (
-                    <div
-                      key={unit.id}
-                      className="group flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-gradient-to-br from-white/5 to-white/[0.02] p-3.5 backdrop-blur transition-all duration-300 hover:border-indigo-400/20 hover:from-indigo-500/10 hover:to-fuchsia-500/5 hover:shadow-[0_8px_24px_-12px_rgba(99,102,241,0.4)]"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 text-indigo-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] group-hover:scale-105 transition-transform">
-                          <PackageOpen className="h-5 w-5" />
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h2 className="font-display text-lg font-bold text-foreground">
+                    وحدات صفك
+                    <span className="ms-2 text-sm font-normal text-foreground-muted">
+                      ({gradeUnits.length})
+                    </span>
+                  </h2>
+                  <Link
+                    to="/student/units"
+                    className="text-sm font-medium text-primary-strong hover:underline transition-colors"
+                  >
+                    عرض الكل
+                  </Link>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {gradeUnits.map((unit) => {
+                    const price = priceById.get(unit.id);
+                    const isPurchased = purchasedUnitIds.has(unit.id);
+                    return (
+                      <div
+                        key={unit.id}
+                        className="group flex items-center justify-between gap-3 rounded-xl border border-border-muted bg-surface-muted p-3.5 transition-colors hover:border-border"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <PackageOpen
+                            aria-hidden="true"
+                            className="h-5 w-5 shrink-0 text-accent-strong"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-bold text-foreground truncate">{unit.name}</p>
+                            <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-surface border border-border-muted px-2 py-0.5 text-[11px] font-medium text-foreground-subtle">
+                              {price?.total_price != null ? (
+                                <span dir="ltr">{formatPrice(price.total_price)}</span>
+                              ) : (
+                                'لا يوجد سعر بعد'
+                              )}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-foreground truncate">{unit.name}</p>
-                          <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-white/5 border border-white/5 px-2 py-0.5 text-[11px] font-medium text-foreground-subtle">
-                            {price?.total_price != null
-                              ? <span dir="ltr">{formatPrice(price.total_price)}</span>
-                              : 'لا يوجد سعر بعد'}
-                          </p>
-                        </div>
+                        {isPurchased ? (
+                          <Link
+                            to={`/student/curriculum?unit=${unit.id}`}
+                            className="btn-primary shrink-0 rounded-xl px-4 py-2 text-xs font-bold"
+                            data-testid={`open-grade-unit-${unit.id}`}
+                          >
+                            افتح
+                          </Link>
+                        ) : (
+                          <Link
+                            to="/student/units"
+                            className="glass-soft inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-foreground transition-colors hover:bg-border-muted"
+                          >
+                            تفعيل
+                          </Link>
+                        )}
                       </div>
-                      {isPurchased ? (
-                        <Link
-                          to={`/student/curriculum?unit=${unit.id}`}
-                          className="btn-primary shrink-0 rounded-xl px-4 py-2 text-xs font-bold"
-                          data-testid={`open-grade-unit-${unit.id}`}
-                        >
-                          افتح
-                        </Link>
-                      ) : (
-                        <Link
-                          to="/student/units"
-                          className="glass-soft inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-foreground transition-colors hover:bg-white/10 hover:border-indigo-400/30"
-                        >
-                          تفعيل
-                        </Link>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </GridCard>
         </div>
 
@@ -415,7 +809,10 @@ export function StudentDashboardPage() {
               </Link>
             </div>
             {purchasesError ? (
-              <ErrorState message="تعذر تحميل وحداتك المشتراة" onRetry={() => void loadPurchases()} />
+              <ErrorState
+                message="تعذر تحميل وحداتك المشتراة"
+                onRetry={() => void loadPurchases()}
+              />
             ) : purchases === null ? (
               <div className="flex flex-col gap-3" aria-hidden="true">
                 {[0, 1].map((i) => (
@@ -424,9 +821,14 @@ export function StudentDashboardPage() {
               </div>
             ) : purchases.length === 0 ? (
               <div className="text-center py-8">
-                <PackageOpen className="h-10 w-10 mx-auto text-foreground-subtle" aria-hidden="true" />
+                <PackageOpen
+                  className="h-10 w-10 mx-auto text-foreground-subtle"
+                  aria-hidden="true"
+                />
                 <p className="mt-3 text-foreground-muted">لم تشترِ أي وحدة بعد</p>
-                <p className="mt-1 text-sm text-foreground-subtle">ابدأ رحلتك التعليمية بتفعيل وحدتك الأولى</p>
+                <p className="mt-1 text-sm text-foreground-subtle">
+                  ابدأ رحلتك التعليمية بتفعيل وحدتك الأولى
+                </p>
                 <Link
                   to="/student/units"
                   className="mt-4 btn-primary inline-flex items-center gap-2"
@@ -438,14 +840,20 @@ export function StudentDashboardPage() {
             ) : (
               <div className="space-y-2">
                 {purchases.slice(0, 3).map((purchase) => (
-                  <div key={purchase.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-white/3 hover:bg-white/5 transition-colors">
+                  <div
+                    key={purchase.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surface-muted transition-colors"
+                  >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                        <PackageOpen className="h-5 w-5" />
-                      </div>
+                      <PackageOpen
+                        aria-hidden="true"
+                        className="h-5 w-5 shrink-0 text-primary-strong"
+                      />
                       <div className="min-w-0">
                         <p className="font-medium text-foreground truncate">{purchase.unit_name}</p>
-                        <p className="text-xs text-foreground-muted" dir="ltr">{formatPrice(purchase.total_price)}</p>
+                        <p className="text-xs text-foreground-muted" dir="ltr">
+                          {formatPrice(purchase.total_price)}
+                        </p>
                       </div>
                     </div>
                     <Link
@@ -475,11 +883,9 @@ export function StudentDashboardPage() {
               <Link
                 to="/student/notifications"
                 data-testid="notifications-link"
-                className="relative flex items-center gap-3 rounded-lg p-3 bg-white/3 hover:bg-white/5 transition-colors group"
+                className="relative flex items-center gap-3 rounded-lg p-3 bg-surface-muted transition-colors group"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                  <Bell className="h-4 w-4" />
-                </div>
+                <Bell aria-hidden="true" className="h-5 w-5 shrink-0 text-primary-strong" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-foreground truncate">الإشعارات</p>
                   <p className="text-xs text-foreground-muted">متابعة جديد المنصة</p>
@@ -495,11 +901,9 @@ export function StudentDashboardPage() {
               </Link>
               <Link
                 to="/student/profile"
-                className="flex items-center gap-3 rounded-lg p-3 bg-white/3 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-3 rounded-lg p-3 bg-surface-muted transition-colors"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
-                  <User className="h-4 w-4" />
-                </div>
+                <User aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-strong" />
                 <div>
                   <p className="font-medium text-foreground">تعديل الملف الشخصي</p>
                   <p className="text-xs text-foreground-muted">تحديث بياناتك</p>
@@ -507,11 +911,9 @@ export function StudentDashboardPage() {
               </Link>
               <Link
                 to="/student/password"
-                className="flex items-center gap-3 rounded-lg p-3 bg-white/3 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-3 rounded-lg p-3 bg-surface-muted transition-colors"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning/20 text-warning">
-                  <KeyRound className="h-4 w-4" />
-                </div>
+                <KeyRound aria-hidden="true" className="h-5 w-5 shrink-0 text-warning" />
                 <div>
                   <p className="font-medium text-foreground">تغيير كلمة المرور</p>
                   <p className="text-xs text-foreground-muted">تعزيز أمان حسابك</p>
@@ -519,11 +921,9 @@ export function StudentDashboardPage() {
               </Link>
               <Link
                 to="/student/units"
-                className="flex items-center gap-3 rounded-lg p-3 bg-white/3 hover:bg-white/5 transition-colors"
+                className="flex items-center gap-3 rounded-lg p-3 bg-surface-muted transition-colors"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-success/20 text-success">
-                  <PackageOpen className="h-4 w-4" />
-                </div>
+                <PackageOpen aria-hidden="true" className="h-5 w-5 shrink-0 text-success" />
                 <div>
                   <p className="font-medium text-foreground">وحداتي المتاحة</p>
                   <p className="text-xs text-foreground-muted">تصفح وتفعيل الوحدات</p>
@@ -536,22 +936,27 @@ export function StudentDashboardPage() {
         {settingsError ? (
           <ErrorState message="تعذر تحميل إعدادات المنصة" onRetry={() => void loadSettings()} />
         ) : settings?.whatsapp_number ? (
-          <GridCard className="glass-accent-border">
+          <GridCard>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-success/20 text-success">
-                  <WhatsAppIcon size={24} />
-                </div>
+                <WhatsAppIcon size={24} className="shrink-0 text-success" />
                 <div>
-                  <h3 className="font-display text-lg font-bold text-foreground">تواصل مع الأستاذ</h3>
-                  <p className="text-sm text-foreground-muted">لأي استفسار يمكنك التواصل مباشرة عبر واتساب</p>
+                  <h3 className="font-display text-lg font-bold text-foreground">
+                    تواصل مع الأستاذ
+                  </h3>
+                  <p className="text-sm text-foreground-muted">
+                    لأي استفسار يمكنك التواصل مباشرة عبر واتساب
+                  </p>
                 </div>
               </div>
               <a
-                href={buildWhatsAppLink(settings.whatsapp_number, settings.whatsapp_default_message)}
+                href={buildWhatsAppLink(
+                  settings.whatsapp_number,
+                  settings.whatsapp_default_message,
+                )}
                 target="_blank"
                 rel="noreferrer"
-                className="btn-primary inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shrink-0"
+                className="btn-primary inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold shrink-0"
               >
                 <WhatsAppIcon size={18} />
                 فتح محادثة واتساب

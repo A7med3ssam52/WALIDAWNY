@@ -5,6 +5,7 @@ import { App } from './app/App';
 import { ErrorBoundary } from './app/ErrorBoundary';
 import { registerServiceWorker } from './lib/pwa';
 import './index.css';
+import './theme/themes.css';
 
 // Enforce RTL globally — ensures document is always ar/rtl even if Helmet fails or cache restores LTR
 if (typeof document !== 'undefined') {
@@ -107,7 +108,7 @@ if (!rootElement) {
   console.error('Root element #root was not found');
   if (typeof document !== 'undefined' && document.body) {
     document.body.innerHTML =
-      '<div dir="rtl" style="display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;font-family:system-ui,sans-serif;background:#f8fafc"><div style="max-width:480px;width:100%;background:white;border:1px solid #e2e8f0;border-radius:16px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.06)"><h1 style="margin:0;font-size:18px;font-weight:700;color:#0f172a">تعذر تشغيل التطبيق</h1><p style="margin:12px 0 0;color:#64748b;font-size:14px;line-height:1.7">عنصر الجذر #root غير موجود. يرجى إعادة تحميل الصفحة أو التأكد من سلامة ملف index.html.</p><button onclick="location.reload()" style="margin-top:20px;background:#4f46e5;color:white;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer">إعادة تحميل الصفحة</button></div></div>';
+      '<div dir="rtl" style="display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;font-family:system-ui,sans-serif;background:#14171c"><div style="max-width:480px;width:100%;background:#21262f;border:1px solid #303945;border-radius:16px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.4)"><h1 style="margin:0;font-size:18px;font-weight:700;color:#e8e6da">تعذر تشغيل التطبيق</h1><p style="margin:12px 0 0;color:#b2b9ac;font-size:14px;line-height:1.7">عنصر الجذر #root غير موجود. يرجى إعادة تحميل الصفحة أو التأكد من سلامة ملف index.html.</p><button onclick="location.reload()" style="margin-top:20px;background:#93b884;color:#182016;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer">إعادة تحميل الصفحة</button></div></div>';
   }
 } else {
   createRoot(rootElement).render(

@@ -20,12 +20,11 @@ export function Card({
 }: CardProps) {
   return (
     <div
-      className={`glass-card relative overflow-hidden ${interactive ? 'glass-card-hover spotlight-card' : ''} ${
+      className={`flat-card glass-card relative overflow-hidden ${interactive ? 'flat-card-hover' : ''} ${
         padding === 'md' ? 'p-4 sm:p-6' : 'p-4'
       } ${className ?? ''}`}
       {...rest}
     >
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       {title ? (
         <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>

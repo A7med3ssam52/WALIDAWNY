@@ -15,7 +15,7 @@ import { renderApp } from '../../test/utils';
 describe('StudentNotificationsPage', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ grade_id: 'grade-1' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', grade_id: 'grade-1' });
     mockState.notifications.push(
       makeNotification({ id: 'notif-1', title: 'درس جديد متاح', is_read: false }),
       makeNotification({
@@ -88,6 +88,48 @@ describe('StudentNotificationsPage', () => {
     fireEvent.click(await screen.findByTestId('notification-notif-1'));
 
     expect(await screen.findByRole('heading', { name: 'الدرس الأول' })).toBeInTheDocument();
+  });
+
+  it('shows Arabic labels for subscription notifications and a fallback for unknown types', async () => {
+    mockState.notifications.push(
+      makeNotification({
+        id: 'notif-sub',
+        title: 'تم تفعيل اشتراكك',
+        type: 'subscription_activated',
+        is_read: false,
+      }),
+      makeNotification({
+        id: 'notif-unknown',
+        title: 'تنبيه جديد',
+        // Simulates a future DB-side type the UI does not know yet.
+        type: 'some_future_type' as 'system',
+        is_read: false,
+      }),
+    );
+    renderApp('/student/notifications');
+
+    expect(await screen.findByText('تم تفعيل اشتراكك')).toBeInTheDocument();
+    expect(screen.getByText('تفعيل الاشتراك')).toBeInTheDocument();
+    expect(screen.getByText('تنبيه جديد')).toBeInTheDocument();
+    expect(screen.getByText('إشعار')).toBeInTheDocument();
+    expect(screen.queryByText('subscription_activated')).not.toBeInTheDocument();
+    expect(screen.queryByText('some_future_type')).not.toBeInTheDocument();
+  });
+
+  it('shows the Arabic label for avatar reminder notifications', async () => {
+    mockState.notifications.push(
+      makeNotification({
+        id: 'notif-avatar',
+        title: 'الصورة الشخصية مطلوبة',
+        type: 'avatar_required',
+        is_read: false,
+      }),
+    );
+    renderApp('/student/notifications');
+
+    expect(await screen.findByText('الصورة الشخصية مطلوبة')).toBeInTheDocument();
+    expect(screen.getByText('الصورة الشخصية')).toBeInTheDocument();
+    expect(screen.queryByText('avatar_required')).not.toBeInTheDocument();
   });
 
   it('shows the empty state when there are no notifications', async () => {

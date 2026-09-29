@@ -20,11 +20,11 @@ describe('route guards', () => {
   it('redirects unauthenticated users to the login page', async () => {
     renderApp('/student/dashboard');
 
-    expect(await screen.findByRole('heading', { name: 'تسجيل الدخول' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'يلا نكمل مذاكرة' })).toBeInTheDocument();
   });
 
   it('redirects a student away from staff routes', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/walid/students');
 
     await waitFor(() => {
@@ -33,7 +33,7 @@ describe('route guards', () => {
   });
 
   it('restores the session on reload and skips the guest pages', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/login');
 
     await waitFor(() => {
@@ -69,7 +69,7 @@ describe('route guards', () => {
   });
 
   it('shows a neutral loading state while the profile is being fetched, then renders', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/student/dashboard');
 
     expect(screen.getByText('جاري التحقق من الحساب')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('route guards', () => {
   });
 
   it('shows an error card with retry when the profile fetch fails, and recovers', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     mockState.singleQueryErrors.profiles = 'connection failed';
     const user = userEvent.setup();
     renderApp('/student/dashboard');
@@ -99,7 +99,7 @@ describe('route guards', () => {
   });
 
   it('offers a sign-out escape hatch from the profile error card', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     mockState.singleQueryErrors.profiles = 'connection failed';
     const user = userEvent.setup();
     renderApp('/student/dashboard');
@@ -108,7 +108,7 @@ describe('route guards', () => {
     await user.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'تسجيل الدخول' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'يلا نكمل مذاكرة' })).toBeInTheDocument();
     });
   });
 
@@ -124,7 +124,7 @@ describe('route guards', () => {
     await user.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'تسجيل الدخول' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'يلا نكمل مذاكرة' })).toBeInTheDocument();
     });
   });
 
@@ -152,7 +152,7 @@ describe('route guards', () => {
   });
 
   it('shows the bootstrap error card when session restore hangs, then recovers on retry', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     const authContext = (await import('../features/auth/AuthContext')) as unknown as {
       AUTH_BOOTSTRAP_TIMEOUT_MS: { value: number };
     };
@@ -173,7 +173,7 @@ describe('route guards', () => {
   });
 
   it('signs out from the header and lands on the login page', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     const user = userEvent.setup();
     renderApp('/student/dashboard');
 
@@ -181,12 +181,12 @@ describe('route guards', () => {
     await user.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'تسجيل الدخول' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'يلا نكمل مذاكرة' })).toBeInTheDocument();
     });
   });
 
   it('allows a student to open the units page', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/student/units');
 
     await waitFor(() => {
@@ -224,7 +224,7 @@ describe('route guards', () => {
   });
 
   it('redirects a student away from the codes page', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/walid/codes');
 
     await waitFor(() => {
@@ -233,7 +233,7 @@ describe('route guards', () => {
   });
 
   it('still clears the session and navigates to login when the remote sign-out fails', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     mockState.signOutError = 'network error';
     const user = userEvent.setup();
     renderApp('/student/dashboard');
@@ -242,7 +242,7 @@ describe('route guards', () => {
     await user.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'تسجيل الدخول' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'يلا نكمل مذاكرة' })).toBeInTheDocument();
     });
     expect(await screen.findByText('تعذر تسجيل الخروج. حاول مرة أخرى لاحقًا')).toBeInTheDocument();
   });
@@ -275,7 +275,7 @@ describe('route guards', () => {
   });
 
   it('redirects a student away from admin routes', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/admin/roles');
 
     await waitFor(() => {

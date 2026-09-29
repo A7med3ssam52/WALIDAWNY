@@ -60,19 +60,19 @@ export function Design07MiniToast({ content, onClose }: AdDesignProps) {
   );
 }
 
-/* 08 — حلقة نيون فاخرة: conic-ring */
+/* 08 — حلقة صحية مميزة: lime ring نظيف */
 export function Design08NeonRing({ content, onClose }: AdDesignProps) {
   const theme = VARIANT_THEME[content.variant];
   const Icon = theme.Icon;
   return (
     <div dir="rtl" className="relative p-6 sm:p-8">
-      <div className="conic-ring glass-card relative overflow-hidden rounded-2xl p-6 text-center sm:p-8">
-        <div aria-hidden="true" className={`absolute inset-x-10 top-0 h-px bg-gradient-to-l ${theme.accentBar}`} />
-        <span aria-hidden="true" className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/30 to-fuchsia-500/30 shadow-[0_0_36px_-6px_rgba(129,140,248,0.8)]">
-          <Icon className={`h-8 w-8 ${theme.iconText}`} aria-hidden="true" />
+      <div className="glass-card relative overflow-hidden rounded-2xl p-6 text-center sm:p-8">
+        <div aria-hidden="true" className="absolute inset-x-10 top-0 h-1 rounded-full bg-primary" />
+        <span aria-hidden="true" className="card-chip mx-auto flex h-16 w-16 items-center justify-center rounded-2xl">
+          <Icon className="h-8 w-8" aria-hidden="true" />
         </span>
         <div className="mt-3 flex justify-center"><AdBadge content={content} /></div>
-        <h2 className="mt-2 font-display text-xl font-extrabold"><span className="text-gradient">{content.title}</span></h2>
+        <h2 className="mt-2 font-display text-xl font-extrabold text-foreground">{content.title}</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-foreground-muted">{content.body}</p>
         <div className="mx-auto mt-5 flex max-w-sm flex-col gap-2">
           <AdCta content={content} className="btn-primary w-full !shadow-none" />
@@ -100,11 +100,11 @@ export function Design09GradientHeader({ content, onClose }: AdDesignProps) {
             <h2 className="font-display text-lg font-extrabold text-white">{content.title}</h2>
           </div>
         </div>
-        <svg aria-hidden="true" viewBox="0 0 1440 48" preserveAspectRatio="none" className="absolute inset-x-0 bottom-0 h-8 w-full text-[#0e0b22]">
+        <svg aria-hidden="true" viewBox="0 0 1440 48" preserveAspectRatio="none" className="absolute inset-x-0 bottom-0 h-8 w-full text-[#1A1F1B]">
           <path d="M0 48h1440V24C1200 48 960 0 720 18S240 48 0 20v28z" fill="currentColor" />
         </svg>
       </div>
-      <div className="bg-[#0e0b22] p-6 pt-2 sm:p-8 sm:pt-2">
+      <div className="bg-[#1A1F1B] p-6 pt-2 sm:p-8 sm:pt-2">
         <p className="text-sm leading-7 text-foreground-muted">{content.body}</p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <AdCta content={content} className="flex-1" />
@@ -131,7 +131,7 @@ export function Design10PulseIcon({ content, onClose, miniature }: AdDesignProps
               <span className={`absolute inset-2 animate-pulse-soft rounded-full ${theme.glow} opacity-60`} />
             </>
           ) : null}
-          <span className={`absolute inset-4 flex items-center justify-center rounded-full border bg-[#0e0b22] ${theme.iconBg}`}>
+          <span className={`absolute inset-4 flex items-center justify-center rounded-full border bg-[#1A1F1B] ${theme.iconBg}`}>
             <Icon className={`h-8 w-8 ${theme.iconText}`} aria-hidden="true" />
           </span>
         </div>

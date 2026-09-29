@@ -1,8 +1,8 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { expectAuthCall, makeGrade, mockState, resetMockState } from '../../test/supabase-mock';
+import { expectAuthCall, makeGrade, makeProfile, mockState, resetMockState } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
 
 describe('RegisterPage', () => {
@@ -12,16 +12,24 @@ describe('RegisterPage', () => {
     mockState.grades.push(makeGrade({ id: 'grade-2', name: 'الصف الثاني الثانوي' }));
   });
 
-  const fillValidForm = async (user: ReturnType<typeof userEvent.setup>) => {
+  const fillValidForm = async (
+    user: ReturnType<typeof userEvent.setup>,
+    opts?: { skipGrade?: boolean; skipTerms?: boolean },
+  ) => {
     await screen.findByLabelText('الاسم الكامل');
     await user.type(screen.getByLabelText('الاسم الكامل'), 'أحمد محمد');
     await user.type(screen.getByLabelText('البريد الإلكتروني'), 'new@example.com');
     await user.type(screen.getByLabelText('رقم الهاتف'), '01001234567');
     await user.type(screen.getByLabelText(/ولي الأمر/), '01112345678');
     await user.type(screen.getByLabelText('العنوان'), 'القاهرة');
-    await user.selectOptions(screen.getByLabelText('الصف الدراسي'), 'grade-1');
+    if (!opts?.skipGrade) {
+      await user.click(await screen.findByRole('button', { name: 'الصف الأول الثانوي' }));
+    }
     await user.type(screen.getByLabelText('كلمة المرور'), 'secret123');
     await user.type(screen.getByLabelText('تأكيد كلمة المرور'), 'secret123');
+    if (!opts?.skipTerms) {
+      await user.click(screen.getByLabelText(/الشروط والأحكام/));
+    }
   };
 
   it('shows validation errors for an empty form', async () => {
@@ -44,11 +52,21 @@ describe('RegisterPage', () => {
     const user = userEvent.setup();
     renderApp('/register');
 
-    await fillValidForm(user);
-    fireEvent.change(screen.getByLabelText('الصف الدراسي'), { target: { value: '' } });
+    await fillValidForm(user, { skipGrade: true });
     await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
 
     expect(await screen.findByText('يجب اختيار الصف الدراسي')).toBeInTheDocument();
+    expect(expectAuthCall('signUp')).toBeUndefined();
+  });
+
+  it('requires terms acceptance and does not sign up without it', async () => {
+    const user = userEvent.setup();
+    renderApp('/register');
+
+    await fillValidForm(user, { skipTerms: true });
+    await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
+
+    expect(await screen.findByText('يجب الموافقة على الشروط والأحكام أولاً')).toBeInTheDocument();
     expect(expectAuthCall('signUp')).toBeUndefined();
   });
 
@@ -100,6 +118,15 @@ describe('RegisterPage', () => {
     renderApp('/register');
 
     await fillValidForm(user);
+    // The sign-up mock creates the profile; seed the avatar so the
+    // avatar gate lets the fresh session through to the dashboard.
+    mockState.profiles.push(
+      makeProfile({
+        id: 'user-test-1',
+        email: 'new@example.com',
+        avatar_path: 'user-test-1/avatar.jpg',
+      }),
+    );
     await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
 
     await waitFor(() => {
@@ -132,6 +159,13 @@ describe('RegisterPage', () => {
     await user.clear(guardianInput);
     await user.type(guardianInput, '011-1234-5678');
 
+    mockState.profiles.push(
+      makeProfile({
+        id: 'user-test-1',
+        email: 'new@example.com',
+        avatar_path: 'user-test-1/avatar.jpg',
+      }),
+    );
     await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
 
     await waitFor(() => {

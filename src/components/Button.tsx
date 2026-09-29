@@ -13,26 +13,26 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const baseClasses =
-  'inline-flex items-center justify-center gap-2 rounded-xl font-bold transition-[transform,background-color,box-shadow,border-color,filter] duration-200 select-none ' +
-  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
-  'disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.97] hover:scale-[1.01]';
+  'inline-flex items-center justify-center gap-2 rounded-full font-bold transition-[transform,background-color,box-shadow,border-color] duration-200 select-none ' +
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
+  'disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.98]';
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: 'btn-primary text-primary-foreground shadow-[0_8px_20px_-10px_rgba(99,102,241,0.6)] hover:shadow-[0_12px_28px_-10px_rgba(99,102,241,0.7)]',
+  primary: 'btn-primary text-primary-foreground',
   secondary:
-    'glass-input text-foreground border border-white/12 hover:border-primary/40 hover:bg-white/10 hover:text-white hover:shadow-[0_0_20px_-8px_rgba(129,140,248,0.4)] backdrop-blur',
+    'bg-surface-muted text-foreground border border-border hover:bg-border hover:border-primary/40',
   outline:
-    'bg-transparent text-indigo-300 border border-indigo-400/30 hover:border-indigo-400/60 hover:bg-indigo-500/10 hover:text-indigo-200 hover:shadow-[0_0_20px_-8px_rgba(129,140,248,0.5)]',
-  ghost: 'bg-transparent text-foreground-muted hover:bg-white/6 hover:text-foreground border border-transparent hover:border-white/5',
-  destructive: 'bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-[0_8px_20px_-10px_rgba(244,63,94,0.6)] hover:from-rose-400 hover:to-red-500 hover:shadow-[0_12px_28px_-10px_rgba(244,63,94,0.7)] border border-rose-400/20',
-  danger: 'bg-gradient-to-br from-rose-500 to-red-600 text-white shadow-[0_8px_20px_-10px_rgba(244,63,94,0.6)] hover:from-rose-400 hover:to-red-500 border border-rose-400/20',
-  link: 'bg-transparent text-indigo-300 underline-offset-4 hover:underline hover:text-indigo-200 p-0 h-auto',
+    'bg-surface text-foreground border border-border hover:border-primary/50 hover:bg-primary-soft/40',
+  ghost: 'bg-transparent text-foreground-muted hover:bg-surface-muted hover:text-foreground border border-transparent',
+  destructive: 'bg-[#7A3B36] text-[#F3D9D3] border border-[#a86a63]/30 hover:bg-[#874540]',
+  danger: 'bg-[#7A3B36] text-[#F3D9D3] border border-[#a86a63]/30 hover:bg-[#874540]',
+  link: 'bg-transparent text-primary-strong underline-offset-4 hover:underline p-0 h-auto',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'h-11 px-3 text-xs gap-1.5 sm:h-10',
-  md: 'h-11 px-4 text-sm sm:h-10',
-  lg: 'h-11 px-5 text-sm sm:text-base',
+  sm: 'h-10 px-4 text-xs gap-1.5',
+  md: 'h-11 px-5 text-sm',
+  lg: 'h-12 px-6 text-sm sm:text-base',
 };
 
 export function Button({

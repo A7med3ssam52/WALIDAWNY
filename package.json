@@ -17,6 +17,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "invoice": "node invoices/generate-invoice.mjs",
+    "codes-report": "node invoices/generate-codes-report.mjs",
+    "students-statement": "node invoices/generate-students-statement.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

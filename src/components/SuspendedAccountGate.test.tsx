@@ -10,7 +10,7 @@ describe('SuspendedAccountGate', () => {
   });
 
   it('locks a suspended student behind the non-dismissable shield block', async () => {
-    setAuthenticatedStudent({
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', 
       full_name: 'طالب موقوف',
       status: 'disabled',
       suspension_reason: 'مشاركة الحساب مع أكثر من جهاز',
@@ -32,7 +32,7 @@ describe('SuspendedAccountGate', () => {
   });
 
   it('shows the default message when an old suspension has no reason', async () => {
-    setAuthenticatedStudent({
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg', 
       full_name: 'طالب قديم',
       status: 'disabled',
       suspension_reason: null,
@@ -44,7 +44,7 @@ describe('SuspendedAccountGate', () => {
   });
 
   it('lets an active student through to the dashboard', async () => {
-    setAuthenticatedStudent({ full_name: 'أحمد محمد' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد' });
     renderApp('/student/dashboard');
 
     expect(

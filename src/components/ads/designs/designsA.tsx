@@ -51,7 +51,7 @@ export function Design02TopSheet({ content, onClose }: AdDesignProps) {
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           <AdCta content={content} className="!h-10 !px-4 !text-xs" />
-          <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-xl border border-white/12 bg-white/5 px-4 text-xs font-bold text-foreground-muted hover:bg-white/10 hover:text-foreground">
+          <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-xl border border-border bg-surface-muted px-4 text-xs font-bold text-foreground-muted hover:bg-border hover:text-foreground">
             إغلاق
           </button>
         </div>
@@ -59,7 +59,7 @@ export function Design02TopSheet({ content, onClose }: AdDesignProps) {
       <div className="px-4 pb-4 sm:hidden">
         <div className="flex gap-2">
           <AdCta content={content} className="flex-1 !h-10 !text-xs" />
-          <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-xl border border-white/12 bg-white/5 px-4 text-xs font-bold text-foreground-muted">
+          <button type="button" onClick={onClose} className="inline-flex h-10 items-center rounded-xl border border-border bg-surface-muted px-4 text-xs font-bold text-foreground-muted">
             إغلاق
           </button>
         </div>

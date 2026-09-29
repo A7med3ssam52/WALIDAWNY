@@ -70,7 +70,7 @@ export function SuggestionsCta() {
     if (!closedMessage) return null;
     return (
       <div
-        className="glass-card flex items-center gap-3 border-white/8 p-4"
+        className="glass-card flex items-center gap-3 p-4"
         data-testid="suggestions-cta-closed"
       >
         <Lock className="h-5 w-5 shrink-0 text-foreground-subtle" aria-hidden="true" />
@@ -82,11 +82,11 @@ export function SuggestionsCta() {
   if (hasSubmitted) {
     return (
       <div
-        className="glass-card flex flex-col gap-2 border-emerald-400/20 bg-emerald-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+        className="glass-card flex flex-col gap-2 border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.06)] p-4 sm:flex-row sm:items-center sm:justify-between"
         data-testid="suggestions-cta-thanks"
       >
         <p className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+          <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
           شكرًا — وصلت مشاركتك وهنراجعها ضمن التحديث القادم
         </p>
         <Link
@@ -102,12 +102,12 @@ export function SuggestionsCta() {
   return (
     <section
       aria-label="شارك في التحديث القادم"
-      className="glass-card conic-ring relative overflow-hidden border-indigo-400/25 bg-gradient-to-br from-indigo-500/15 via-fuchsia-500/10 to-transparent p-5 sm:p-6"
+      className="glass-card relative overflow-hidden p-5 sm:p-6"
       data-testid="suggestions-cta"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-600 text-white shadow-[0_8px_20px_-8px_rgba(99,102,241,0.6)]">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-strong">
             <Lightbulb className="h-6 w-6" aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -123,7 +123,7 @@ export function SuggestionsCta() {
         <Link
           to="/student/suggestions"
           data-testid="suggestions-cta-link"
-          className="btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white"
+          className="btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold"
         >
           <Lightbulb className="h-4 w-4" aria-hidden="true" />
           اكتب مقترحك

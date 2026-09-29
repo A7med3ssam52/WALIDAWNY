@@ -17,3 +17,13 @@ dev-out.txt
 full-run-repeat.txt
 
 dump.sql
+
+# فواتير شهرية محلية — سرية (أرقام هواتف كاملة) ولا تُرفع أبداً
+invoices/INV-*.html
+invoices/INV-*.pdf
+invoices/invoice-*.html
+invoices/invoice-*.pdf
+invoices/CODES-*.html
+invoices/CODES-*.pdf
+invoices/STMT-*.html
+invoices/STMT-*.pdf

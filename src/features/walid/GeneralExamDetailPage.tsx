@@ -694,7 +694,7 @@ export function GeneralExamDetailPage() {
             ) : null}
             <Card title="سؤال جديد" subtitle="اختياري أو مقالي — مع صور اختيارية">
               {qPrompt.trim() ? (
-                <p className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/8 px-3 py-2 text-xs font-bold text-emerald-300">
+                <p className="mb-3 rounded-xl border border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.08)] px-3 py-2 text-xs font-bold text-success">
                   مسودتك محفوظة تلقائياً على هذا الجهاز — يمكنك الخروج والعودة لإكمالها.
                 </p>
               ) : null}
@@ -767,7 +767,7 @@ export function GeneralExamDetailPage() {
                       ))}
                     </div>
                   ) : null}
-                  {qError ? <p role="alert" className="text-sm font-bold text-rose-300">{qError}</p> : null}
+                  {qError ? <p role="alert" className="text-sm font-bold text-error">{qError}</p> : null}
                   <div>
                     <Button loading={qBusy} icon={<Plus aria-hidden="true" className="h-4 w-4" />} onClick={() => void handleCreateQuestion()}>
                       إضافة السؤال
@@ -808,7 +808,7 @@ export function GeneralExamDetailPage() {
                                   key={i}
                                   className={`rounded-lg px-2 py-1 ${
                                     i === question.correct_index
-                                      ? 'bg-emerald-400/10 font-bold text-emerald-300'
+                                      ? 'bg-[rgba(127,191,142,0.1)] font-bold text-success'
                                       : 'text-foreground-muted'
                                   }`}
                                 >
@@ -822,7 +822,7 @@ export function GeneralExamDetailPage() {
                             <img
                               src={imageUrls[question.id].promptUrl ?? ''}
                               alt="صورة السؤال"
-                              className="mt-2 max-h-48 rounded-xl border border-white/10"
+                              className="mt-2 max-h-48 rounded-xl border border-border"
                               loading="lazy"
                             />
                           ) : null}
@@ -947,7 +947,7 @@ export function GeneralExamDetailPage() {
             }}
           />
           {editingQ?.prompt_image_path && !qPromptFile ? (
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/3 px-3 py-2.5 text-sm font-bold">
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-sm font-bold">
               <span>إزالة الصورة الحالية</span>
               <input
                 type="checkbox"
@@ -957,7 +957,7 @@ export function GeneralExamDetailPage() {
               />
             </label>
           ) : null}
-          {editError ? <p role="alert" className="text-sm font-bold text-rose-300">{editError}</p> : null}
+          {editError ? <p role="alert" className="text-sm font-bold text-error">{editError}</p> : null}
         </div>
       </Modal>
 
@@ -1021,7 +1021,7 @@ export function GeneralExamDetailPage() {
                   onChange={(e) => setAiContext(e.target.value)}
                   rows={3}
                   placeholder="الصق نص الدرس أو الملزمة هنا ليولّد منها"
-                  className="glass-input w-full rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                  className="glass-input w-full rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                 />
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -1063,7 +1063,7 @@ export function GeneralExamDetailPage() {
                 onChange={(e) => setAiRaw(e.target.value)}
                 rows={6}
                 placeholder={'الصق الأسئلة هنا — مثال:\n1- وحدة قياس التيار؟ أ) فولت ب) أمبير ... الإجابة: أمبير'}
-                className="glass-input w-full rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                className="glass-input w-full rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
               />
             </label>
           )}
@@ -1079,12 +1079,12 @@ export function GeneralExamDetailPage() {
             {aiFiles.length > 0 ? (
               <ul className="flex flex-col gap-1 text-xs">
                 {aiFiles.map((file, i) => (
-                  <li key={`${file.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-white/4 px-2 py-1.5">
+                  <li key={`${file.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-surface-muted px-2 py-1.5">
                     <span className="truncate font-bold text-foreground-muted">{file.name}</span>
                     <button
                       type="button"
                       onClick={() => setAiFiles((prev) => prev.filter((_, j) => j !== i))}
-                      className="shrink-0 font-bold text-rose-300 hover:text-rose-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                      className="shrink-0 font-bold text-error hover:text-error focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                     >
                       إزالة
                     </button>
@@ -1098,9 +1098,9 @@ export function GeneralExamDetailPage() {
           </div>
 
           {aiProgress ? (
-            <p role="status" className="text-sm font-bold text-sky-300">{aiProgress}</p>
+            <p role="status" className="text-sm font-bold text-info">{aiProgress}</p>
           ) : null}
-          {aiError ? <p role="alert" className="text-sm font-bold text-rose-300">{aiError}</p> : null}
+          {aiError ? <p role="alert" className="text-sm font-bold text-error">{aiError}</p> : null}
         </div>
       </Modal>
 
@@ -1119,7 +1119,7 @@ export function GeneralExamDetailPage() {
             .map((answer) => {
               const question = essayQuestions.find((q) => q.id === answer.question_id);
               return (
-                <div key={answer.id} className="rounded-xl border border-white/8 bg-white/3 p-3">
+                <div key={answer.id} className="rounded-xl border border-border bg-surface-muted p-3">
                   <p className="text-sm font-bold text-foreground">{question?.prompt}</p>
                   <p className="mt-1 whitespace-pre-wrap text-sm text-foreground-muted">{answer.answer_text}</p>
                   <div className="mt-2 max-w-40">
@@ -1137,7 +1137,7 @@ export function GeneralExamDetailPage() {
                 </div>
               );
             })}
-          {gradingError ? <p role="alert" className="text-sm font-bold text-rose-300">{gradingError}</p> : null}
+          {gradingError ? <p role="alert" className="text-sm font-bold text-error">{gradingError}</p> : null}
           {grading ? (
             <p className="flex items-center gap-1 text-xs text-foreground-subtle">
               <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />

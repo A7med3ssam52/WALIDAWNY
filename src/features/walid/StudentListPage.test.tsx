@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   expectQueryFilters,
   expectRpcCall,
+  getRpcCalls,
   makeProfile,
   mockState,
   resetMockState,
@@ -141,5 +142,35 @@ describe('StudentListPage (staff lifecycle)', () => {
     await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
 
     expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+  });
+
+  it('filters students without a photo and shows the missing count', async () => {
+    const withPhoto = mockState.profiles.find((row) => row.id === 's1');
+    if (withPhoto) {
+      withPhoto.avatar_path = 's1/avatar.jpg';
+    }
+    const user = userEvent.setup();
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 بدون صورة')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /بدون صورة/ }));
+
+    expect(screen.queryByText('طالب واحد')).not.toBeInTheDocument();
+    expect(screen.getByText('طالب اثنان')).toBeInTheDocument();
+  });
+
+  it('sends avatar reminders to active students without a photo', async () => {
+    const user = userEvent.setup();
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'تذكير الكل بالصورة' }));
+
+    expect(await screen.findByText('تم إرسال التذكير إلى 1 طالب بدون صورة')).toBeInTheDocument();
+    expect(getRpcCalls().some((call) => call.fn === 'remind_missing_avatars')).toBe(true);
+    const reminded = mockState.notifications.filter((row) => row.type === 'avatar_required');
+    expect(reminded.map((row) => row.user_id)).toEqual(['s1']);
   });
 });

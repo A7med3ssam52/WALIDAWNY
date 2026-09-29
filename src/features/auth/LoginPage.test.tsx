@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { mockState, resetMockState, setAuthenticatedStudent } from '../../test/supabase-mock';
+import { makeProfile, mockState, resetMockState, setAuthenticatedStudent } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
 
 describe('LoginPage', () => {
@@ -64,6 +64,15 @@ describe('LoginPage', () => {
     renderApp('/login');
 
     await fillValidForm(user);
+    // The sign-in mock creates the profile; seed the avatar so the
+    // avatar gate lets the fresh session through to the dashboard.
+    mockState.profiles.push(
+      makeProfile({
+        id: 'user-test-1',
+        email: 'student@example.com',
+        avatar_path: 'user-test-1/avatar.jpg',
+      }),
+    );
     await user.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
 
     await waitFor(() => {
@@ -72,7 +81,7 @@ describe('LoginPage', () => {
   });
 
   it('redirects an already-authenticated student away from the login page', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     renderApp('/login');
 
     await waitFor(() => {

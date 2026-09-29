@@ -66,11 +66,13 @@ export function GradeLandingPage() {
 
   if (!grade) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-16 text-center" dir="rtl">
-        <SeoHead title="الصف غير موجود | وليد عونى" description="الصف الذي تبحث عنه غير موجود. استعرض المواد المتاحة." canonicalPath={`/subjects/${gradeSlug}`} noIndex />
-        <h1 className="font-display text-2xl font-bold text-foreground">الصف غير موجود</h1>
-        <p className="mt-2 text-sm text-foreground-muted">تأكد من الرابط أو عد إلى قائمة المواد.</p>
-        <Link to="/subjects" className="btn-primary mt-6 inline-flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold text-white">المواد</Link>
+      <div className="min-h-screen bg-background text-foreground" dir="rtl">
+        <div className="mx-auto max-w-6xl px-4 py-16 text-center">
+          <SeoHead title="الصف غير موجود | وليد عونى" description="الصف الذي تبحث عنه غير موجود. استعرض المواد المتاحة." canonicalPath={`/subjects/${gradeSlug}`} noIndex />
+          <h1 className="font-display text-2xl font-bold text-foreground">الصف غير موجود</h1>
+          <p className="mt-2 text-sm text-foreground-muted">تأكد من الرابط أو عد إلى قائمة المواد.</p>
+          <Link to="/subjects" className="btn-primary mt-6 inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-bold">المواد</Link>
+        </div>
       </div>
     );
   }
@@ -86,7 +88,7 @@ export function GradeLandingPage() {
   );
 
   return (
-    <div className="min-h-screen" dir="rtl">
+    <div className="min-h-screen bg-background text-foreground" dir="rtl">
       <SeoHead
         title={grade.title}
         description={grade.desc}
@@ -102,11 +104,11 @@ export function GradeLandingPage() {
         <Breadcrumbs items={[{ name: 'المواد', url: `${SITE_URL}/subjects` }, { name: grade.name, url: `${SITE_URL}${canonicalPath}` }]} className="mb-6" />
 
         <header className="text-center">
-          <span className="glass-soft inline-flex items-center gap-2 rounded-full px-4 py-1 text-xs font-bold text-indigo-300">
+          <span className="health-lime-card inline-flex items-center gap-2 rounded-full px-4 py-1 text-xs font-bold">
             <GraduationCap className="h-3.5 w-3.5" /> {grade.name}
           </span>
-          <h1 className="mx-auto mt-3 max-w-3xl font-display text-3xl font-extrabold leading-tight sm:text-5xl">
-            <span className="text-gradient">شرح منهج {grade.name}</span> — وليد عونى
+          <h1 className="mx-auto mt-3 max-w-3xl font-display text-3xl font-extrabold leading-tight text-foreground sm:text-5xl">
+            شرح منهج {grade.name} — وليد عونى
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-foreground-muted">
             منهج {grade.name} بشكل منظم ومبسط — كل وحدة تُفتح مدى الحياة بكود WLDN، مع فيديوهات عالية الجودة، ملازم PDF وسبورات تفاعلية. نعرض هنا أسماء الوحدات وأسعارها فقط (تيزر) بدون كشف محتوى محمي.
@@ -119,7 +121,7 @@ export function GradeLandingPage() {
             منهج {grade.name} على منصة وليد عونى مقسم إلى وحدات متسلسلة تراعي التدرج — من التأسيس إلى المراجعة النهائية. كل وحدة تركز على فهم الأفكار قبل الحفظ، مع أمثلة من الامتحانات السابقة وسبورات توضح كل خطوة. تابع تقدمك في لوحة الطالب، وشاهد أي درس أكثر من مرة بدون حدود. للمزيد عن طريقة العمل، زر صفحة كيف تبدأ.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            <Link to="/how-it-works" className="text-sm font-bold text-indigo-300 hover:text-indigo-200">كيف أبدأ؟ ←</Link>
+            <Link to="/how-it-works" className="text-sm font-bold text-primary-strong hover:underline">كيف أبدأ؟ ←</Link>
             <Link to="/faq" className="text-sm font-bold text-foreground-muted hover:text-foreground">الأسئلة الشائعة ←</Link>
           </div>
         </section>
@@ -132,36 +134,38 @@ export function GradeLandingPage() {
           ) : units.length > 0 ? (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {units.map((u) => (
-                <div key={u.unit_id} className="glass-card conic-ring spotlight-card p-5">
-                  <BookOpen className="h-5 w-5 text-indigo-300" />
+                <div key={u.unit_id} className="glass-card p-5">
+                  <span className="card-chip inline-flex h-9 w-9 items-center justify-center">
+                    <BookOpen className="h-4 w-4" />
+                  </span>
                   <h3 className="mt-2 font-display text-sm font-bold text-foreground">{u.unit_name}</h3>
                   <p className="mt-1 text-xs text-foreground-subtle">{grade.name}</p>
                   {u.is_free ? (
                     <>
-                      <p className="mt-2 font-display text-xl font-extrabold text-emerald-300">مجاني</p>
-                      <p className="text-xs text-emerald-300">متاح مجاناً بدون كود</p>
+                      <p className="mt-2 font-display text-xl font-extrabold text-success">مجاني</p>
+                      <p className="text-xs text-success">متاح مجاناً بدون كود</p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 font-display text-xl font-extrabold text-gradient">{u.total_price} ج.م</p>
+                      <p className="mt-2 font-display text-xl font-extrabold text-foreground">{u.total_price} ج.م</p>
                       <p className="text-xs text-foreground-subtle">شامل رسوم المنصة — تفعيل مدى الحياة بكود WLDN</p>
                     </>
                   )}
-                  <Link to="/pricing" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-indigo-300 hover:text-indigo-200">التفاصيل والشراء <ArrowLeft className="h-3 w-3" /></Link>
+                  <Link to="/pricing" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary-strong hover:underline">التفاصيل والشراء <ArrowLeft className="h-3 w-3" /></Link>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-6 text-center">
+            <div className="glass-card mt-4 p-6 text-center">
               <p className="text-sm text-foreground-muted">لا توجد وحدات منشورة لهذا الصف حالياً — تابع صفحة الأسعار أو تواصل عبر واتساب.</p>
-              <Link to="/pricing" className="btn-primary mt-4 inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-bold text-white">عرض كل الأسعار</Link>
+              <Link to="/pricing" className="btn-primary mt-4 inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-bold">عرض كل الأسعار</Link>
             </div>
           )}
         </section>
 
         <div className="mt-10 flex flex-wrap gap-3 justify-center">
-          <Link to="/subjects" className="glass-soft inline-flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold text-foreground">كل الصفوف</Link>
-          <Link to="/pricing" className="btn-primary inline-flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold text-white">الأسعار</Link>
+          <Link to="/subjects" className="inline-flex h-11 items-center justify-center rounded-full border border-border bg-surface px-6 text-sm font-bold text-foreground hover:border-primary/50">كل الصفوف</Link>
+          <Link to="/pricing" className="btn-primary inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-bold">الأسعار</Link>
         </div>
       </div>
     </div>

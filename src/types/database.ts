@@ -12,6 +12,8 @@ export type Profile = {
   role: UserRole;
   status: AccountStatus;
   suspension_reason: string | null;
+  /** Storage path inside the private avatars bucket (<user_id>/avatar.jpg). NULL = no photo. */
+  avatar_path: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -404,6 +406,10 @@ export type NotificationType =
   | 'unit_activated'
   | 'new_content'
   | 'system'
+  | 'subscription_activated'
+  | 'subscription_expiring'
+  | 'subscription_expired'
+  | 'avatar_required'
   | 'exam_submitted'
   | 'exam_graded'
   | 'lesson_comment'
@@ -834,6 +840,9 @@ export interface Database {
         };
         Returns: void;
       };
+      set_my_avatar: { Args: { p_path: string }; Returns: void };
+      remove_my_avatar: { Args: never; Returns: void };
+      remind_missing_avatars: { Args: never; Returns: number };
       update_student_profile: {
         Args: {
           p_student_id: string;

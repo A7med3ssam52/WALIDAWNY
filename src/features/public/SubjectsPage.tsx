@@ -36,7 +36,7 @@ export function SubjectsPage() {
   }
 
   return (
-    <div className="min-h-screen" dir="rtl">
+    <div className="min-h-screen bg-background text-foreground" dir="rtl">
       <SeoHead
         title={SEO.subjects.title}
         description={SEO.subjects.description}
@@ -47,7 +47,7 @@ export function SubjectsPage() {
       <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
         <Breadcrumbs items={[{ name: 'المواد', url: `${SITE_URL}/subjects` }]} className="mb-6" />
         <header className="text-center">
-          <h1 className="font-display text-3xl font-extrabold sm:text-5xl"><span className="text-gradient">المواد والصفوف</span></h1>
+          <h1 className="font-display text-3xl font-extrabold text-foreground sm:text-5xl">المواد والصفوف</h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-foreground-muted">
             اختر صفك الدراسي واستعرض الوحدات المتاحة — كل وحدة تشمل فيديوهات، ملازم PDF وسبورات تفاعلية مع تفعيل مدى الحياة بكود WLDN.
           </p>
@@ -60,14 +60,14 @@ export function SubjectsPage() {
               <Link
                 key={grade.slug}
                 to={`/subjects/${grade.slug}`}
-                className="glass-card glass-card-hover conic-ring spotlight-card group flex flex-col gap-3 p-6"
+                className="glass-card glass-card-hover group flex flex-col gap-3 p-6"
               >
-                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-fuchsia-500/25 text-indigo-300 group-hover:scale-110 transition-transform">
+                <span className="card-chip inline-flex h-11 w-11 items-center justify-center group-hover:scale-110 transition-transform">
                   <GraduationCap className="h-5 w-5" />
                 </span>
                 <h2 className="font-display text-base font-bold text-foreground">{grade.name}</h2>
                 <p className="text-sm leading-6 text-foreground-muted">{grade.desc}</p>
-                <span className="mt-auto inline-flex items-center gap-1 text-xs font-bold text-indigo-300">
+                <span className="mt-auto inline-flex items-center gap-1 text-xs font-bold text-primary-strong">
                   {count !== undefined ? `${count} وحدات متاحة` : 'عرض التفاصيل'}
                   <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1" />
                 </span>
@@ -83,24 +83,24 @@ export function SubjectsPage() {
             <p className="mt-1 text-sm text-foreground-muted">أسماء الوحدات وأسعارها فقط — بدون كشف فيديو أو ملف محمي.</p>
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {prices.slice(0, 6).map((p) => (
-                <div key={p.unit_id} className="glass-soft rounded-xl p-4">
-                  <p className="flex items-center gap-2 text-sm font-bold text-foreground"><BookOpen className="h-4 w-4 text-indigo-300" /> {p.unit_name}</p>
+                <div key={p.unit_id} className="rounded-[20px] border border-border bg-surface-muted p-4">
+                  <p className="flex items-center gap-2 text-sm font-bold text-foreground"><BookOpen className="h-4 w-4 text-primary-strong" /> {p.unit_name}</p>
                   <p className="mt-1 text-xs text-foreground-subtle">{p.grade_name ?? ''}</p>
                   {p.is_free ? (
-                    <p className="mt-2 font-display text-lg font-extrabold text-emerald-300">مجاني</p>
+                    <p className="mt-2 font-display text-lg font-extrabold text-success">مجاني</p>
                   ) : (
-                    <p className="mt-2 font-display text-lg font-extrabold text-gradient">{p.total_price} ج.م</p>
+                    <p className="mt-2 font-display text-lg font-extrabold text-foreground">{p.total_price} ج.م</p>
                   )}
                 </div>
               ))}
             </div>
-            <Link to="/pricing" className="mt-4 inline-flex text-sm font-bold text-indigo-300 hover:text-indigo-200">عرض كل الأسعار ←</Link>
+            <Link to="/pricing" className="mt-4 inline-flex text-sm font-bold text-primary-strong hover:underline">عرض كل الأسعار ←</Link>
           </section>
         ) : null}
 
         <div className="mt-10 flex flex-wrap gap-3 justify-center">
-          <Link to="/pricing" className="btn-primary inline-flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold text-white">الأسعار المفصلة</Link>
-          <Link to="/how-it-works" className="glass-soft inline-flex h-11 items-center justify-center rounded-xl px-6 text-sm font-bold text-foreground">كيف أبدأ؟</Link>
+          <Link to="/pricing" className="btn-primary inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-bold">الأسعار المفصلة</Link>
+          <Link to="/how-it-works" className="inline-flex h-11 items-center justify-center rounded-full border border-border bg-surface px-6 text-sm font-bold text-foreground hover:border-primary/50">كيف أبدأ؟</Link>
         </div>
       </div>
     </div>

@@ -16,7 +16,7 @@ import { renderApp } from '../../test/utils';
 describe('StudentSuggestionsPage', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
   });
 
   it('shows the admin banner message and the submission form when open', async () => {

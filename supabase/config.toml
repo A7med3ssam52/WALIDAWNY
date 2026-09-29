@@ -61,3 +61,7 @@ file_size_limit = "5MiB"
 [storage.buckets.suggestion-images]
 public = false
 file_size_limit = "5MiB"
+
+[storage.buckets.avatars]
+public = false
+file_size_limit = "2MiB"

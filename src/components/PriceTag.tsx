@@ -13,25 +13,25 @@ export function PriceTag({ pricing }: PriceTagProps) {
   const isFree = (pricing as { is_free?: boolean }).is_free || pricing.total_price === 0;
   if (isFree) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-emerald-400/15 bg-emerald-500/10 px-3 py-2.5 backdrop-blur">
+      <div className="flex items-center gap-3 rounded-xl border border-[rgba(127,191,142,0.25)] bg-[rgba(127,191,142,0.08)] px-3 py-2.5">
         <span
           aria-hidden="true"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(52,211,153,0.5)]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[rgba(127,191,142,0.12)] text-success"
         >
           <Tag className="h-4 w-4" />
         </span>
         <div>
-          <p className="font-bold text-emerald-300">مجاني</p>
-          <p className="text-xs text-emerald-200/70">متاح لجميع الطلاب بدون كود</p>
+          <p className="font-bold text-success">مجاني</p>
+          <p className="text-xs text-foreground-muted">متاح لجميع الطلاب بدون كود</p>
         </div>
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5 px-3 py-2.5 backdrop-blur">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-muted px-3 py-2.5">
       <span
         aria-hidden="true"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 text-indigo-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_16px_-6px_rgba(129,140,248,0.5)]"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-strong"
       >
         <Tag className="h-4 w-4" />
       </span>

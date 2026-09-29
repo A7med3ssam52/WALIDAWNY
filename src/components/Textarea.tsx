@@ -26,8 +26,8 @@ export function Textarea({
       .filter(Boolean)
       .join(' ') || undefined;
   const borderClass = error
-    ? 'border-error/55 focus:ring-error/35 focus:border-error/50'
-    : 'border-white/10 focus:border-primary/50 focus:ring-primary/30 hover:border-white/15 focus:shadow-[0_0_20px_-8px_rgba(129,140,248,0.4)]';
+    ? 'border-error/60 focus:border-error focus:ring-error/25'
+    : 'border-border focus:border-primary-strong focus:ring-primary/25 hover:border-foreground-subtle/60';
 
   return (
     <div className="flex flex-col gap-1.5 group/textarea">
@@ -39,7 +39,7 @@ export function Textarea({
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         rows={rows}
-        className={`glass-input w-full border px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:outline-none focus:ring-2 resize-y backdrop-blur transition-all duration-200 ${borderClass} ${className ?? ''}`}
+        className={`glass-input w-full border px-3 py-2 text-sm text-foreground placeholder:text-foreground-subtle/60 focus:outline-none focus:ring-2 resize-y transition-colors duration-200 ${borderClass} ${className ?? ''}`}
         {...rest}
       />
       {hint ? (
@@ -51,9 +51,9 @@ export function Textarea({
         <p
           id={errorId ?? `${inputId}-error`}
           role="alert"
-          className="animate-fade-in text-xs font-medium text-rose-300 flex items-center gap-1"
+          className="animate-fade-in text-xs font-medium text-error flex items-center gap-1"
         >
-          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-rose-400" /> {error}
+          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-error" /> {error}
         </p>
       ) : null}
     </div>

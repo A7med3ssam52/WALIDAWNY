@@ -97,7 +97,7 @@ export function GeneralExamsListPage() {
                       {stateBadge(exam)}
                     </div>
                     {exam.my_attempt_id ? (
-                      <p className="text-xs font-bold text-emerald-300">
+                      <p className="text-xs font-bold text-success">
                         {exam.my_status === 'graded' ? 'تم تصحيح محاولتك' : 'أرسلت إجابتك — بانتظار التصحيح'}
                       </p>
                     ) : null}

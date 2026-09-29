@@ -42,17 +42,17 @@ export function Toggle({
         aria-hidden="true"
         dir="ltr"
         className={[
-          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all duration-200',
-          'peer-focus-visible:ring-2 peer-focus-visible:ring-primary/60 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-200',
+          'peer-focus-visible:ring-2 peer-focus-visible:ring-primary-strong/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
           'peer-disabled:opacity-50 peer-disabled:cursor-not-allowed',
           checked
-            ? 'bg-primary border-primary shadow-[0_0_14px_rgba(129,140,248,0.45)]'
-            : 'bg-white/10 border-white/15',
+            ? 'bg-primary-strong border-primary-strong'
+            : 'bg-surface-muted border-border',
         ].join(' ')}
       >
         <span
           className={[
-            'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-md ring-0 transition-transform duration-200',
+            'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200',
             checked ? 'translate-x-6' : 'translate-x-1',
           ].join(' ')}
         />

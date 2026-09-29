@@ -8,9 +8,9 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses = {
-  ghost: 'text-foreground-muted hover:bg-white/6 hover:text-foreground',
-  secondary: 'glass-soft text-foreground-muted hover:bg-white/10 hover:text-foreground',
-  danger: 'text-rose-300 hover:bg-rose-400/10',
+  ghost: 'text-foreground-muted hover:bg-surface-muted hover:text-foreground',
+  secondary: 'glass-soft text-foreground-muted hover:bg-surface-muted hover:text-foreground',
+  danger: 'text-error hover:bg-[rgba(232,139,139,0.08)]',
 };
 
 export function IconButton({

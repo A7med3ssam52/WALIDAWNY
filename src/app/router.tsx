@@ -20,6 +20,21 @@ const PrivacyPage = lazy(() => import('../features/public/PrivacyPage').then((m)
 const TermsPage = lazy(() => import('../features/public/TermsPage').then((m) => ({ default: m.TermsPage })));
 const NotFoundPage = lazy(() => import('../features/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const LabsExamPage = lazy(() => import('../features/labs/LabsExamPage').then((m) => ({ default: m.LabsExamPage })));
+const LabsRedesignPage = lazy(() => import('../features/labs/LabsRedesignPage').then((m) => ({ default: m.LabsRedesignPage })));
+const NewUiPage = lazy(() => import('../features/labs/NewUiPage').then((m) => ({ default: m.NewUiPage })));
+const AuthLabsGallery = lazy(() =>
+  import('../features/labs/auth/AuthLabsGallery').then((m) => ({ default: m.AuthLabsGallery })),
+);
+const LabsLogin1 = lazy(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Login1 })));
+const LabsRegister1 = lazy(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Register1 })));
+const LabsLogin2 = lazy(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Login2 })));
+const LabsRegister2 = lazy(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Register2 })));
+const LabsLogin3 = lazy(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Login3 })));
+const LabsRegister3 = lazy(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Register3 })));
+const LabsLogin4 = lazy(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Login4 })));
+const LabsRegister4 = lazy(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Register4 })));
+const LabsLogin5 = lazy(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Login5 })));
+const LabsRegister5 = lazy(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Register5 })));
 
 // Auth — keep lazy too but small
 const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
@@ -113,6 +128,19 @@ export function AppRoutes() {
         <Route path="/terms" element={<TermsPage />} />
         {/* Labs: interactive demo (noindex, no backend, no persistence) */}
         <Route path="/labs/exam" element={<LabsExamPage />} />
+        <Route path="/labs/redesign" element={<LabsRedesignPage />} />
+        <Route path="/labs/newui" element={<NewUiPage />} />
+        <Route path="/labs/auth" element={<AuthLabsGallery />} />
+        <Route path="/labs/login1" element={<LabsLogin1 />} />
+        <Route path="/labs/register1" element={<LabsRegister1 />} />
+        <Route path="/labs/login2" element={<LabsLogin2 />} />
+        <Route path="/labs/register2" element={<LabsRegister2 />} />
+        <Route path="/labs/login3" element={<LabsLogin3 />} />
+        <Route path="/labs/register3" element={<LabsRegister3 />} />
+        <Route path="/labs/login4" element={<LabsLogin4 />} />
+        <Route path="/labs/register4" element={<LabsRegister4 />} />
+        <Route path="/labs/login5" element={<LabsLogin5 />} />
+        <Route path="/labs/register5" element={<LabsRegister5 />} />
 
         {/* Auth — noindex */}
         <Route
@@ -136,11 +164,11 @@ export function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<RoleGuard allow={['student']} />}>
             <Route element={<SuspendedAccountGate />}>
+              <Route path="profile" element={<StudentProfilePage />} />
+              <Route path="password" element={<StudentChangePasswordPage />} />
               <Route element={<StudentPresenceGate />}>
                 <Route index element={<Navigate to="/student/dashboard" replace />} />
                 <Route path="dashboard" element={<StudentDashboardPage />} />
-                <Route path="profile" element={<StudentProfilePage />} />
-                <Route path="password" element={<StudentChangePasswordPage />} />
                 <Route path="units" element={<UnitsPage />} />
                 <Route path="curriculum" element={<StudentCurriculumPage />} />
                 <Route path="lessons/:lessonId" element={<StudentLessonPage />} />
