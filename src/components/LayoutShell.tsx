@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, X, Zap } from 'lucide-react';
+import { Atom, Bell, LogOut, Menu, X } from 'lucide-react';
 
 import { useAuth } from '../features/auth/AuthContext';
 import { AvatarImage } from './AvatarImage';
@@ -46,7 +46,7 @@ function SidebarBrand() {
       aria-label="وليد عونى — الرئيسية"
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        <Zap aria-hidden="true" className="h-5 w-5" strokeWidth={2.4} />
+        <Atom aria-hidden="true" className="h-5 w-5" strokeWidth={2.4} />
       </span>
       <span className="min-w-0 leading-tight">
         <span className="block truncate text-sm font-bold text-sidebar-foreground">وليد عونى</span>
