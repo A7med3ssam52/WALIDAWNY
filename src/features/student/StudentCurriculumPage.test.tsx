@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -37,16 +37,12 @@ function baseSetup() {
   mockState.unitPurchases.push(makeUnitPurchase({ id: 'purchase-1', unit_id: 'unit-1' }));
 }
 
-async function expandUnit(unitName: string) {
-  const unitHeading = await screen.findByRole('heading', { name: unitName });
-  const unitCard = unitHeading.closest('.glass-card') as HTMLElement;
-  const expandButton = within(unitCard).getByRole('button', { name: /الوحدة الأولى|الوحدة الثانية/ });
-  if (!expandButton.getAttribute('aria-expanded')?.includes('true')) {
-    fireEvent.click(expandButton);
-  }
+// Split-board navigation: units are tabs (sidebar on desktop, chips on mobile),
+// the detail panel shows the selected unit. Desktop tabs are always in the DOM.
+async function selectUnit(unitId: string) {
+  const tab = await screen.findByTestId(`unit-tab-${unitId}`);
+  fireEvent.click(tab);
 }
-
-import { fireEvent } from '@testing-library/react';
 
 describe('StudentCurriculumPage', () => {
   beforeEach(baseSetup);
@@ -58,19 +54,28 @@ describe('StudentCurriculumPage', () => {
     const headings = await screen.findAllByRole('heading', { name: 'المنهج الدراسي', level: 1 });
     expect(headings.length).toBeGreaterThanOrEqual(1);
     expect((await screen.findAllByText(/الصف الأول/)).length).toBeGreaterThan(0);
-    expect(screen.getByRole('heading', { name: 'الوحدة الأولى' })).toBeInTheDocument();
+    // First unit is auto-selected: its heading + lessons show in the detail panel
+    expect(await screen.findByRole('heading', { name: 'الوحدة الأولى' })).toBeInTheDocument();
+    expect(await screen.findByTestId('curriculum-lesson-lesson-1')).toBeInTheDocument();
     expect(screen.queryByText('الوحدة المخفية')).not.toBeInTheDocument();
-    // Lessons are hidden until unit is expanded
-    expect(screen.queryByText('الدرس الأول')).not.toBeInTheDocument();
-    expect(screen.queryByText('الدرس الثاني')).not.toBeInTheDocument();
+    expect(screen.queryByText('درس مخفي')).not.toBeInTheDocument();
   });
 
-  it('links each lesson to its lesson page when unit is expanded', async () => {
+  it('links each lesson to its lesson page when unit is selected', async () => {
     renderApp('/student/curriculum');
-    await expandUnit('الوحدة الأولى');
+    await selectUnit('unit-1');
 
     const lessonLink = await screen.findByTestId('curriculum-lesson-lesson-2');
     expect(lessonLink).toHaveAttribute('href', '/student/lessons/lesson-2');
+  });
+
+  it('shows only the selected unit lessons in the detail panel', async () => {
+    renderApp('/student/curriculum');
+    await selectUnit('unit-2');
+
+    // Locked unit-2 detail shows the redeem card, unit-1 lessons are hidden
+    expect(await screen.findByTestId('unit-detail-unit-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('curriculum-lesson-lesson-1')).not.toBeInTheDocument();
   });
 
   it('shows the completion badge for completed lessons and percent for in-progress ones', async () => {
@@ -89,7 +94,7 @@ describe('StudentCurriculumPage', () => {
       }),
     );
     renderApp('/student/curriculum');
-    await expandUnit('الوحدة الأولى');
+    await selectUnit('unit-1');
 
     expect(await screen.findByText('مكتمل')).toBeInTheDocument();
     expect(screen.getByText('40٪')).toBeInTheDocument();
@@ -109,26 +114,27 @@ describe('StudentCurriculumPage', () => {
 
   it('shows a locked unit card with the price for units without a purchase', async () => {
     renderApp('/student/curriculum');
+    await selectUnit('unit-2');
 
-    expect(await screen.findByText('الوحدة الثانية')).toBeInTheDocument();
+    expect(await screen.findByTestId('unit-detail-unit-2')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'تواصل لتفعيل الوحدة' })).toHaveAttribute(
       'href',
       expect.stringContaining('wa.me/201000000000'),
     );
-    // Locked units do NOT show lessons — only purchased units expand to show lessons
-    expect(screen.queryByText('الدرس الأول')).not.toBeInTheDocument();
+    // Locked units do NOT show lessons — only selected purchased units show lessons
+    expect(screen.queryByTestId('curriculum-lesson-lesson-1')).not.toBeInTheDocument();
   });
 
   it('redeems a unit code directly from a locked unit card', async () => {
     mockState.unitCodes.push(makeUnitCode({ id: 'code-2', unit_id: 'unit-2' }));
     renderApp('/student/curriculum');
+    await selectUnit('unit-2');
 
-    const unit2Text = await screen.findByText('الوحدة الثانية');
-    const unit2Card = unit2Text.closest('.glass-card') as HTMLElement;
-    fireEvent.change(within(unit2Card).getByLabelText('كود تفعيل الوحدة الثانية'), {
+    const unit2Detail = await screen.findByTestId('unit-detail-unit-2');
+    fireEvent.change(within(unit2Detail).getByLabelText('كود تفعيل الوحدة الثانية'), {
       target: { value: 'WLDN-ABCD-EFGH-JKLM' },
     });
-    fireEvent.click(within(unit2Card).getByRole('button', { name: 'تفعيل بالكود' }));
+    fireEvent.click(within(unit2Detail).getByRole('button', { name: 'تفعيل بالكود' }));
 
     expect(expectRpcCall('redeem_unit_code')).toEqual({ p_code: 'WLDN-ABCD-EFGH-JKLM' });
     expect(await screen.findByText('تم تفعيل الوحدة بنجاح')).toBeInTheDocument();
@@ -138,12 +144,12 @@ describe('StudentCurriculumPage', () => {
     baseSetup();
     mockState.units.push(makeUnit({ id: 'unit-no-price', grade_id: 'grade-1', name: 'الوحدة بلا سعر', status: 'published' }));
     renderApp('/student/curriculum');
+    await selectUnit('unit-no-price');
 
-    const noPriceText = await screen.findByText('الوحدة بلا سعر');
-    const noPriceCard = noPriceText.closest('.glass-card') as HTMLElement;
-    expect(noPriceCard).toBeInTheDocument();
-    expect(within(noPriceCard).getByText('تواصل مع الإدارة لمعرفة السعر وتفعيل الوحدة')).toBeInTheDocument();
-    expect(within(noPriceCard).queryByRole('link', { name: 'تواصل لتفعيل الوحدة' })).not.toBeInTheDocument();
+    const noPriceDetail = await screen.findByTestId('unit-detail-unit-no-price');
+    expect(noPriceDetail).toBeInTheDocument();
+    expect(within(noPriceDetail).getByText('تواصل مع الإدارة لمعرفة السعر وتفعيل الوحدة')).toBeInTheDocument();
+    expect(within(noPriceDetail).queryByRole('link', { name: 'تواصل لتفعيل الوحدة' })).not.toBeInTheDocument();
   });
 
   it('prompts to set the grade when the student has no grade', async () => {
