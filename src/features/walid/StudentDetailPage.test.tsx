@@ -43,6 +43,30 @@ describe('StudentDetailPage', () => {
     expect(screen.getByRole('option', { name: 'الصف الأول الثانوي' })).toBeInTheDocument();
   });
 
+  it('shows the student photo and a note when no photo is uploaded', async () => {
+    renderApp('/walid/students/s1');
+
+    expect(await screen.findByText('لم يرفع الطالب صورة شخصية بعد.')).toBeInTheDocument();
+    expect(screen.queryByTestId('avatar-image')).not.toBeInTheDocument();
+  });
+
+  it('shows the student photo when one is uploaded', async () => {
+    mockState.profiles.push(
+      makeProfile({
+        id: 's8',
+        full_name: 'طالب بصورة',
+        phone: '01008888888',
+        avatar_path: 's8/avatar.jpg',
+      }),
+    );
+    renderApp('/walid/students/s8');
+
+    const img = await screen.findByTestId('avatar-image');
+    expect(img).toHaveAttribute('src', 'https://storage.test/avatars/s8/avatar.jpg?signed=1');
+    expect(img).toHaveAttribute('alt', 'صورة طالب بصورة');
+    expect(screen.getByText('الصورة الشخصية مرفوعة من الطالب.')).toBeInTheDocument();
+  });
+
   it('lists the purchased units of the student', async () => {
     mockState.units.push({
       id: 'unit-1',

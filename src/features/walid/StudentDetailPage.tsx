@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import { Link, useParams } from 'react-router-dom';
 import { Pause, Pencil, Play, Trash2, UserRoundCheck } from 'lucide-react';
 
+import { AvatarImage } from '../../components/AvatarImage';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { DirectionalArrow } from '../../components/DirectionalArrow';
@@ -300,6 +301,29 @@ export function StudentDetailPage() {
     >
       <div className="flex flex-col gap-4">
         <Card title="معلومات الحساب">
+          <div className="mb-5 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+            <AvatarImage
+              path={student.avatar_path}
+              alt={`صورة ${student.full_name}`}
+              className="h-20 w-20 shrink-0 rounded-full ring-2 ring-border"
+              fallback={
+                <span
+                  aria-hidden="true"
+                  className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-primary-soft text-3xl font-black text-primary-strong ring-2 ring-border"
+                >
+                  {student.full_name.trim().charAt(0) || 'ط'}
+                </span>
+              }
+            />
+            <div className="min-w-0 text-center sm:text-start">
+              <p className="truncate text-lg font-bold text-foreground">{student.full_name}</p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                {student.avatar_path
+                  ? 'الصورة الشخصية مرفوعة من الطالب.'
+                  : 'لم يرفع الطالب صورة شخصية بعد.'}
+              </p>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <DetailItem label="الحالة">
               <StatusBadge status={student.status} deleted={isDeleted} />

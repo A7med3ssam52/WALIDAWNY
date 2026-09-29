@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BellRing, CalendarDays, Eye, Pause, Phone, Play, Search, Trash2 } from 'lucide-react';
 
+import { AvatarImage } from '../../components/AvatarImage';
 import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
@@ -258,16 +259,25 @@ export function StudentListPage() {
                 className="glass-card flex flex-col overflow-hidden"
               >
                 <div className="flex flex-col items-center px-4 pt-5 text-center">
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-16 w-16 items-center justify-center rounded-full text-xl font-black ring-2 ${
-                      isActive
-                        ? 'bg-primary-soft text-primary-strong ring-success/50'
-                        : 'bg-surface-muted text-foreground-muted ring-warning/50'
+                  <AvatarImage
+                    path={student.avatar_path}
+                    alt={`صورة ${student.full_name}`}
+                    className={`h-16 w-16 shrink-0 rounded-full ring-2 ${
+                      isActive ? 'ring-success/50' : 'ring-warning/50'
                     }`}
-                  >
-                    {initial}
-                  </span>
+                    fallback={
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-black ring-2 ${
+                          isActive
+                            ? 'bg-primary-soft text-primary-strong ring-success/50'
+                            : 'bg-surface-muted text-foreground-muted ring-warning/50'
+                        }`}
+                      >
+                        {initial}
+                      </span>
+                    }
+                  />
                   <h3 className="mt-3 w-full truncate text-base font-bold text-foreground">
                     {student.full_name}
                   </h3>

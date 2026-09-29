@@ -161,6 +161,22 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(screen.getByText('طالب اثنان')).toBeInTheDocument();
   });
 
+  it('shows the student photo for students who uploaded one', async () => {
+    const withPhoto = mockState.profiles.find((row) => row.id === 's1');
+    if (withPhoto) {
+      withPhoto.avatar_path = 's1/avatar.jpg';
+    }
+    renderApp('/walid/students');
+
+    const row = await screen.findByTestId('student-row-s1');
+    const img = await within(row).findByTestId('avatar-image');
+    expect(img).toHaveAttribute('src', 'https://storage.test/avatars/s1/avatar.jpg?signed=1');
+    expect(img).toHaveAttribute('alt', 'صورة طالب واحد');
+
+    const withoutPhoto = screen.getByTestId('student-row-s2');
+    expect(within(withoutPhoto).queryByTestId('avatar-image')).not.toBeInTheDocument();
+  });
+
   it('sends avatar reminders to active students without a photo', async () => {
     const user = userEvent.setup();
     renderApp('/walid/students');
