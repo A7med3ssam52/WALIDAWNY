@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Menu, Search, X, Zap } from 'lucide-react';
+import { Bell, Menu, X, Zap } from 'lucide-react';
 
 import { useAuth } from '../features/auth/AuthContext';
 import { AvatarImage } from './AvatarImage';
@@ -165,21 +165,6 @@ export function LayoutShell({
               ) : (
                 <TopBrand />
               )}
-
-              <form
-                role="search"
-                aria-label="بحث سريع"
-                className="order-last flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-full border border-border bg-input px-3 sm:order-none sm:w-auto sm:max-w-xs"
-                onSubmit={(event) => event.preventDefault()}
-              >
-                <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-foreground-subtle" />
-                <input
-                  type="search"
-                  placeholder="بحث سريع..."
-                  aria-label="بحث سريع"
-                  className="h-full w-full min-w-0 bg-transparent text-sm text-foreground placeholder:text-foreground-subtle focus:outline-none"
-                />
-              </form>
 
               <div className="ms-auto flex min-w-0 items-center gap-2">
                 <span className="hidden text-xs font-medium text-foreground-subtle xl:inline">{todayLabel}</span>

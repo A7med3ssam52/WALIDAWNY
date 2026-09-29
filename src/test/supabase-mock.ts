@@ -53,6 +53,8 @@ interface MockState {
   reauthenticateError: string | null;
   signOutError: string | null;
   rpcCalls: Array<{ fn: string; args: AnyRecord | undefined }>;
+  /** Fixed server clock for get_server_time tests. Null = real current time. */
+  serverTimeNow: string | null;
   authCalls: Array<{ method: string; params: unknown }>;
   queryCalls: Array<{
     table: string;
@@ -118,6 +120,7 @@ const state: MockState = {
   reauthenticateError: null,
   signOutError: null,
   rpcCalls: [],
+  serverTimeNow: null,
   authCalls: [],
   queryCalls: [],
   authListeners: [],
@@ -2046,6 +2049,13 @@ function createMockClient() {
   const SUGGESTION_KINDS = ['issue', 'suggestion', 'other'];
   const SUGGESTION_STATUSES = ['new', 'reviewed', 'planned', 'done', 'rejected'];
 
+  const applyServerTimeRpc = (fn: string): RpcResult | null => {
+    if (fn !== 'get_server_time') {
+      return null;
+    }
+    return { data: state.serverTimeNow ?? new Date().toISOString(), error: null };
+  };
+
   const applyOwnProfileRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {
     if (fn !== 'update_own_profile') {
       return null;
@@ -2064,7 +2074,7 @@ function createMockClient() {
     return { data: null, error: null };
   };
 
-  const applyAvatarRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {    const uid = currentUserId();
+    const applyAvatarRpc = (fn: string, args: AnyRecord | undefined): RpcResult | null => {    const uid = currentUserId();
     const profile = state.profiles.find((item) => item.id === uid);
     const role = String(profile?.role ?? '');
     const isStudent = role === 'student' && profile?.status === 'active' && !profile?.deleted_at;
@@ -2520,6 +2530,10 @@ function createMockClient() {
     if (ownProfile) {
       return ownProfile;
     }
+    const serverTime = applyServerTimeRpc(fn);
+    if (serverTime) {
+      return serverTime;
+    }
     const suggestions = applySuggestionsRpc(fn, args);
     if (suggestions) {
       return suggestions;
@@ -2598,6 +2612,7 @@ export function resetMockState() {
   state.reauthenticateError = null;
   state.signOutError = null;
   state.rpcCalls = [];
+  state.serverTimeNow = null;
   state.authCalls = [];
   state.queryCalls = [];
   state.authListeners = [];

@@ -4,16 +4,20 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   expectRpcCall,
+  mockRpcError,
+  mockState,
   resetMockState,
   setAuthenticatedStudent,
 } from '../test/supabase-mock';
 import { renderApp } from '../test/utils';
+import { resetServerTimeCache } from '../lib/serverTime';
 
 const RECENT_ISO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
 describe('ProfileCompletionModal', () => {
   beforeEach(() => {
     resetMockState();
+    resetServerTimeCache();
     window.sessionStorage.clear();
   });
 
@@ -36,7 +40,7 @@ describe('ProfileCompletionModal', () => {
     renderApp('/student/dashboard');
 
     const modal = await screen.findByTestId('profile-completion-modal');
-    expect(modal).toHaveTextContent('استكمال بيانات الملف');
+    expect(modal).toHaveTextContent('مراجعة بيانات الملف');
     // Full record for the tracking system.
     expect(modal).toHaveTextContent('student@example.com');
     expect(modal).toHaveTextContent('01001234567');
@@ -60,6 +64,52 @@ describe('ProfileCompletionModal', () => {
     expect(why).toHaveTextContent('منع انتحال الحسابات');
     expect(why).toHaveTextContent('قواعد قبول البيانات');
     expect(why).toHaveTextContent('ثلاثي');
+  });
+
+  it('shows a live server-driven countdown inside the grace period', async () => {
+    setAuthenticatedStudent({
+      full_name: 'أحمد محمد',
+      created_at: RECENT_ISO,
+    });
+    renderApp('/student/dashboard');
+
+    const countdown = await screen.findByTestId('profile-completion-countdown');
+    expect(countdown).toHaveTextContent(/متبقي/);
+    // ~5 days remain: the number is dynamic, never a hardcoded "7".
+    expect(countdown).toHaveTextContent(/أيام/);
+    expect(countdown.textContent).not.toMatch(/7 أيام/);
+  });
+
+  it('goes mandatory when the server clock passes the deadline', async () => {
+    setAuthenticatedStudent({
+      full_name: 'أحمد محمد',
+      created_at: RECENT_ISO,
+    });
+    const first = renderApp('/student/dashboard');
+    expect(await screen.findByTestId('profile-completion-countdown')).toBeInTheDocument();
+
+    // Six days later on the SERVER clock (device clock untouched).
+    first.unmount();
+    resetServerTimeCache();
+    mockState.serverTimeNow = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
+    renderApp('/student/dashboard');
+
+    expect(await screen.findByText(/إجباري ولا يمكن إغلاق/)).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-completion-countdown')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
+  });
+
+  it('fails closed to mandatory when the server clock cannot be fetched', async () => {
+    mockRpcError('get_server_time', 'network error');
+    setAuthenticatedStudent({
+      full_name: 'أحمد محمد',
+      created_at: RECENT_ISO,
+    });
+    renderApp('/student/dashboard');
+
+    expect(await screen.findByTestId('profile-completion-modal')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('profile-completion-countdown')).not.toBeInTheDocument();
   });
 
   it('is mandatory with no close option after the 7-day deadline', async () => {

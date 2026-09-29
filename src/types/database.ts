@@ -843,6 +843,7 @@ export interface Database {
       set_my_avatar: { Args: { p_path: string }; Returns: void };
       remove_my_avatar: { Args: never; Returns: void };
       remind_missing_avatars: { Args: never; Returns: number };
+      get_server_time: { Args: never; Returns: string };
       update_student_profile: {
         Args: {
           p_student_id: string;
