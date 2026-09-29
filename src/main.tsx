@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
 import { ErrorBoundary } from './app/ErrorBoundary';
+import { scheduleChunkRecoveryReload } from './app/lazyWithRetry';
 import { registerServiceWorker } from './lib/pwa';
 import './index.css';
 import './theme/themes.css';
@@ -67,11 +68,14 @@ if (typeof window !== 'undefined') {
     }
     console.error('Unhandled window error:', event.error ?? event.message, event);
   });
-  // Vite preload error event (for failed chunk preload)
+  // Vite preload error event (for failed chunk preload).
+  // Never reload immediately here: a preload failure always accompanies the
+  // import attempt of the same chunk, and that attempt retries transparently
+  // (lazyWithRetry) and cancels this timer on success. Reload only if the
+  // chunk still hasn't loaded after the grace period (stale deploy, etc).
   window.addEventListener('vite:preloadError', (event) => {
-    const msg = String((event as unknown as CustomEvent<{ message?: string }>).detail?.message ?? '');
-    handleChunkReload(msg);
     console.error('Vite preload error:', event);
+    scheduleChunkRecoveryReload();
   });
 }
 

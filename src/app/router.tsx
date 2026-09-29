@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { GuestOnly, ProtectedRoute, RoleGuard } from '../components/guards';
@@ -6,82 +6,84 @@ import { Spinner } from '../components/Spinner';
 import { SuspendedAccountGate } from '../components/SuspendedAccountGate';
 import { useAuth } from '../features/auth/AuthContext';
 import { ErrorBoundary } from './ErrorBoundary';
+import { lazyWithRetry } from './lazyWithRetry';
 
 // Public — lazy for code splitting (Landing excludes hls.js chunk)
-const LandingPage = lazy(() => import('../features/public/LandingPage').then((m) => ({ default: m.LandingPage })));
-const AboutPage = lazy(() => import('../features/public/AboutPage').then((m) => ({ default: m.AboutPage })));
-const HowItWorksPage = lazy(() => import('../features/public/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })));
-const SubjectsPage = lazy(() => import('../features/public/SubjectsPage').then((m) => ({ default: m.SubjectsPage })));
-const GradeLandingPage = lazy(() => import('../features/public/GradeLandingPage').then((m) => ({ default: m.GradeLandingPage })));
-const PricingPublicPage = lazy(() => import('../features/public/PricingPublicPage').then((m) => ({ default: m.PricingPublicPage })));
-const FaqPage = lazy(() => import('../features/public/FaqPage').then((m) => ({ default: m.FaqPage })));
-const ContactPage = lazy(() => import('../features/public/ContactPage').then((m) => ({ default: m.ContactPage })));
-const PrivacyPage = lazy(() => import('../features/public/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
-const TermsPage = lazy(() => import('../features/public/TermsPage').then((m) => ({ default: m.TermsPage })));
-const NotFoundPage = lazy(() => import('../features/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
-const LabsExamPage = lazy(() => import('../features/labs/LabsExamPage').then((m) => ({ default: m.LabsExamPage })));
-const LabsRedesignPage = lazy(() => import('../features/labs/LabsRedesignPage').then((m) => ({ default: m.LabsRedesignPage })));
-const NewUiPage = lazy(() => import('../features/labs/NewUiPage').then((m) => ({ default: m.NewUiPage })));
-const AuthLabsGallery = lazy(() =>
+const LandingPage = lazyWithRetry(() => import('../features/public/LandingPage').then((m) => ({ default: m.LandingPage })));
+const AboutPage = lazyWithRetry(() => import('../features/public/AboutPage').then((m) => ({ default: m.AboutPage })));
+const HowItWorksPage = lazyWithRetry(() => import('../features/public/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })));
+const SubjectsPage = lazyWithRetry(() => import('../features/public/SubjectsPage').then((m) => ({ default: m.SubjectsPage })));
+const GradeLandingPage = lazyWithRetry(() => import('../features/public/GradeLandingPage').then((m) => ({ default: m.GradeLandingPage })));
+const PricingPublicPage = lazyWithRetry(() => import('../features/public/PricingPublicPage').then((m) => ({ default: m.PricingPublicPage })));
+const FaqPage = lazyWithRetry(() => import('../features/public/FaqPage').then((m) => ({ default: m.FaqPage })));
+const ContactPage = lazyWithRetry(() => import('../features/public/ContactPage').then((m) => ({ default: m.ContactPage })));
+const PrivacyPage = lazyWithRetry(() => import('../features/public/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazyWithRetry(() => import('../features/public/TermsPage').then((m) => ({ default: m.TermsPage })));
+const NotFoundPage = lazyWithRetry(() => import('../features/public/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const LabsExamPage = lazyWithRetry(() => import('../features/labs/LabsExamPage').then((m) => ({ default: m.LabsExamPage })));
+const LabsRedesignPage = lazyWithRetry(() => import('../features/labs/LabsRedesignPage').then((m) => ({ default: m.LabsRedesignPage })));
+const NewUiPage = lazyWithRetry(() => import('../features/labs/NewUiPage').then((m) => ({ default: m.NewUiPage })));
+const CurriLabsPage = lazyWithRetry(() => import('../features/labs/CurriLabsPage').then((m) => ({ default: m.CurriLabsPage })));
+const AuthLabsGallery = lazyWithRetry(() =>
   import('../features/labs/auth/AuthLabsGallery').then((m) => ({ default: m.AuthLabsGallery })),
 );
-const LabsLogin1 = lazy(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Login1 })));
-const LabsRegister1 = lazy(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Register1 })));
-const LabsLogin2 = lazy(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Login2 })));
-const LabsRegister2 = lazy(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Register2 })));
-const LabsLogin3 = lazy(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Login3 })));
-const LabsRegister3 = lazy(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Register3 })));
-const LabsLogin4 = lazy(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Login4 })));
-const LabsRegister4 = lazy(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Register4 })));
-const LabsLogin5 = lazy(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Login5 })));
-const LabsRegister5 = lazy(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Register5 })));
+const LabsLogin1 = lazyWithRetry(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Login1 })));
+const LabsRegister1 = lazyWithRetry(() => import('../features/labs/auth/variant1').then((m) => ({ default: m.Register1 })));
+const LabsLogin2 = lazyWithRetry(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Login2 })));
+const LabsRegister2 = lazyWithRetry(() => import('../features/labs/auth/variant2').then((m) => ({ default: m.Register2 })));
+const LabsLogin3 = lazyWithRetry(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Login3 })));
+const LabsRegister3 = lazyWithRetry(() => import('../features/labs/auth/variant3').then((m) => ({ default: m.Register3 })));
+const LabsLogin4 = lazyWithRetry(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Login4 })));
+const LabsRegister4 = lazyWithRetry(() => import('../features/labs/auth/variant4').then((m) => ({ default: m.Register4 })));
+const LabsLogin5 = lazyWithRetry(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Login5 })));
+const LabsRegister5 = lazyWithRetry(() => import('../features/labs/auth/variant5').then((m) => ({ default: m.Register5 })));
 
 // Auth — keep lazy too but small
-const LoginPage = lazy(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
-const RegisterPage = lazy(() => import('../features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
+const LoginPage = lazyWithRetry(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazyWithRetry(() => import('../features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 
 // Student
-const StudentDashboardPage = lazy(() => import('../features/student/StudentDashboardPage').then((m) => ({ default: m.StudentDashboardPage })));
-const StudentProfilePage = lazy(() => import('../features/student/StudentProfilePage').then((m) => ({ default: m.StudentProfilePage })));
-const StudentChangePasswordPage = lazy(() => import('../features/student/StudentChangePasswordPage').then((m) => ({ default: m.StudentChangePasswordPage })));
-const UnitsPage = lazy(() => import('../features/student/UnitsPage').then((m) => ({ default: m.UnitsPage })));
-const StudentCurriculumPage = lazy(() => import('../features/student/StudentCurriculumPage').then((m) => ({ default: m.StudentCurriculumPage })));
-const StudentLessonPage = lazy(() => import('../features/student/StudentLessonPage').then((m) => ({ default: m.StudentLessonPage })));
-const GeneralExamsListPage = lazy(() => import('../features/student/GeneralExamsListPage').then((m) => ({ default: m.GeneralExamsListPage })));
-const GeneralExamTakePage = lazy(() => import('../features/student/GeneralExamTakePage').then((m) => ({ default: m.GeneralExamTakePage })));
-const StudentNotificationsPage = lazy(() => import('../features/student/StudentNotificationsPage').then((m) => ({ default: m.StudentNotificationsPage })));
-const StudentSuggestionsPage = lazy(() => import('../features/student/StudentSuggestionsPage').then((m) => ({ default: m.StudentSuggestionsPage })));
-const StudentPresenceGate = lazy(() =>
+const StudentDashboardPage = lazyWithRetry(() => import('../features/student/StudentDashboardPage').then((m) => ({ default: m.StudentDashboardPage })));
+const StudentProfilePage = lazyWithRetry(() => import('../features/student/StudentProfilePage').then((m) => ({ default: m.StudentProfilePage })));
+const StudentChangePasswordPage = lazyWithRetry(() => import('../features/student/StudentChangePasswordPage').then((m) => ({ default: m.StudentChangePasswordPage })));
+const UnitsPage = lazyWithRetry(() => import('../features/student/UnitsPage').then((m) => ({ default: m.UnitsPage })));
+const StudentCurriculumPage = lazyWithRetry(() => import('../features/student/StudentCurriculumPage').then((m) => ({ default: m.StudentCurriculumPage })));
+const StudentLessonPage = lazyWithRetry(() => import('../features/student/StudentLessonPage').then((m) => ({ default: m.StudentLessonPage })));
+const GeneralExamsListPage = lazyWithRetry(() => import('../features/student/GeneralExamsListPage').then((m) => ({ default: m.GeneralExamsListPage })));
+const GeneralExamTakePage = lazyWithRetry(() => import('../features/student/GeneralExamTakePage').then((m) => ({ default: m.GeneralExamTakePage })));
+const StudentNotificationsPage = lazyWithRetry(() => import('../features/student/StudentNotificationsPage').then((m) => ({ default: m.StudentNotificationsPage })));
+const StudentSuggestionsPage = lazyWithRetry(() => import('../features/student/StudentSuggestionsPage').then((m) => ({ default: m.StudentSuggestionsPage })));
+const StudentPresenceGate = lazyWithRetry(() =>
   import('../features/student/StudentPresenceGate').then((m) => ({ default: m.StudentPresenceGate })),
 );
 
 // Walid / Teacher
-const WalidDashboardPage = lazy(() => import('../features/walid/WalidDashboardPage').then((m) => ({ default: m.WalidDashboardPage })));
-const ReportsPage = lazy(() => import('../features/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
-const StudentListPage = lazy(() => import('../features/walid/StudentListPage').then((m) => ({ default: m.StudentListPage })));
-const TrashPage = lazy(() => import('../features/walid/TrashPage').then((m) => ({ default: m.TrashPage })));
-const StudentDetailPage = lazy(() => import('../features/walid/StudentDetailPage').then((m) => ({ default: m.StudentDetailPage })));
-const GradesPage = lazy(() => import('../features/walid/GradesPage').then((m) => ({ default: m.GradesPage })));
-const CurriculumPage = lazy(() => import('../features/walid/CurriculumPage').then((m) => ({ default: m.CurriculumPage })));
-const CurriculumUnitsPage = lazy(() => import('../features/walid/CurriculumUnitsPage').then((m) => ({ default: m.CurriculumUnitsPage })));
-const CurriculumLessonsPage = lazy(() => import('../features/walid/CurriculumLessonsPage').then((m) => ({ default: m.CurriculumLessonsPage })));
-const ExamsPage = lazy(() => import('../features/walid/ExamsPage').then((m) => ({ default: m.ExamsPage })));
-const GeneralExamsPage = lazy(() => import('../features/walid/GeneralExamsPage').then((m) => ({ default: m.GeneralExamsPage })));
-const GeneralExamDetailPage = lazy(() => import('../features/walid/GeneralExamDetailPage').then((m) => ({ default: m.GeneralExamDetailPage })));
-const LessonAssetsPage = lazy(() => import('../features/walid/LessonAssetsPage').then((m) => ({ default: m.LessonAssetsPage })));
-const PricingPage = lazy(() => import('../features/walid/PricingPage').then((m) => ({ default: m.PricingPage })));
-const CodesPage = lazy(() => import('../features/walid/CodesPage').then((m) => ({ default: m.CodesPage })));
-const WalidAnnouncementsListPage = lazy(() => import('../features/walid/AnnouncementsListPage').then((m) => ({ default: m.WalidAnnouncementsListPage })));
-const WalidAnnouncementFormPage = lazy(() => import('../features/walid/AnnouncementFormPage').then((m) => ({ default: m.WalidAnnouncementFormPage })));
+const WalidDashboardPage = lazyWithRetry(() => import('../features/walid/WalidDashboardPage').then((m) => ({ default: m.WalidDashboardPage })));
+const ReportsPage = lazyWithRetry(() => import('../features/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const StudentListPage = lazyWithRetry(() => import('../features/walid/StudentListPage').then((m) => ({ default: m.StudentListPage })));
+const TrashPage = lazyWithRetry(() => import('../features/walid/TrashPage').then((m) => ({ default: m.TrashPage })));
+const StudentDetailPage = lazyWithRetry(() => import('../features/walid/StudentDetailPage').then((m) => ({ default: m.StudentDetailPage })));
+const GradesPage = lazyWithRetry(() => import('../features/walid/GradesPage').then((m) => ({ default: m.GradesPage })));
+const CurriculumPage = lazyWithRetry(() => import('../features/walid/CurriculumPage').then((m) => ({ default: m.CurriculumPage })));
+const CurriculumUnitsPage = lazyWithRetry(() => import('../features/walid/CurriculumUnitsPage').then((m) => ({ default: m.CurriculumUnitsPage })));
+const CurriculumLessonsPage = lazyWithRetry(() => import('../features/walid/CurriculumLessonsPage').then((m) => ({ default: m.CurriculumLessonsPage })));
+const ExamsPage = lazyWithRetry(() => import('../features/walid/ExamsPage').then((m) => ({ default: m.ExamsPage })));
+const GeneralExamsPage = lazyWithRetry(() => import('../features/walid/GeneralExamsPage').then((m) => ({ default: m.GeneralExamsPage })));
+const GeneralExamDetailPage = lazyWithRetry(() => import('../features/walid/GeneralExamDetailPage').then((m) => ({ default: m.GeneralExamDetailPage })));
+const LessonAssetsPage = lazyWithRetry(() => import('../features/walid/LessonAssetsPage').then((m) => ({ default: m.LessonAssetsPage })));
+const PricingPage = lazyWithRetry(() => import('../features/walid/PricingPage').then((m) => ({ default: m.PricingPage })));
+const CodesPage = lazyWithRetry(() => import('../features/walid/CodesPage').then((m) => ({ default: m.CodesPage })));
+const WalidAnnouncementsListPage = lazyWithRetry(() => import('../features/walid/AnnouncementsListPage').then((m) => ({ default: m.WalidAnnouncementsListPage })));
+const WalidAnnouncementFormPage = lazyWithRetry(() => import('../features/walid/AnnouncementFormPage').then((m) => ({ default: m.WalidAnnouncementFormPage })));
 
 // Admin
-const AuditLogPage = lazy(() => import('../features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
-const RolesPage = lazy(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
-const AnnouncementsListPage = lazy(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
-const AdminSuggestionsPage = lazy(() => import('../features/admin/AdminSuggestionsPage').then((m) => ({ default: m.AdminSuggestionsPage })));
-const AnnouncementFormPage = lazy(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
-const PresencePage = lazy(() => import('../features/admin/PresencePage').then((m) => ({ default: m.PresencePage })));
-const StudentPresenceHistoryPage = lazy(() =>
+const AuditLogPage = lazyWithRetry(() => import('../features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
+const RolesPage = lazyWithRetry(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
+const AnnouncementsListPage = lazyWithRetry(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
+const AdminSuggestionsPage = lazyWithRetry(() => import('../features/admin/AdminSuggestionsPage').then((m) => ({ default: m.AdminSuggestionsPage })));
+const AnnouncementFormPage = lazyWithRetry(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
+const PresencePage = lazyWithRetry(() => import('../features/admin/PresencePage').then((m) => ({ default: m.PresencePage })));
+const StudentPresenceHistoryPage = lazyWithRetry(() =>
   import('../features/admin/StudentPresenceHistoryPage').then((m) => ({ default: m.StudentPresenceHistoryPage })),
 );
 
@@ -130,6 +132,7 @@ export function AppRoutes() {
         <Route path="/labs/exam" element={<LabsExamPage />} />
         <Route path="/labs/redesign" element={<LabsRedesignPage />} />
         <Route path="/labs/newui" element={<NewUiPage />} />
+        <Route path="/labs/curri" element={<CurriLabsPage />} />
         <Route path="/labs/auth" element={<AuthLabsGallery />} />
         <Route path="/labs/login1" element={<LabsLogin1 />} />
         <Route path="/labs/register1" element={<LabsRegister1 />} />
