@@ -40,6 +40,19 @@ SELECT tests.assert(
     NOT has_function_privilege('anon', 'public.list_student_streaks()', 'EXECUTE'),
     'g: list_student_streaks NOT executable by anon');
 
+-- Explicit anon lockdown (0086): the hosted platform auto-grants new
+-- functions to anon (role default privileges), which REVOKE FROM PUBLIC
+-- alone does not remove. These anchors pin the 0086 fix.
+SELECT tests.assert(
+    NOT has_function_privilege('anon', 'public.streak_active_days(uuid)', 'EXECUTE'),
+    'g: anon cannot exec internal streak_active_days (0086)');
+SELECT tests.assert(
+    NOT has_function_privilege('anon', 'public.streak_state(uuid)', 'EXECUTE'),
+    'g: anon cannot exec internal streak_state (0086)');
+SELECT tests.assert(
+    NOT has_function_privilege('anon', 'public.redeem_unit_code(text, boolean)', 'EXECUTE'),
+    'g: anon cannot exec redeem_unit_code(text, boolean) (0086)');
+
 -- staff gate on the board
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
