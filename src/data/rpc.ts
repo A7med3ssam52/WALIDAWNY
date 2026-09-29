@@ -2472,11 +2472,16 @@ const AVATAR_SIGNED_URL_TTL_SECONDS = 3600;
 /** In-memory cache of avatar signed URLs (path -> { url, expiresAt }). */
 const avatarUrlCache = new Map<string, { url: string; expiresAt: number }>();
 
+/** In-flight signed URL requests (path -> promise) so concurrent grids never double-fetch. */
+const avatarUrlPending = new Map<string, Promise<string | null>>();
+
 export function invalidateAvatarUrl(path?: string | null): void {
   if (path) {
     avatarUrlCache.delete(path);
+    avatarUrlPending.delete(path);
   } else {
     avatarUrlCache.clear();
+    avatarUrlPending.clear();
   }
 }
 
@@ -2534,15 +2539,29 @@ export async function getAvatarSignedUrl(path: string): Promise<string | null> {
   if (cached && cached.expiresAt > Date.now()) {
     return cached.url;
   }
-  const { data, error } = await getSupabaseClient()
+  const inFlight = avatarUrlPending.get(path);
+  if (inFlight) {
+    return inFlight;
+  }
+  const request = getSupabaseClient()
     .storage.from(AVATAR_IMAGE_BUCKET)
-    .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS);
-  if (error) {
-    return null;
-  }
-  const url = data?.signedUrl ?? null;
-  if (url) {
-    avatarUrlCache.set(path, { url, expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000 });
-  }
-  return url;
+    .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS)
+    .then(({ data, error }) => {
+      if (error) {
+        return null;
+      }
+      const url = data?.signedUrl ?? null;
+      if (url) {
+        avatarUrlCache.set(path, {
+          url,
+          expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000,
+        });
+      }
+      return url;
+    })
+    .finally(() => {
+      avatarUrlPending.delete(path);
+    });
+  avatarUrlPending.set(path, request);
+  return request;
 }
