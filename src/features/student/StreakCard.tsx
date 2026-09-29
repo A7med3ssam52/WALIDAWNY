@@ -30,9 +30,23 @@ const FLAME_STYLE: Record<StreakFlameStage, { icon: string; label: string }> = {
   storm: { icon: 'text-error', label: 'عاصفة نارية' },
 };
 
-function weekdayShort(isoDate: string): string {
+/** Distinct Arabic letter per weekday: س ح ا ث أ خ ج (index 0 = Sunday). */
+const WEEKDAY_LETTERS = ['ح', 'ا', 'ث', 'أ', 'خ', 'ج', 'س'] as const;
+
+function weekdayIndex(isoDate: string): number | null {
+  const time = new Date(`${isoDate}T12:00:00`).getTime();
+  if (Number.isNaN(time)) return null;
+  return new Date(time).getDay();
+}
+
+function weekdayLetter(isoDate: string): string {
+  const index = weekdayIndex(isoDate);
+  return index === null ? '' : WEEKDAY_LETTERS[index];
+}
+
+function weekdayLong(isoDate: string): string {
   try {
-    return new Intl.DateTimeFormat('ar', { weekday: 'short' }).format(new Date(`${isoDate}T12:00:00`));
+    return new Intl.DateTimeFormat('ar', { weekday: 'long' }).format(new Date(`${isoDate}T12:00:00`));
   } catch {
     return '';
   }
@@ -139,24 +153,29 @@ export function StreakCard() {
   return (
     <section data-testid="streak-card" aria-label="سلسلة المذاكرة">
       <GridCard>
-      <div className="flex items-center gap-4">
-        <div
-          className={cn(
-            'flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl',
-            streak.current_days > 0 ? 'bg-warning/10' : 'bg-surface-muted',
-          )}
-          aria-hidden="true"
-        >
-          <Flame
+      {/* Header: flame + count + freeze (wraps gracefully on narrow screens) */}
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+        <div className="relative shrink-0" aria-hidden="true">
+          {streak.current_days > 0 ? (
+            <span className="absolute inset-0 rounded-2xl bg-warning/25 blur-md" />
+          ) : null}
+          <div
             className={cn(
-              'h-7 w-7',
-              flame.icon,
-              streak.flame_stage === 'storm' && 'h-8 w-8',
-              streak.current_days > 0 && 'animate-pulse',
+              'relative flex h-14 w-14 items-center justify-center rounded-2xl',
+              streak.current_days > 0 ? 'bg-gradient-to-br from-warning/25 to-warning/5' : 'bg-surface-muted',
             )}
-          />
+          >
+            <Flame
+              className={cn(
+                'h-7 w-7',
+                flame.icon,
+                streak.flame_stage === 'storm' && 'h-8 w-8',
+                streak.current_days > 0 && 'animate-pulse drop-shadow-[0_0_6px_rgba(217,167,95,0.7)]',
+              )}
+            />
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-32">
           <p className="text-[11px] font-black text-foreground-subtle">سلسلة المذاكرة · {flame.label}</p>
           {streak.current_days > 0 ? (
             <p className="font-display text-2xl font-black tabular-nums text-foreground" data-testid="streak-count">
@@ -166,7 +185,7 @@ export function StreakCard() {
             <p className="mt-0.5 text-sm font-bold leading-6 text-foreground">انقطعت؟ عادي جدًا — كمّل النهاردة وابدأ من جديد</p>
           ) : (
             <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-foreground">
-              <Sprout aria-hidden="true" className="h-4 w-4 text-success" />
+              <Sprout aria-hidden="true" className="h-4 w-4 shrink-0 text-success" />
               ابدأ سلسلتك النهاردة — ذاكر أي درس
             </p>
           )}
@@ -178,9 +197,9 @@ export function StreakCard() {
           disabled={!streak.freeze_available || freezeBusy}
           title={streak.freeze_available ? 'تجميد يوم فائت من هذا الأسبوع' : 'استخدمت تجميد هذا الأسبوع'}
           className={cn(
-            'flex shrink-0 items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong',
+            'flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-xs font-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong',
             streak.freeze_available
-              ? 'border-info/40 bg-info/[0.08] text-info hover:bg-info/[0.14]'
+              ? 'border-info/40 bg-info/[0.08] text-info hover:bg-info/[0.14] active:scale-95'
               : 'cursor-not-allowed border-border bg-surface-muted text-foreground-subtle',
           )}
         >
@@ -189,27 +208,30 @@ export function StreakCard() {
         </button>
       </div>
 
-      {/* Week dots */}
-      <ol data-testid="streak-week" className="mt-4 grid grid-cols-7 gap-1.5" aria-label="أيام الأسبوع">
+      {/* Week dots — distinct letter per weekday: س ح ا ث أ خ ج */}
+      <ol data-testid="streak-week" className="mt-4 grid grid-cols-7 gap-1 sm:gap-1.5" aria-label="أيام الأسبوع">
         {streak.week.map((day) => (
-          <li key={day.date} className="flex flex-col items-center gap-1">
+          <li key={day.date} className="flex min-w-0 flex-col items-center gap-1">
             <span
               data-testid={`streak-day-${day.date}`}
               data-active={day.active}
               data-frozen={day.frozen}
-              aria-label={`${weekdayShort(day.date)}: ${day.frozen ? 'مجمد' : day.active ? 'نشط' : day.future ? 'قادم' : 'فائت'}`}
+              aria-label={`${weekdayLong(day.date)}: ${day.frozen ? 'مجمد' : day.active ? 'نشط' : day.future ? 'قادم' : 'فائت'}`}
               className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-black',
+                'flex h-10 w-full items-center justify-center rounded-xl border font-display text-sm font-black transition-transform',
                 day.frozen
                   ? 'border-info/50 bg-info/[0.12] text-info'
                   : day.active
-                    ? 'border-transparent bg-primary text-primary-foreground'
+                    ? 'border-transparent bg-gradient-to-br from-primary to-primary-strong text-primary-foreground shadow-sm'
                     : day.today
-                      ? 'border-dashed border-primary-strong bg-primary-soft text-primary-strong'
+                      ? 'animate-pulse border-2 border-dashed border-primary-strong bg-primary-soft text-primary-strong'
                       : 'border-border bg-surface-muted text-foreground-subtle',
               )}
             >
-              {day.frozen ? <ShieldCheck aria-hidden="true" className="h-4 w-4" /> : weekdayShort(day.date).charAt(0)}
+              {day.frozen ? <ShieldCheck aria-hidden="true" className="h-4 w-4" /> : weekdayLetter(day.date)}
+            </span>
+            <span className={cn('text-[10px] font-bold', day.today ? 'text-primary-strong' : 'text-foreground-subtle')}>
+              {day.today ? 'اليوم' : weekdayLetter(day.date)}
             </span>
           </li>
         ))}

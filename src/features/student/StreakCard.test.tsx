@@ -39,6 +39,21 @@ describe('StreakCard', () => {
     expect(within(card).getByTestId('streak-freeze-btn')).toHaveTextContent('تجميد يوم');
   });
 
+  it('shows a distinct letter per weekday (س ح ا ث أ خ ج)', async () => {
+    mockState.progress.push(
+      makeProgress({ id: 'p1', lesson_id: 'lesson-1', percent_completed: 50, updated_at: isoDaysAgo(0) }),
+    );
+    renderApp('/student/dashboard');
+
+    const card = await screen.findByTestId('streak-card', {}, { timeout: 5000 });
+    const week = within(card).getByTestId('streak-week');
+    const letters = Array.from(week.querySelectorAll('[data-testid^="streak-day-"]')).map(
+      (el) => el.textContent ?? '',
+    );
+    expect(letters).toHaveLength(7);
+    expect([...letters].sort().join('')).toBe([...'سحاثأخج'].sort().join(''));
+  });
+
   it('invites new students to start their streak', async () => {
     renderApp('/student/dashboard');
 
