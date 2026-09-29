@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { GuestOnly, ProtectedRoute, RoleGuard } from '../components/guards';
+import { ProfileCompletionGate } from '../components/ProfileCompletionGate';
 import { Spinner } from '../components/Spinner';
 import { SuspendedAccountGate } from '../components/SuspendedAccountGate';
 import { useAuth } from '../features/auth/AuthContext';
@@ -79,6 +80,7 @@ const WalidAnnouncementFormPage = lazyWithRetry(() => import('../features/walid/
 
 // Admin
 const AuditLogPage = lazyWithRetry(() => import('../features/admin/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
+const AdminNotificationsPage = lazyWithRetry(() => import('../features/admin/AdminNotificationsPage').then((m) => ({ default: m.AdminNotificationsPage })));
 const RolesPage = lazyWithRetry(() => import('../features/admin/RolesPage').then((m) => ({ default: m.RolesPage })));
 const AnnouncementsListPage = lazyWithRetry(() => import('../features/admin/AnnouncementsListPage').then((m) => ({ default: m.AnnouncementsListPage })));
 const AdminSuggestionsPage = lazyWithRetry(() => import('../features/admin/AdminSuggestionsPage').then((m) => ({ default: m.AdminSuggestionsPage })));
@@ -169,6 +171,7 @@ export function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route path="/student" element={<RoleGuard allow={['student']} />}>
             <Route element={<SuspendedAccountGate />}>
+              <Route element={<ProfileCompletionGate />}>
               <Route path="profile" element={<StudentProfilePage />} />
               <Route path="password" element={<StudentChangePasswordPage />} />
               <Route element={<StudentPresenceGate />}>
@@ -181,6 +184,7 @@ export function AppRoutes() {
                 <Route path="exams/:examId" element={<GeneralExamTakePage />} />
                 <Route path="notifications" element={<StudentNotificationsPage />} />
                 <Route path="suggestions" element={<StudentSuggestionsPage />} />
+              </Route>
               </Route>
             </Route>
           </Route>
@@ -216,6 +220,7 @@ export function AppRoutes() {
           <Route path="/admin" element={<RoleGuard allow={['admin']} />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<WalidDashboardPage />} />
+            <Route path="notifications" element={<AdminNotificationsPage />} />
             <Route path="presence" element={<PresencePage />} />
             <Route path="presence/:studentId" element={<StudentPresenceHistoryPage />} />
             <Route path="reports" element={<ReportsPage />} />

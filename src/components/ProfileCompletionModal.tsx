@@ -1,71 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, HelpCircle, ShieldCheck, Timer, X } from 'lucide-react';
+import { Camera, HelpCircle, ShieldCheck } from 'lucide-react';
 
 import { getAvatarSignedUrl, setMyAvatar, updateOwnProfile, uploadMyAvatar } from '../data/rpc';
 import { compressAvatarImage, validateAvatarImage } from '../lib/imageCompress';
 import { formatDateTime } from '../lib/format';
-import { useServerTime } from '../lib/serverTime';
+import { isProfileComplete, isStudentNameComplete } from '../lib/profileCompletion';
 import { validateArabicFullName } from '../lib/validation';
 import { useAuth } from '../features/auth/AuthContext';
 import { useToast } from './Toast';
 import { Button } from './Button';
 
-const DISMISS_KEY = 'profile-completion-dismissed';
-const GRACE_DAYS = 7;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function deadlineOf(createdAt: string | null | undefined): number {
-  const stamp = createdAt ? Date.parse(createdAt) : Number.NaN;
-  if (Number.isNaN(stamp)) {
-    // Unknown join date: require completion immediately (tracking-safe).
-    return 0;
-  }
-  return stamp + GRACE_DAYS * MS_PER_DAY;
-}
-
-function isDismissedThisSession(): boolean {
-  try {
-    return window.sessionStorage.getItem(DISMISS_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function dismissThisSession(): void {
-  try {
-    window.sessionStorage.setItem(DISMISS_KEY, '1');
-  } catch {
-    // Private mode: the modal simply reappears on next render.
-  }
-}
-
-function pluralUnit(value: number, one: string, two: string, many: string): string {
-  if (value === 1) return `1 ${one}`;
-  if (value === 2) return `2 ${two}`;
-  return `${value} ${many}`;
-}
-
-/** Arabic countdown text, e.g. "5 أيام و3 ساعات و12 دقيقة و40 ثانية". */
-export function formatCountdown(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  const parts: string[] = [];
-  if (days > 0) parts.push(pluralUnit(days, 'يوم', 'يومان', 'أيام'));
-  if (hours > 0 || days > 0) parts.push(pluralUnit(hours, 'ساعة', 'ساعتان', 'ساعات'));
-  parts.push(pluralUnit(minutes, 'دقيقة', 'دقيقتان', 'دقائق'));
-  parts.push(pluralUnit(seconds, 'ثانية', 'ثانيتان', 'ثوانٍ'));
-  return parts.join(' و');
-}
-
 /**
  * Student tracking review modal: shows the full account record and
  * requires a triple Arabic name plus a profile photo.
- * The 7-day grace countdown runs on the SERVER clock (anti-tamper);
- * dismissible once per session during grace, then mandatory forever.
- * Mounted by LayoutShell for student roles only.
+ * إجباري وفوري: يظهر من أول دخول لأي طالب ناقص البيانات،
+ * ولا يمكن إغلاقه بأي طريقة — يختفي فقط بعد اكتمال الحفظ.
+ * Mounted by LayoutShell for student roles only, and enforced by
+ * ProfileCompletionGate on every /student/* route.
  */
 export function ProfileCompletionModal() {
   const { profile, user, refreshProfile } = useAuth();
@@ -76,21 +27,11 @@ export function ProfileCompletionModal() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState(isDismissedThisSession);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const announcedBucket = useRef('');
-  const [announcement, setAnnouncement] = useState('');
 
-  const { ready: clockReady, failed: clockFailed, nowMs } = useServerTime(!!profile);
-
-  const nameInvalid = profile ? validateArabicFullName(profile.full_name) !== null : false;
+  const nameComplete = isStudentNameComplete(profile);
   const needsAvatar = !profile?.avatar_path;
-  const incomplete = Boolean(profile && profile.role === 'student' && (nameInvalid || needsAvatar));
-  const deadline = profile ? deadlineOf(profile.created_at) : 0;
-  // Fail closed: without an authoritative clock reading, the deadline
-  // counts as passed (device clock is never trusted).
-  const overdue = profile ? nowMs === null || nowMs > deadline : false;
-  const remainingMs = nowMs === null ? 0 : Math.max(0, deadline - nowMs);
+  const incomplete = !isProfileComplete(profile);
 
   useEffect(() => {
     if (profile) {
@@ -117,34 +58,21 @@ export function ProfileCompletionModal() {
     };
   }, [profile?.avatar_path]);
 
-  // Screen-reader announcements only when crossing hour/day thresholds,
-  // so the ticking timer stays silent.
+  // Lock background scroll while the mandatory modal is open.
   useEffect(() => {
-    if (overdue || nowMs === null) {
+    if (!incomplete) {
       return;
     }
-    const bucket = `${Math.floor(remainingMs / 3600000)}`;
-    if (bucket !== announcedBucket.current) {
-      announcedBucket.current = bucket;
-      setAnnouncement(`متبقي على الموعد النهائي ${formatCountdown(remainingMs)}`);
-    }
-  });
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [incomplete]);
 
   if (!profile || profile.role !== 'student' || !incomplete) {
     return null;
   }
-  if (!clockReady && !clockFailed) {
-    // Wait for the authoritative server clock; never trust the device.
-    return null;
-  }
-  if (dismissed && !overdue) {
-    return null;
-  }
-
-  const handleDismiss = () => {
-    dismissThisSession();
-    setDismissed(true);
-  };
 
   const handleSaveName = async () => {
     const next = (draftName ?? '').trim();
@@ -225,39 +153,11 @@ export function ProfileCompletionModal() {
             <div>
               <p className="font-display text-lg font-black text-foreground">مراجعة بيانات الملف</p>
               <p className="mt-0.5 text-xs text-foreground-subtle">
-                {overdue
-                  ? 'المهلة انتهت — إكمال البيانات إجباري ولا يمكن إغلاق هذه النافذة'
-                  : 'يمكنك الإغلاق الآن — بعد انتهاء المهلة يصبح الإكمال إجباريًا'}
+                إكمال البيانات إجباري ولا يمكن إغلاق هذه النافذة أو استخدام المنصة قبل الحفظ
               </p>
             </div>
           </div>
-          {!overdue ? (
-            <button
-              type="button"
-              onClick={handleDismiss}
-              aria-label="إغلاق"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-foreground-subtle transition-colors hover:bg-surface-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
-            >
-              <X aria-hidden="true" className="h-5 w-5" />
-            </button>
-          ) : null}
         </div>
-
-        {!overdue ? (
-          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-warning/30 bg-warning/[0.07] px-4 py-2.5">
-            <Timer aria-hidden="true" className="h-5 w-5 shrink-0 text-warning" />
-            <p
-              aria-hidden="true"
-              data-testid="profile-completion-countdown"
-              className="text-sm font-black tabular-nums text-foreground"
-            >
-              متبقي {formatCountdown(remainingMs)}
-            </p>
-            <p aria-live="polite" className="sr-only">
-              {announcement}
-            </p>
-          </div>
-        ) : null}
 
         <dl className="mt-4 flex flex-col gap-2 rounded-2xl border border-border bg-surface-muted p-4 text-sm">
           <div className="flex items-center justify-between gap-2">
@@ -307,9 +207,9 @@ export function ProfileCompletionModal() {
             قواعد قبول البيانات
           </p>
           <ul className="mt-2 flex list-disc flex-col gap-1 ps-5 text-xs leading-6 text-foreground-muted">
-            <li>الاسم ثلاثي على الأقل (مثال: أحمد محمد علي) وباللغة العربية فقط.</li>
+            <li>الاسم ثلاثي على الأقل (مثال: أحمد محمد علي) وباللغة العربية فقط — لا يمكن الحفظ بدونه.</li>
             <li>صورة شخصية واضحة — تُعرض في شريط لوحة التحكم.</li>
-            <li>الإكمال قبل انتهاء العد التنازلي، وبعدها لا يمكن إغلاق هذه النافذة.</li>
+            <li>لا يمكن إغلاق هذه النافذة أو استخدام المنصة قبل إكمال الاسم والصورة معاً.</li>
           </ul>
         </div>
 
@@ -338,9 +238,9 @@ export function ProfileCompletionModal() {
               {nameError}
             </p>
           ) : null}
-          {nameInvalid ? null : (
+          {nameComplete ? (
             <p className="mt-1.5 text-xs font-medium text-success">الاسم مطابق للقواعد ✓</p>
-          )}
+          ) : null}
         </div>
 
         <div className="mt-4 flex items-center gap-3">
@@ -361,7 +261,7 @@ export function ProfileCompletionModal() {
           )}
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <p className="text-xs text-foreground-muted">
-              {needsAvatar ? 'لا توجد صورة شخصية بعد.' : 'الصورة الشخصية محفوظة ✓'}
+              {needsAvatar ? 'لا توجد صورة شخصية بعد — رفعها إجباري.' : 'الصورة الشخصية محفوظة ✓'}
             </p>
             {photoError ? (
               <p role="alert" className="text-xs font-medium text-error">
@@ -389,12 +289,6 @@ export function ProfileCompletionModal() {
             </div>
           </div>
         </div>
-
-        {!overdue ? (
-          <Button variant="ghost" size="sm" className="mt-5 w-full" onClick={handleDismiss}>
-            تذكيري لاحقاً
-          </Button>
-        ) : null}
       </div>
     </div>
   );

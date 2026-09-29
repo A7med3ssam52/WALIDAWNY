@@ -15,14 +15,14 @@ import { StudentProfilePage } from './StudentProfilePage';
 describe('StudentProfilePage', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ full_name: 'أحمد محمد', phone: '01001234567' });
+    setAuthenticatedStudent({ full_name: 'أحمد محمد علي', phone: '01001234567' });
   });
 
   it('loads the current profile into the form', async () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
     });
     expect(screen.getByLabelText('رقم الهاتف')).toHaveValue('01001234567');
     expect(screen.getByLabelText('العنوان')).toHaveValue('القاهرة');
@@ -44,7 +44,7 @@ describe('StudentProfilePage', () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
     });
 
     const nameInput = screen.getByLabelText('الاسم الكامل');
@@ -86,7 +86,7 @@ describe('StudentProfilePage', () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
     });
 
     const nameInput = screen.getByLabelText('الاسم الكامل');
@@ -104,7 +104,7 @@ describe('StudentProfilePage', () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
     });
     expect(screen.queryByTestId('avatar-image')).not.toBeInTheDocument();
 
@@ -130,7 +130,7 @@ describe('StudentProfilePage', () => {
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
-      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد');
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
     });
 
     const file = new File([new Uint8Array([1])], 'photo.gif', { type: 'image/gif' });

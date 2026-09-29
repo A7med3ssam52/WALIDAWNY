@@ -44,7 +44,7 @@ describe('SuspendedAccountGate', () => {
   });
 
   it('lets an active student through to the dashboard', async () => {
-    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد علي' });
     renderApp('/student/dashboard');
 
     expect(

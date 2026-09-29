@@ -470,6 +470,7 @@ export type NotificationType =
   | 'subscription_expiring'
   | 'subscription_expired'
   | 'avatar_required'
+  | 'avatar_updated'
   | 'exam_submitted'
   | 'exam_graded'
   | 'lesson_comment'

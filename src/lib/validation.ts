@@ -85,6 +85,15 @@ export function validateRegister(values: RegisterFormValues): FieldErrors<Regist
   } else if (!isValidEgyptianPhone(values.guardianPhone)) {
     errors.guardianPhone = 'رقم ولي الأمر يجب أن يبدأ بـ 01 أو +20';
   }
+  // رقم الطالب ورقم ولي الأمر لنفس الحساب يجب أن يكونا مختلفين
+  // (المقارنة بالصيغة Canonical لالتقاط 010xxx مقابل +2010xxx).
+  if (
+    !errors.phone &&
+    !errors.guardianPhone &&
+    toCanonicalPhone(values.phone) === toCanonicalPhone(values.guardianPhone)
+  ) {
+    errors.guardianPhone = 'رقم ولي الأمر يجب أن يكون مختلفًا عن رقم الطالب';
+  }
   if (!values.address.trim()) {
     errors.address = 'العنوان مطلوب';
   }

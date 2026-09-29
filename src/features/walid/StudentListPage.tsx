@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BellRing, CalendarDays, Eye, Pause, Phone, Play, Search, Trash2 } from 'lucide-react';
+import { BellRing, CalendarDays, Download, Eye, Pause, Phone, Play, Search, Trash2 } from 'lucide-react';
 
 import { AvatarImage } from '../../components/AvatarImage';
+import { AvatarPreviewDialog, type PreviewStudent } from '../../components/AvatarPreviewDialog';
 import { Button } from '../../components/Button';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorState } from '../../components/ErrorState';
@@ -14,6 +15,7 @@ import { RoleNav } from '../../components/RoleNav';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Textarea } from '../../components/Textarea';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/AuthContext';
 import { disableStudent, enableStudent, listStudents, remindMissingAvatars, softDeleteStudent } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
 import type { Profile } from '../../types/database';
@@ -73,6 +75,10 @@ function StudentsGridSkeleton() {
 
 export function StudentListPage() {
   const { showToast } = useToast();
+  const { role } = useAuth();
+  // فلتر "بدون صورة" وزر التذكير للأدمن فقط — مخفي عن mr_walid و teacher.
+  const isAdmin = role === 'admin';
+  const visibleTabs = isAdmin ? filterTabs : filterTabs.filter((tab) => tab.value !== 'noavatar');
   const [students, setStudents] = useState<Profile[] | null>(null);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
@@ -82,6 +88,7 @@ export function StudentListPage() {
   const [remindBusy, setRemindBusy] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [previewStudent, setPreviewStudent] = useState<PreviewStudent | null>(null);
 
   const load = useCallback(async () => {
     setError(false);
@@ -96,6 +103,13 @@ export function StudentListPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // احتياط: غير الأدمن لا يبقى على فلتر "بدون صورة" أبداً.
+  useEffect(() => {
+    if (!isAdmin && statusFilter === 'noavatar') {
+      setStatusFilter('all');
+    }
+  }, [isAdmin, statusFilter]);
 
   const filtered = (students ?? []).filter((student) => {
     if (statusFilter === 'noavatar') {
@@ -177,16 +191,18 @@ export function StudentListPage() {
       nav={<RoleNav />}
       actions={
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<BellRing aria-hidden="true" className="h-4 w-4" />}
-            loading={remindBusy}
-            onClick={() => void handleRemindAll()}
-            className="shrink-0 rounded-xl"
-          >
-            تذكير الكل بالصورة
-          </Button>
+          {isAdmin ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<BellRing aria-hidden="true" className="h-4 w-4" />}
+              loading={remindBusy}
+              onClick={() => void handleRemindAll()}
+              className="shrink-0 rounded-xl"
+            >
+              تذكير الكل بالصورة
+            </Button>
+          ) : null}
           <Link
             to="/walid/students/trash"
             className="inline-flex h-11 items-center rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-subtle transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
@@ -208,7 +224,7 @@ export function StudentListPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2" role="group" aria-label="تصفية حسب الحالة">
-          {filterTabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.value}
               type="button"
@@ -313,6 +329,23 @@ export function StudentListPage() {
                     <Eye aria-hidden="true" className="h-4 w-4" />
                     عرض
                   </Link>
+                  {isAdmin && student.avatar_path ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewStudent({
+                          id: student.id,
+                          full_name: student.full_name,
+                          avatar_path: student.avatar_path,
+                        })
+                      }
+                      aria-label={`معاينة صورة ${student.full_name}`}
+                      className="flex items-center justify-center gap-1.5 py-3 text-xs font-bold text-foreground-muted transition-colors hover:bg-surface-muted focus:outline-none"
+                    >
+                      <Download aria-hidden="true" className="h-4 w-4" />
+                      الصورة
+                    </button>
+                  ) : null}
                   {isActive ? (
                     <button
                       type="button"
@@ -389,6 +422,8 @@ export function StudentListPage() {
           </div>
         ) : null}
       </Modal>
+
+      <AvatarPreviewDialog student={previewStudent} onClose={() => setPreviewStudent(null)} />
     </LayoutShell>
   );
 }

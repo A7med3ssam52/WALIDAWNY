@@ -3,6 +3,7 @@ import { Camera, Trash2 } from 'lucide-react';
 
 import { removeMyAvatar, setMyAvatar, uploadMyAvatar } from '../data/rpc';
 import { compressAvatarImage, validateAvatarImage } from '../lib/imageCompress';
+import { isProfileComplete } from '../lib/profileCompletion';
 import { useToast } from './Toast';
 import { useAuth } from '../features/auth/AuthContext';
 import { AvatarImage } from './AvatarImage';
@@ -21,6 +22,8 @@ export function AvatarUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const avatarInitial = (profile?.full_name ?? user?.email ?? 'ط').trim().charAt(0) || 'ط';
+  // الطالب الناقص لا يحذف صورته — الحذف يعيده للحجب فوراً.
+  const canRemove = Boolean(profile?.avatar_path) && (profile?.role !== 'student' || isProfileComplete(profile));
 
   const handleAvatarFile = async (file: File | null) => {
     if (!file || avatarBusy) {
@@ -114,7 +117,7 @@ export function AvatarUploader() {
           >
             {profile?.avatar_path ? 'تغيير الصورة' : 'إضافة صورة'}
           </Button>
-          {profile?.avatar_path ? (
+          {canRemove ? (
             <Button
               variant="ghost"
               size="sm"

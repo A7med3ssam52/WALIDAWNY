@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { isValidEgyptianPhone, normalizePhone, toCanonicalPhone, validateArabicFullName } from './validation';
+import { isValidEgyptianPhone, normalizePhone, toCanonicalPhone, validateArabicFullName, validateRegister, type RegisterFormValues } from './validation';
+
+const validRegister: RegisterFormValues = {
+  fullName: 'أحمد محمد علي',
+  email: 'new@example.com',
+  phone: '01001234567',
+  guardianPhone: '01112345678',
+  address: 'القاهرة',
+  gradeId: 'grade-1',
+  password: 'secret123',
+  confirmPassword: 'secret123',
+};
 
 describe('normalizePhone', () => {
   it('strips spaces, dashes and dots', () => {
@@ -98,5 +109,21 @@ describe('validateArabicFullName', () => {
     expect(validateArabicFullName('أحمد Mohamed علي')).toMatch(/العربية/);
     expect(validateArabicFullName('أحمد محمد 123')).toMatch(/العربية/);
     expect(validateArabicFullName('أحمد-محمد علي حسن')).toMatch(/العربية/);
+  });
+});
+
+describe('validateRegister phone uniqueness', () => {
+  it('accepts different student and guardian phones', () => {
+    expect(validateRegister(validRegister)).toEqual({});
+  });
+
+  it('rejects identical phones in the same form', () => {
+    const errors = validateRegister({ ...validRegister, guardianPhone: '01001234567' });
+    expect(errors.guardianPhone).toBe('رقم ولي الأمر يجب أن يكون مختلفًا عن رقم الطالب');
+  });
+
+  it('rejects identical phones written in different formats', () => {
+    const errors = validateRegister({ ...validRegister, guardianPhone: '+201001234567' });
+    expect(errors.guardianPhone).toBe('رقم ولي الأمر يجب أن يكون مختلفًا عن رقم الطالب');
   });
 });

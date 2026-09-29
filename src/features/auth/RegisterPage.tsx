@@ -38,6 +38,16 @@ function toRegisterErrorMessage(error: unknown): string {
   if (message.includes('already registered') || message.includes('user_already_exists')) {
     return 'هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة';
   }
+  // رقم الطالب UNIQUE على مستوى القاعدة (المرجع النهائي لسباق التسجيل المتزامن).
+  if (
+    message.includes('23505') ||
+    message.includes('duplicate key') ||
+    message.includes('profiles_phone') ||
+    message.includes('phone already') ||
+    message.includes('phone_exists')
+  ) {
+    return 'رقم هاتف الطالب مسجل بالفعل، استخدم رقمًا آخر';
+  }
   if (message.includes('password') || message.includes('weak_password')) {
     return `كلمة المرور يجب أن تكون ${PASSWORD_MIN_LENGTH} أحرف على الأقل`;
   }

@@ -45,7 +45,7 @@ describe('StudentChangePasswordPage', () => {
   });
 
   it('signs out and redirects to login when the session must be re-authenticated', async () => {
-    setAuthenticatedStudent();
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg' });
     mockState.updateUserError =
       'Auth session missing! Session is expired, or the user must be re-authenticated before updating their password';
     const user = userEvent.setup();

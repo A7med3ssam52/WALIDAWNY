@@ -35,7 +35,7 @@ function liveExam(overrides: Record<string, unknown> = {}) {
 describe('LiveExamCard', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد علي' });
   });
 
   it('shows the card with a CTA when a live exam exists', async () => {

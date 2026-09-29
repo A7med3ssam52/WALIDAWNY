@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Pause, Pencil, Play, Trash2, UserRoundCheck } from 'lucide-react';
 
 import { AvatarImage } from '../../components/AvatarImage';
+import { AvatarPreviewDialog } from '../../components/AvatarPreviewDialog';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { DirectionalArrow } from '../../components/DirectionalArrow';
@@ -16,6 +17,7 @@ import { RoleNav } from '../../components/RoleNav';
 import { PurchaseBadge, StatusBadge } from '../../components/StatusBadge';
 import { Textarea } from '../../components/Textarea';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../auth/AuthContext';
 import {
   disableStudent,
   enableStudent,
@@ -100,6 +102,9 @@ function DetailItem({
 export function StudentDetailPage() {
   const { studentId } = useParams();
   const { showToast } = useToast();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [student, setStudent] = useState<Profile | null>(null);
   const [purchases, setPurchases] = useState<UnitPurchaseWithUnit[]>([]);
@@ -322,6 +327,16 @@ export function StudentDetailPage() {
                   ? 'الصورة الشخصية مرفوعة من الطالب.'
                   : 'لم يرفع الطالب صورة شخصية بعد.'}
               </p>
+              {isAdmin && student.avatar_path ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  معاينة / تحميل الصورة
+                </Button>
+              ) : null}
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -573,6 +588,14 @@ export function StudentDetailPage() {
           />
         </div>
       </Modal>
+      <AvatarPreviewDialog
+        student={
+          previewOpen && student.avatar_path
+            ? { id: student.id, full_name: student.full_name, avatar_path: student.avatar_path }
+            : null
+        }
+        onClose={() => setPreviewOpen(false)}
+      />
     </LayoutShell>
   );
 }

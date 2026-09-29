@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   BarChart3,
   BookOpen,
+  Camera,
   History,
   KeyRound,
   Layers,
@@ -17,17 +18,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { getUnreadSuggestionsCount } from '../data/rpc';
+import { getUnreadSuggestionsCount, listMyNotifications } from '../data/rpc';
 
 interface AdminNavItem {
   to: string;
   label: string;
   icon: LucideIcon;
   unreadBadge?: boolean;
+  avatarBadge?: boolean;
 }
 
 const adminItems: AdminNavItem[] = [
   { to: '/admin/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+  { to: '/admin/notifications', label: 'إشعارات الصور', icon: Camera, avatarBadge: true },
   { to: '/admin/presence', label: 'المتواجدون الآن', icon: Radio },
   { to: '/admin/reports', label: 'التقارير المالية', icon: BarChart3 },
   { to: '/admin/audit', label: 'سجل النشاطات', icon: History },
@@ -98,6 +101,38 @@ function SuggestionsUnreadBadge() {
   );
 }
 
+/** Unread avatar-update pill (0087). Counts own unread avatar_updated rows. */
+function AvatarUnreadBadge() {
+  const { pathname } = useLocation();
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    void listMyNotifications()
+      .then((rows) => {
+        if (active) {
+          setCount(rows.filter((row) => row.type === 'avatar_updated' && !row.is_read).length);
+        }
+      })
+      .catch(() => {
+        // non-fatal: badge simply stays hidden
+      });
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
+
+  if (count <= 0) return null;
+  return (
+    <span
+      data-testid="avatar-unread-badge"
+      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 function NavSection({ items }: { items: AdminNavItem[] }) {
   return (
     <>
@@ -122,6 +157,7 @@ function NavSection({ items }: { items: AdminNavItem[] }) {
                 </span>
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.unreadBadge ? <SuggestionsUnreadBadge /> : null}
+                {item.avatarBadge ? <AvatarUnreadBadge /> : null}
                 {isActive ? <span className="sr-only">(الحالية)</span> : null}
               </>
             )}

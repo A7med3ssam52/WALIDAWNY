@@ -16,7 +16,7 @@ import { renderApp } from '../../test/utils';
 describe('StudentDashboardPage', () => {
   beforeEach(() => {
     resetMockState();
-    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد' });
+    setAuthenticatedStudent({ avatar_path: 'user-test-1/avatar.jpg',  full_name: 'أحمد محمد علي' });
   });
 
   it('shows a greeting and the profile summary', async () => {

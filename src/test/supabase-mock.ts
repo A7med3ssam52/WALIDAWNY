@@ -155,7 +155,7 @@ export function makeSession(user: AnyRecord): MockSession {
 export function makeProfile(overrides: Partial<AnyRecord> = {}): AnyRecord {
   return {
     id: 'user-test-1',
-    full_name: 'أحمد محمد',
+    full_name: 'أحمد محمد علي',
     phone: '01001234567',
     guardian_phone: '01112345678',
     address: 'القاهرة',
@@ -2272,6 +2272,25 @@ function createMockClient() {
         return error('avatar_missing');
       }
       profile.avatar_path = path;
+      // Mirror 0087: every change notifies each active, non-deleted admin.
+      const stamp = Date.now();
+      for (const admin of state.profiles) {
+        if (admin.role !== 'admin' || admin.status !== 'active' || admin.deleted_at) {
+          continue;
+        }
+        state.notifications.push(
+          makeNotification({
+            id: `notif-avatar-updated-${uid}-${stamp}-${admin.id}`,
+            user_id: admin.id,
+            type: 'avatar_updated',
+            title: 'تحديث الصورة الشخصية',
+            body: profile.full_name ?? '',
+            dedup_key: `avatar_updated:${uid}:${stamp}:${admin.id}`,
+            entity_type: 'profiles',
+            entity_id: uid,
+          }),
+        );
+      }
       return { data: null, error: null };
     }
     if (fn === 'remove_my_avatar') {

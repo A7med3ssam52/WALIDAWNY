@@ -19,7 +19,7 @@ function isoDaysAgo(days: number): string {
 
 function baseSetup() {
   resetMockState();
-  setAuthenticatedStudent({ grade_id: 'grade-1' });
+  setAuthenticatedStudent({ grade_id: 'grade-1', avatar_path: 'user-test-1/avatar.jpg' });
 }
 
 describe('StreakCard', () => {

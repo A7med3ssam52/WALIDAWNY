@@ -9,6 +9,8 @@ import {
   makeProfile,
   mockState,
   resetMockState,
+  setAuthenticatedAdmin,
+  setAuthenticatedTeacher,
   setAuthenticatedWalid,
 } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
@@ -144,7 +146,8 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
   });
 
-  it('filters students without a photo and shows the missing count', async () => {
+  it('filters students without a photo and shows the missing count (admin only)', async () => {
+    setAuthenticatedAdmin();
     const withPhoto = mockState.profiles.find((row) => row.id === 's1');
     if (withPhoto) {
       withPhoto.avatar_path = 's1/avatar.jpg';
@@ -177,7 +180,8 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(within(withoutPhoto).queryByTestId('avatar-image')).not.toBeInTheDocument();
   });
 
-  it('sends avatar reminders to active students without a photo', async () => {
+  it('sends avatar reminders to active students without a photo (admin only)', async () => {
+    setAuthenticatedAdmin();
     const user = userEvent.setup();
     renderApp('/walid/students');
 
@@ -188,5 +192,70 @@ describe('StudentListPage (staff lifecycle)', () => {
     expect(getRpcCalls().some((call) => call.fn === 'remind_missing_avatars')).toBe(true);
     const reminded = mockState.notifications.filter((row) => row.type === 'avatar_required');
     expect(reminded.map((row) => row.user_id)).toEqual(['s1']);
+  });
+
+  it('hides the no-photo filter and remind button for mr_walid', async () => {
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /بدون صورة/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'تذكير الكل بالصورة' })).not.toBeInTheDocument();
+    // باقي الفلاتر ظاهرة
+    expect(screen.getByRole('button', { name: 'الكل' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'نشط' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'موقوف' })).toBeInTheDocument();
+  });
+
+  it('hides the no-photo filter and remind button for teacher', async () => {
+    resetMockState();
+    setAuthenticatedTeacher();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب واحد', phone: '01001111111' }),
+    );
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /بدون صورة/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'تذكير الكل بالصورة' })).not.toBeInTheDocument();
+  });
+
+  it('shows the no-photo filter and remind button for admin', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب واحد', phone: '01001111111' }),
+    );
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /بدون صورة/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'تذكير الكل بالصورة' })).toBeInTheDocument();
+  });
+
+  it('opens the avatar preview from the card button for admin', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب واحد', phone: '01001111111', avatar_path: 's1/avatar.jpg' }),
+    );
+    const user = userEvent.setup();
+    renderApp('/walid/students');
+
+    const row = await screen.findByTestId('student-row-s1');
+    await user.click(within(row).getByRole('button', { name: 'معاينة صورة طالب واحد' }));
+
+    const dialog = await screen.findByTestId('avatar-preview-dialog');
+    expect(dialog).toHaveTextContent('طالب واحد');
+    expect(await within(dialog).findByAltText('صورة طالب واحد')).toHaveAttribute(
+      'src',
+      'https://storage.test/avatars/s1/avatar.jpg?signed=1',
+    );
+  });
+
+  it('hides the card preview button for non-admin staff', async () => {
+    renderApp('/walid/students');
+
+    const row = await screen.findByTestId('student-row-s1');
+    expect(within(row).queryByRole('button', { name: /معاينة صورة/ })).not.toBeInTheDocument();
   });
 });

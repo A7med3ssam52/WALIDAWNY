@@ -1,6 +1,6 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   expectRpcCall,
@@ -10,6 +10,8 @@ import {
   mockRpcError,
   mockState,
   resetMockState,
+  setAuthenticatedAdmin,
+  setAuthenticatedTeacher,
   setAuthenticatedWalid,
 } from '../../test/supabase-mock';
 import { renderApp } from '../../test/utils';
@@ -202,5 +204,84 @@ describe('StudentDetailPage', () => {
       });
     });
     expect(await screen.findByText('تم تحديث سبب الإيقاف')).toBeInTheDocument();
+  });
+
+  it('shows the preview/download button for admin when a photo exists', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب التفاصيل', phone: '01001234567', avatar_path: 's1/avatar.jpg' }),
+    );
+    const user = userEvent.setup();
+    renderApp('/walid/students/s1');
+
+    await screen.findByRole('heading', { name: 'طالب التفاصيل' });
+    await user.click(screen.getByRole('button', { name: 'معاينة / تحميل الصورة' }));
+
+    const dialog = await screen.findByTestId('avatar-preview-dialog');
+    expect(dialog).toHaveTextContent('طالب التفاصيل');
+    const preview = await within(dialog).findByAltText('صورة طالب التفاصيل');
+    expect(preview).toHaveAttribute('src', 'https://storage.test/avatars/s1/avatar.jpg?signed=1');
+  });
+
+  it('downloads the photo to the device from the preview', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب التفاصيل', phone: '01001234567', avatar_path: 's1/avatar.jpg' }),
+    );
+    const blob = new Blob(['fake-image'], { type: 'image/jpeg' });
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) });
+    vi.stubGlobal('fetch', fetchSpy);
+    const createSpy = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeSpy = vi.fn();
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createSpy as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = revokeSpy as unknown as typeof URL.revokeObjectURL;
+    try {
+      const user = userEvent.setup();
+      renderApp('/walid/students/s1');
+
+      await screen.findByRole('heading', { name: 'طالب التفاصيل' });
+      await user.click(screen.getByRole('button', { name: 'معاينة / تحميل الصورة' }));
+      await screen.findByTestId('avatar-preview-dialog');
+      await user.click(screen.getByTestId('avatar-download'));
+
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith('https://storage.test/avatars/s1/avatar.jpg?signed=1');
+      });
+      expect(createSpy).toHaveBeenCalledWith(blob);
+      expect(await screen.findByText('تم تحميل الصورة على جهازك')).toBeInTheDocument();
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('hides the preview/download button for non-admin staff', async () => {
+    resetMockState();
+    setAuthenticatedTeacher();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب التفاصيل', phone: '01001234567', avatar_path: 's1/avatar.jpg' }),
+    );
+    renderApp('/walid/students/s1');
+
+    await screen.findByRole('heading', { name: 'طالب التفاصيل' });
+    expect(screen.queryByRole('button', { name: 'معاينة / تحميل الصورة' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('avatar-preview-dialog')).not.toBeInTheDocument();
+  });
+
+  it('hides the preview/download button for admin when no photo exists', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب التفاصيل', phone: '01001234567' }),
+    );
+    renderApp('/walid/students/s1');
+
+    await screen.findByRole('heading', { name: 'طالب التفاصيل' });
+    expect(screen.queryByRole('button', { name: 'معاينة / تحميل الصورة' })).not.toBeInTheDocument();
   });
 });

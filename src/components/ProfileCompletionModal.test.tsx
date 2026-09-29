@@ -4,20 +4,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   expectRpcCall,
-  mockRpcError,
-  mockState,
   resetMockState,
   setAuthenticatedStudent,
 } from '../test/supabase-mock';
 import { renderApp } from '../test/utils';
-import { resetServerTimeCache } from '../lib/serverTime';
 
-const RECENT_ISO = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
-
-describe('ProfileCompletionModal', () => {
+describe('ProfileCompletionModal (mandatory)', () => {
   beforeEach(() => {
     resetMockState();
-    resetServerTimeCache();
     window.sessionStorage.clear();
   });
 
@@ -32,10 +26,9 @@ describe('ProfileCompletionModal', () => {
     expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
   });
 
-  it('shows full account data with dismiss options inside the grace period', async () => {
+  it('shows immediately for an incomplete profile with no close option', async () => {
     setAuthenticatedStudent({
       full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
     });
     renderApp('/student/dashboard');
 
@@ -45,17 +38,36 @@ describe('ProfileCompletionModal', () => {
     expect(modal).toHaveTextContent('student@example.com');
     expect(modal).toHaveTextContent('01001234567');
     expect(modal).toHaveTextContent('القاهرة');
-    expect(screen.getByRole('button', { name: 'إغلاق' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'تذكيري لاحقاً' })).toBeInTheDocument();
+    expect(modal).toHaveTextContent('إجباري ولا يمكن إغلاق');
+    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'تذكيري لاحقاً' })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: 'تذكيري لاحقاً' }));
-    expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
+  it('blocks the dashboard route behind the gate until completion', async () => {
+    setAuthenticatedStudent({
+      full_name: 'أحمد محمد',
+    });
+    renderApp('/student/dashboard');
+
+    await screen.findByTestId('profile-completion-modal');
+    // Gate replaces the page content — no dashboard heading leaks through.
+    expect(screen.queryByRole('heading', { name: 'لوحة الطالب' })).not.toBeInTheDocument();
+    expect(await screen.findByTestId('profile-gate-message')).toBeInTheDocument();
+  });
+
+  it('blocks deep links too (no bypass via direct URL)', async () => {
+    setAuthenticatedStudent({
+      full_name: 'أحمد محمد علي',
+    });
+    renderApp('/student/units');
+
+    await screen.findByTestId('profile-completion-modal');
+    expect(await screen.findByTestId('profile-gate-message')).toBeInTheDocument();
   });
 
   it('explains why full data is needed along with the acceptance rules', async () => {
     setAuthenticatedStudent({
       full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
     });
     renderApp('/student/dashboard');
 
@@ -66,67 +78,10 @@ describe('ProfileCompletionModal', () => {
     expect(why).toHaveTextContent('ثلاثي');
   });
 
-  it('shows a live server-driven countdown inside the grace period', async () => {
-    setAuthenticatedStudent({
-      full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
-    });
-    renderApp('/student/dashboard');
-
-    const countdown = await screen.findByTestId('profile-completion-countdown');
-    expect(countdown).toHaveTextContent(/متبقي/);
-    // ~5 days remain: the number is dynamic, never a hardcoded "7".
-    expect(countdown).toHaveTextContent(/أيام/);
-    expect(countdown.textContent).not.toMatch(/7 أيام/);
-  });
-
-  it('goes mandatory when the server clock passes the deadline', async () => {
-    setAuthenticatedStudent({
-      full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
-    });
-    const first = renderApp('/student/dashboard');
-    expect(await screen.findByTestId('profile-completion-countdown')).toBeInTheDocument();
-
-    // Six days later on the SERVER clock (device clock untouched).
-    first.unmount();
-    resetServerTimeCache();
-    mockState.serverTimeNow = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
-    renderApp('/student/dashboard');
-
-    expect(await screen.findByText(/إجباري ولا يمكن إغلاق/)).toBeInTheDocument();
-    expect(screen.queryByTestId('profile-completion-countdown')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
-  });
-
-  it('fails closed to mandatory when the server clock cannot be fetched', async () => {
-    mockRpcError('get_server_time', 'network error');
-    setAuthenticatedStudent({
-      full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
-    });
-    renderApp('/student/dashboard');
-
-    expect(await screen.findByTestId('profile-completion-modal')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
-    expect(screen.queryByTestId('profile-completion-countdown')).not.toBeInTheDocument();
-  });
-
-  it('is mandatory with no close option after the 7-day deadline', async () => {
-    setAuthenticatedStudent({ full_name: 'أحمد محمد' });
-    renderApp('/student/dashboard');
-
-    expect(await screen.findByTestId('profile-completion-modal')).toBeInTheDocument();
-    expect(screen.getByText(/إجباري ولا يمكن إغلاق/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'إغلاق' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'تذكيري لاحقاً' })).not.toBeInTheDocument();
-  });
-
   it('rejects non-triple names and saves a valid Arabic name', async () => {
     const user = userEvent.setup();
     setAuthenticatedStudent({
       full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
     });
     renderApp('/student/dashboard');
 
@@ -147,7 +102,6 @@ describe('ProfileCompletionModal', () => {
   it('uploads the photo from the modal and closes once complete', async () => {
     setAuthenticatedStudent({
       full_name: 'أحمد محمد علي',
-      created_at: RECENT_ISO,
     });
     renderApp('/student/dashboard');
 
@@ -162,29 +116,5 @@ describe('ProfileCompletionModal', () => {
     expect(expectRpcCall('set_my_avatar')).toEqual({ p_path: 'user-test-1/avatar.jpg' });
     await screen.findByRole('heading', { name: 'لوحة الطالب' }, { timeout: 10000 });
     expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
-  });
-
-  it('reappears in a new session while still in grace', async () => {
-    setAuthenticatedStudent({
-      full_name: 'أحمد محمد',
-      created_at: RECENT_ISO,
-    });
-    const { unmount } = renderApp('/student/dashboard');
-
-    expect(await screen.findByTestId('profile-completion-modal')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'إغلاق' }));
-    expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
-
-    // Same session: stays dismissed.
-    unmount();
-    renderApp('/student/dashboard');
-    expect(await screen.findByRole('heading', { name: 'لوحة الطالب' })).toBeInTheDocument();
-    expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
-
-    // New session: appears again.
-    window.sessionStorage.clear();
-    unmount();
-    renderApp('/student/dashboard');
-    expect(await screen.findByTestId('profile-completion-modal')).toBeInTheDocument();
   });
 });

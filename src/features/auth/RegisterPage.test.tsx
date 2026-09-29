@@ -113,6 +113,40 @@ describe('RegisterPage', () => {
     expect(screen.getByText('رقم الهاتف يجب أن يبدأ بـ 01 أو +20')).toBeInTheDocument();
   });
 
+  it('rejects identical student and guardian phone numbers', async () => {
+    const user = userEvent.setup();
+    renderApp('/register');
+
+    await fillValidForm(user);
+    const guardianInput = screen.getByLabelText(/ولي الأمر/);
+    await user.clear(guardianInput);
+    await user.type(guardianInput, '01001234567');
+
+    await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
+
+    expect(
+      screen.getByText('رقم ولي الأمر يجب أن يكون مختلفًا عن رقم الطالب'),
+    ).toBeInTheDocument();
+    expect(expectAuthCall('signUp')).toBeUndefined();
+  });
+
+  it('rejects identical phones written in different formats', async () => {
+    const user = userEvent.setup();
+    renderApp('/register');
+
+    await fillValidForm(user);
+    const guardianInput = screen.getByLabelText(/ولي الأمر/);
+    await user.clear(guardianInput);
+    await user.type(guardianInput, '+201001234567');
+
+    await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
+
+    expect(
+      screen.getByText('رقم ولي الأمر يجب أن يكون مختلفًا عن رقم الطالب'),
+    ).toBeInTheDocument();
+    expect(expectAuthCall('signUp')).toBeUndefined();
+  });
+
   it('signs up and redirects to the student dashboard when a session is created', async () => {
     const user = userEvent.setup();
     renderApp('/register');
@@ -215,7 +249,6 @@ describe('RegisterPage', () => {
       );
     });
   });
-
   it('shows an Arabic message for the GoTrue rate-limit error', async () => {
     mockState.signUpError = 'For security purposes, you can only request this after 30 seconds.';
     const user = userEvent.setup();
@@ -228,6 +261,23 @@ describe('RegisterPage', () => {
       const form = screen.getByLabelText('الاسم الكامل').closest('form');
       expect(within(form as HTMLElement).getByRole('alert')).toHaveTextContent(
         'تم إرسال عدد كبير من الطلبات. حاول مرة أخرى بعد قليل',
+      );
+    });
+  });
+
+  it('shows an Arabic message when the student phone is already registered', async () => {
+    mockState.signUpError =
+      'duplicate key value violates unique constraint "profiles_phone"';
+    const user = userEvent.setup();
+    renderApp('/register');
+
+    await fillValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'إنشاء حساب' }));
+
+    await waitFor(() => {
+      const form = screen.getByLabelText('الاسم الكامل').closest('form');
+      expect(within(form as HTMLElement).getByRole('alert')).toHaveTextContent(
+        'رقم هاتف الطالب مسجل بالفعل، استخدم رقمًا آخر',
       );
     });
   });
