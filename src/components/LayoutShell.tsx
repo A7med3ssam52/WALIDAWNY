@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Menu, X, Zap } from 'lucide-react';
+import { Bell, LogOut, Menu, X, Zap } from 'lucide-react';
 
 import { useAuth } from '../features/auth/AuthContext';
 import { AvatarImage } from './AvatarImage';
@@ -214,10 +214,11 @@ export function LayoutShell({
                   variant="ghost"
                   size="sm"
                   onClick={() => void handleSignOut()}
-                  className="shrink-0 rounded-full border border-border"
-                >
-                  تسجيل الخروج
-                </Button>
+                  aria-label="تسجيل الخروج"
+                  title="تسجيل الخروج"
+                  icon={<LogOut className="h-4 w-4" />}
+                  className="h-10 w-10 shrink-0 justify-center px-0"
+                />
               </div>
             </div>
           </header>
