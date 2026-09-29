@@ -29,6 +29,7 @@ import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { StudentNav } from '../../components/StudentNav';
 import { VideoPlayer } from '../../components/VideoPlayer';
+import { VoucherRedeemOption, voucherValidityLabel } from '../../components/VoucherRedeemOption';
 import { YouTubeEmbed } from '../../components/YouTubeEmbed';
 import { useToast } from '../../components/Toast';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
@@ -41,6 +42,7 @@ import {
   getLessonById,
   getMyLessonAccess,
   getMyProgress,
+  getMyStreak,
   getPdfSignedUrl,
   getPlaybackUrl,
   getPublicSettings,
@@ -60,6 +62,7 @@ import type {
   LessonBoardSignedUrl,
   LessonPdf,
   LessonVideo,
+  MyStreak,
   PdfAccessResponse,
   PlaybackResponse,
   Progress,
@@ -148,6 +151,8 @@ export function StudentLessonPage() {
   const [loadError, setLoadError] = useState(false);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemBusy, setRedeemBusy] = useState(false);
+  const [streak, setStreak] = useState<MyStreak | null>(null);
+  const [voucherChecked, setVoucherChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<LessonTab | null>(null);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(false);
@@ -600,12 +605,13 @@ export function StudentLessonPage() {
       ? (progress.position_seconds ?? 0)
       : 0;
 
-  const handleRedeem = async (code: string): Promise<boolean> => {
+  const handleRedeem = async (code: string, useVoucher = false): Promise<boolean> => {
     setRedeemError(null);
     setRedeemBusy(true);
     try {
-      await redeemUnitCode(code);
-      showToast('تم تفعيل الوحدة بنجاح');
+      await redeemUnitCode(code, useVoucher);
+      showToast(useVoucher ? 'تم تفعيل الوحدة مع إعفاء رسوم المنصة' : 'تم تفعيل الوحدة بنجاح');
+      setVoucherChecked(false);
       await load();
       return true;
     } catch (err) {
@@ -615,6 +621,21 @@ export function StudentLessonPage() {
       setRedeemBusy(false);
     }
   };
+
+  // Voucher availability is best-effort and never blocks the lesson page.
+  useEffect(() => {
+    let active = true;
+    getMyStreak()
+      .then((row) => {
+        if (active) setStreak(row);
+      })
+      .catch(() => {
+        // best-effort
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (loadError) {
     return (
@@ -785,8 +806,17 @@ export function StudentLessonPage() {
                 </p>
               </div>
 
+              {streak?.voucher.status === 'granted' ? (
+                <div className="mb-3">
+                  <VoucherRedeemOption
+                    validityLabel={voucherValidityLabel(streak.voucher.expires_at)}
+                    checked={voucherChecked}
+                    onChange={setVoucherChecked}
+                  />
+                </div>
+              ) : null}
               <RedeemCodeForm
-                onSubmit={(code) => handleRedeem(code)}
+                onSubmit={(code) => handleRedeem(code, streak?.voucher.status === 'granted' && voucherChecked)}
                 busy={redeemBusy}
                 error={redeemError}
               />

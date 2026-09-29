@@ -380,6 +380,66 @@ export type LessonComment = {
   created_at: string;
 };
 
+export type StreakFlameStage = 'none' | 'spark' | 'flame' | 'storm';
+
+export type StreakWeekDay = {
+  date: string;
+  active: boolean;
+  frozen: boolean;
+  today: boolean;
+  future: boolean;
+};
+
+export type StreakVoucherStatus = 'none' | 'granted' | 'used' | 'expired';
+
+export type StreakVoucherState = {
+  status: StreakVoucherStatus;
+  granted_at?: string;
+  expires_at?: string;
+  used_at?: string;
+};
+
+/** get_my_streak() reader shape (0085 gentle streak, Cairo days). */
+export type MyStreak = {
+  current_days: number;
+  last_active: string | null;
+  week_start: string;
+  week: StreakWeekDay[];
+  freeze_available: boolean;
+  freeze_used_this_week: boolean;
+  flame_stage: StreakFlameStage;
+  voucher: StreakVoucherState;
+};
+
+/** list_student_streaks() staff board row (0085). */
+export type StreakBoardRow = {
+  student_id: string;
+  full_name: string;
+  grade_name: string | null;
+  current_days: number;
+  last_active_date: string | null;
+  freeze_used_this_week: boolean;
+  voucher_status: StreakVoucherStatus;
+};
+
+export type StreakFreeze = {
+  id: string;
+  student_id: string;
+  week_start: string;
+  covers_date: string;
+  created_at: string;
+};
+
+export type StreakVoucher = {
+  id: string;
+  student_id: string;
+  granted_at: string;
+  expires_at: string;
+  used_at: string | null;
+  used_for_unit_id: string | null;
+  created_at: string;
+};
+
 export type SuggestionKind = 'issue' | 'suggestion' | 'other';
 
 export type SuggestionStatus = 'new' | 'reviewed' | 'planned' | 'done' | 'rejected';
@@ -414,7 +474,8 @@ export type NotificationType =
   | 'exam_graded'
   | 'lesson_comment'
   | 'comment_reply'
-  | 'suggestion_status';
+  | 'suggestion_status'
+  | 'voucher_granted';
 
 export type AppNotification = {
   id: string;
@@ -820,6 +881,18 @@ export interface Database {
         Update: Partial<LessonComment>;
         Relationships: [];
       };
+      streak_freezes: {
+        Row: StreakFreeze;
+        Insert: Partial<StreakFreeze>;
+        Update: Partial<StreakFreeze>;
+        Relationships: [];
+      };
+      streak_vouchers: {
+        Row: StreakVoucher;
+        Insert: Partial<StreakVoucher>;
+        Update: Partial<StreakVoucher>;
+        Relationships: [];
+      };
       platform_suggestions: {
         Row: PlatformSuggestion;
         Insert: Partial<PlatformSuggestion>;
@@ -872,7 +945,10 @@ export interface Database {
       list_active_grades: { Args: never; Returns: ActiveGrade[] };
       get_public_settings: { Args: never; Returns: PublicSettings };
       get_current_role: { Args: never; Returns: UserRole };
-      redeem_unit_code: { Args: { p_code: string }; Returns: UnitPurchase };
+      redeem_unit_code: { Args: { p_code: string; p_use_voucher?: boolean }; Returns: UnitPurchase };
+      get_my_streak: { Args: never; Returns: MyStreak };
+      use_streak_freeze: { Args: never; Returns: string };
+      list_student_streaks: { Args: never; Returns: StreakBoardRow[] };
       get_my_unit_purchases: { Args: never; Returns: UnitPurchase[] };
       get_my_lesson_access: { Args: { p_lesson_id: string }; Returns: LessonAccessInfo };
       get_public_unit_prices: { Args: never; Returns: PublicUnitPrice[] };

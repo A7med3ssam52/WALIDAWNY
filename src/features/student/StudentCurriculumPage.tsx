@@ -12,8 +12,10 @@ import { PageHeader } from '../../components/PageHeader';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
 import { useToast } from '../../components/Toast';
+import { voucherValidityLabel } from '../../components/VoucherRedeemOption';
 import {
   getGradeById,
+  getMyStreak,
   getMyUnitPurchases,
   getPublicSettings,
   getPublicUnitPrices,
@@ -28,6 +30,7 @@ import { cn } from '../../lib/cn';
 import type {
   Grade,
   Lesson,
+  MyStreak,
   Progress,
   PublicSettings,
   PublicUnitPrice,
@@ -84,9 +87,9 @@ export function StudentCurriculumPage() {
   const [prices, setPrices] = useState<PublicUnitPrice[]>([]);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [progressByLesson, setProgressByLesson] = useState<Map<string, Progress>>(new Map());
-  const [trialLessons, setTrialLessons] = useState<TrialLessonRow[]>([]);
-  const [error, setError] = useState(false);
-  // Split-board navigation: one active unit at a time (sidebar on desktop,
+    const [trialLessons, setTrialLessons] = useState<TrialLessonRow[]>([]);
+  const [streak, setStreak] = useState<MyStreak | null>(null);
+  const [error, setError] = useState(false);  // Split-board navigation: one active unit at a time (sidebar on desktop,
   // horizontal chips on mobile) instead of the old accordion expansion.
   const [activeUnitId, setActiveUnitId] = useState<string | null>(null);
   const [redeemByUnit, setRedeemByUnit] = useState<Record<string, { busy: boolean; error: string | null }>>({});
@@ -119,6 +122,7 @@ export function StudentCurriculumPage() {
         getPublicUnitPrices(),
         getPublicSettings(),
         getTrialLessons(),
+        getMyStreak(),
       ]);
       const allUnits = settled[0].status === 'fulfilled' ? settled[0].value : [];
       const progressRows = settled[1].status === 'fulfilled' ? settled[1].value : [];
@@ -126,6 +130,7 @@ export function StudentCurriculumPage() {
       const pricesResult = settled[3].status === 'fulfilled' ? settled[3].value : [];
       const settingsResult = settled[4].status === 'fulfilled' ? (settled[4].value as typeof settings) : null;
       const trialRows = settled[5].status === 'fulfilled' ? settled[5].value : [];
+      const streakResult = settled[6].status === 'fulfilled' ? (settled[6].value as MyStreak) : null;
 
       // If the critical units fetch failed, show error but keep other data
       if (settled[0].status === 'rejected') {
@@ -155,6 +160,7 @@ export function StudentCurriculumPage() {
       setProgressByLesson(new Map(progressRows.map((row) => [row.lesson_id, row])));
       setPurchases(purchasesResult);
       setPrices(pricesResult);
+      setStreak(streakResult);
       if (settingsResult) setSettings(settingsResult);
       setTrialLessons(trialRows);
     } catch {
@@ -214,11 +220,11 @@ export function StudentCurriculumPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [focusUnitId, units, activeUnitId]);
 
-  const handleRedeemUnit = async (unitId: string, code: string): Promise<boolean> => {
+  const handleRedeemUnit = async (unitId: string, code: string, useVoucher = false): Promise<boolean> => {
     setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: true, error: null } }));
     try {
-      await redeemUnitCode(code);
-      showToast('تم تفعيل الوحدة بنجاح');
+      await redeemUnitCode(code, useVoucher);
+      showToast(useVoucher ? 'تم تفعيل الوحدة مع إعفاء رسوم المنصة' : 'تم تفعيل الوحدة بنجاح');
       await load();
       setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: false, error: null } }));
       return true;
@@ -368,6 +374,9 @@ export function StudentCurriculumPage() {
     unitMap.get(unitKey)!.push(cur);
     return acc;
   }, new Map<string, Map<string, TrialLessonRow[]>>());
+
+  const voucherGranted = streak?.voucher.status === 'granted';
+  const voucherValidity = voucherValidityLabel(streak?.voucher.expires_at);
 
   const activeUnit = units.find((unit) => unit.id === activeUnitId) ?? null;
 
@@ -629,7 +638,9 @@ export function StudentCurriculumPage() {
                   settings={settings}
                   progressByLesson={progressByLesson}
                   redeemState={redeemByUnit[activeUnit.id]}
-                  onRedeem={(code) => handleRedeemUnit(activeUnit.id, code)}
+                  onRedeem={(code, useVoucher) => handleRedeemUnit(activeUnit.id, code, useVoucher)}
+                  voucherAvailable={voucherGranted}
+                  voucherValidity={voucherValidity}
                 />
               ) : null}
             </div>
@@ -648,6 +659,8 @@ function UnitDetailPanel({
   progressByLesson,
   redeemState,
   onRedeem,
+  voucherAvailable,
+  voucherValidity,
 }: {
   unit: UnitWithLessons;
   purchasedUnitIds: Set<string>;
@@ -655,7 +668,9 @@ function UnitDetailPanel({
   settings: PublicSettings | null;
   progressByLesson: Map<string, Progress>;
   redeemState: { busy: boolean; error: string | null } | undefined;
-  onRedeem: (code: string) => Promise<boolean>;
+  onRedeem: (code: string, useVoucher?: boolean) => Promise<boolean>;
+  voucherAvailable: boolean;
+  voucherValidity: string | null;
 }) {
   const isPurchased = purchasedUnitIds.has(unit.id) || priceById.get(unit.id)?.is_free === true;
   const price = priceById.get(unit.id);
@@ -684,6 +699,12 @@ function UnitDetailPanel({
             onRedeem={onRedeem}
             redeemBusy={redeemState?.busy ?? false}
             redeemError={redeemState?.error ?? null}
+            voucher={{
+              available: voucherAvailable,
+              waivedFee: price?.platform_fee ?? null,
+              validityLabel: voucherValidity,
+            }}
+            voucherTestId={`voucher-redeem-${unit.id}`}
           />
           {trialLessons.length > 0 ? (
             <div className="mt-4 border-t border-border-muted pt-4">

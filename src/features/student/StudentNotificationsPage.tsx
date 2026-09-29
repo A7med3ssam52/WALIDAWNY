@@ -30,6 +30,7 @@ const typeLabels: Record<string, string> = {
   lesson_comment: 'تعليق',
   comment_reply: 'رد على تعليق',
   suggestion_status: 'حالة مقترح',
+  voucher_granted: 'مكافأة السلسلة',
 };
 
 /** Fallback badge text — never leak a raw English type key to the UI. */

@@ -23,6 +23,8 @@ interface MockState {
   unitCodes: AnyRecord[];
   unitPurchases: AnyRecord[];
   progress: AnyRecord[];
+  streakFreezes: AnyRecord[];
+  streakVouchers: AnyRecord[];
   notifications: AnyRecord[];
   exams: AnyRecord[];
   examQuestions: AnyRecord[];
@@ -86,6 +88,8 @@ const state: MockState = {
   unitCodes: [],
   unitPurchases: [],
   progress: [],
+  streakFreezes: [],
+  streakVouchers: [],
   notifications: [],
   exams: [],
   examQuestions: [],
@@ -342,6 +346,92 @@ export function makeNotification(overrides: Partial<AnyRecord> = {}): AnyRecord 
     entity_type: 'lesson',
     entity_id: 'lesson-1',
     created_at: daysFromNow(-1),
+    ...overrides,
+  };
+}
+
+export function makeStreakFreeze(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  return {
+    id: 'freeze-1',
+    student_id: 'user-test-1',
+    week_start: daysFromNow(0).slice(0, 10),
+    covers_date: daysFromNow(-1).slice(0, 10),
+    created_at: nowIso(),
+    ...overrides,
+  };
+}
+
+export function makeVoucher(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  return {
+    id: 'voucher-1',
+    student_id: 'user-test-1',
+    granted_at: nowIso(),
+    expires_at: daysFromNow(30),
+    used_at: null,
+    used_for_unit_id: null,
+    created_at: nowIso(),
+    ...overrides,
+  };
+}
+
+function mockDayKey(offsetDays: number): string {
+  return daysFromNow(offsetDays).slice(0, 10);
+}
+
+/** Faithful-enough streak counter for tests (UTC days; the SQL uses Cairo). */
+function computeMockStreak(uid: string): {
+  current: number;
+  activeDays: Set<string>;
+  freezeUsed: boolean;
+} {
+  const activeDays = new Set<string>();
+  for (const item of state.progress) {
+    if (item.student_id === uid && Number(item.percent_completed ?? 0) > 0) {
+      activeDays.add(String(item.updated_at ?? '').slice(0, 10));
+    }
+  }
+  for (const freeze of state.streakFreezes) {
+    if (freeze.student_id === uid && freeze.covers_date) {
+      activeDays.add(String(freeze.covers_date));
+    }
+  }
+  let cursor = 0;
+  if (!activeDays.has(mockDayKey(0))) cursor = -1;
+  let current = 0;
+  while (activeDays.has(mockDayKey(cursor))) {
+    current += 1;
+    cursor -= 1;
+  }
+  const weekStart = mockDayKey(-6);
+  const freezeUsed = state.streakFreezes.some(
+    (item) => item.student_id === uid && String(item.week_start ?? '') >= weekStart,
+  );
+  return { current, activeDays, freezeUsed };
+}
+
+function mockVoucherState(uid: string): AnyRecord {
+  const row = state.streakVouchers.find((item) => item.student_id === uid);
+  if (!row) return { status: 'none' };
+  if (row.used_at) return { status: 'used', used_at: row.used_at };
+  if (String(row.expires_at ?? '') < nowIso()) return { status: 'expired', expires_at: row.expires_at };
+  return { status: 'granted', granted_at: row.granted_at, expires_at: row.expires_at };
+}
+
+export function makeMyStreak(overrides: Partial<AnyRecord> = {}): AnyRecord {
+  const week = Array.from({ length: 7 }, (_, index) => {
+    const offset = index - 6;
+    const date = mockDayKey(offset);
+    return { date, active: false, frozen: false, today: offset === 0, future: false };
+  });
+  return {
+    current_days: 0,
+    last_active: null,
+    week_start: mockDayKey(-6),
+    week,
+    freeze_available: true,
+    freeze_used_this_week: false,
+    flame_stage: 'none',
+    voucher: { status: 'none' },
     ...overrides,
   };
 }
@@ -915,6 +1005,80 @@ function createMockClient() {
         state.progress.push(updated);
       }
       return { data: updated, error: null };
+    }
+    if (fn === 'get_my_streak') {
+      const student = state.profiles.find((item) => item.id === uid);
+      if (student?.role !== 'student') {
+        return error('access_denied');
+      }
+      const { current, activeDays, freezeUsed } = computeMockStreak(uid as string);
+      const week = Array.from({ length: 7 }, (_, index) => {
+        const offset = index - 6;
+        const date = mockDayKey(offset);
+        const frozen = state.streakFreezes.some(
+          (item) => item.student_id === uid && String(item.covers_date ?? '') === date,
+        );
+        return { date, active: activeDays.has(date), frozen, today: offset === 0, future: false };
+      });
+      const flameStage = current >= 30 ? 'storm' : current >= 7 ? 'flame' : current >= 1 ? 'spark' : 'none';
+      // Mirror the server auto-claim: first observation of 30+ days grants.
+      const existingVoucher = state.streakVouchers.find((item) => item.student_id === uid);
+      if (current >= 30 && !existingVoucher) {
+        state.streakVouchers.push(makeVoucher({ id: `voucher-created-${++state.idSeq}`, student_id: uid }));
+      }
+      return {
+        data: makeMyStreak({
+          current_days: current,
+          week,
+          freeze_available: !freezeUsed,
+          freeze_used_this_week: freezeUsed,
+          flame_stage: flameStage,
+          voucher: mockVoucherState(uid as string),
+        }),
+        error: null,
+      };
+    }
+    if (fn === 'use_streak_freeze') {
+      const student = state.profiles.find((item) => item.id === uid);
+      if (student?.role !== 'student') {
+        return error('access_denied');
+      }
+      const { freezeUsed } = computeMockStreak(uid as string);
+      if (freezeUsed) {
+        return error('freeze_already_used');
+      }
+      const covered = mockDayKey(-1);
+      state.streakFreezes.push(
+        makeStreakFreeze({
+          id: `freeze-created-${++state.idSeq}`,
+          student_id: uid,
+          week_start: mockDayKey(-6),
+          covers_date: covered,
+        }),
+      );
+      return { data: covered, error: null };
+    }
+    if (fn === 'list_student_streaks') {
+      const caller = state.profiles.find((item) => item.id === uid);
+      if (caller?.role !== 'admin' && caller?.role !== 'mr_walid' && caller?.role !== 'teacher') {
+        return error('access_denied');
+      }
+      const rows = state.profiles
+        .filter((profile) => profile.role === 'student')
+        .map((profile) => {
+          const { current, freezeUsed } = computeMockStreak(profile.id as string);
+          const grade = state.grades.find((item) => item.id === profile.grade_id);
+          return {
+            student_id: profile.id,
+            full_name: profile.full_name ?? '',
+            grade_name: grade?.name ?? null,
+            current_days: current,
+            last_active_date: null,
+            freeze_used_this_week: freezeUsed,
+            voucher_status: (mockVoucherState(profile.id as string).status as string) ?? 'none',
+          };
+        });
+      return { data: rows, error: null };
     }
     if (fn === 'mark_notification_read') {
       const row = state.notifications.find((item) => item.id === args?.p_notification_id);
@@ -1512,13 +1676,30 @@ function createMockClient() {
       ) {
         return error('unit_already_purchased');
       }
+      // Streak fee-waiver voucher (0085): explicit opt-in only.
+      let fee = Number(pricing.platform_fee ?? 0);
+      if (args?.p_use_voucher === true) {
+        const voucher = state.streakVouchers.find((item) => item.student_id === uid);
+        if (!voucher) {
+          return error('voucher_not_found');
+        }
+        if (voucher.used_at) {
+          return error('voucher_already_used');
+        }
+        if (String(voucher.expires_at ?? '') < nowIso()) {
+          return error('voucher_expired');
+        }
+        fee = 0;
+        voucher.used_at = nowIso();
+        voucher.used_for_unit_id = codeRow.unit_id;
+      }
       const purchase = makeUnitPurchase({
         id: `purchase-created-${++state.idSeq}`,
         student_id: uid,
         unit_id: codeRow.unit_id,
         base_price: pricing.base_price,
-        platform_fee: pricing.platform_fee,
-        total_price: pricing.total_price,
+        platform_fee: fee,
+        total_price: Number(pricing.base_price ?? 0) + fee,
         code_id: codeRow.id,
         purchased_at: nowIso(),
         status: 'active',
@@ -2578,6 +2759,8 @@ export function resetMockState() {
   state.unitCodes = [];
   state.unitPurchases = [];
   state.progress = [];
+  state.streakFreezes = [];
+  state.streakVouchers = [];
   state.notifications = [];
   state.exams = [];
   state.examQuestions = [];

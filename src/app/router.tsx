@@ -24,6 +24,7 @@ const LabsExamPage = lazyWithRetry(() => import('../features/labs/LabsExamPage')
 const LabsRedesignPage = lazyWithRetry(() => import('../features/labs/LabsRedesignPage').then((m) => ({ default: m.LabsRedesignPage })));
 const NewUiPage = lazyWithRetry(() => import('../features/labs/NewUiPage').then((m) => ({ default: m.NewUiPage })));
 const CurriLabsPage = lazyWithRetry(() => import('../features/labs/CurriLabsPage').then((m) => ({ default: m.CurriLabsPage })));
+const FunLabsPage = lazyWithRetry(() => import('../features/labs/FunLabsPage').then((m) => ({ default: m.FunLabsPage })));
 const AuthLabsGallery = lazyWithRetry(() =>
   import('../features/labs/auth/AuthLabsGallery').then((m) => ({ default: m.AuthLabsGallery })),
 );
@@ -133,6 +134,7 @@ export function AppRoutes() {
         <Route path="/labs/redesign" element={<LabsRedesignPage />} />
         <Route path="/labs/newui" element={<NewUiPage />} />
         <Route path="/labs/curri" element={<CurriLabsPage />} />
+        <Route path="/labs/fun" element={<FunLabsPage />} />
         <Route path="/labs/auth" element={<AuthLabsGallery />} />
         <Route path="/labs/login1" element={<LabsLogin1 />} />
         <Route path="/labs/register1" element={<LabsRegister1 />} />

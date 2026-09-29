@@ -25,6 +25,7 @@ import { SuggestionsCta } from '../../components/SuggestionsCta';
 import { TechnicalSupportFab } from '../../components/TechnicalSupportFab';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import { LiveExamCard } from './LiveExamCard';
+import { StreakCard } from './StreakCard';
 import {
   getMyUnitPurchases,
   getPublicSettings,
@@ -314,6 +315,9 @@ export function StudentDashboardPage() {
 
         {/* === امتحان عام جارٍ — يظهر فقط أثناء وجود امتحان حي === */}
         <LiveExamCard />
+
+        {/* === سلسلة المذاكرة اليومية (0085) — أول كارت بعد الترحيب === */}
+        <StreakCard />
 
         {/* === الصف الأول: نظرة عامة (Donut + النشاط + الالتزام) === */}
         {progressRows === null ? (

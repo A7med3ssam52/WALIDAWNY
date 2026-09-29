@@ -5,11 +5,14 @@ import {
   expectRpcCall,
   makeGrade,
   makeLesson,
+  makeMyStreak,
   makeProgress,
   makeUnit,
   makeUnitCode,
   makeUnitPricing,
   makeUnitPurchase,
+  makeVoucher,
+  mockRpc,
   mockState,
   resetMockState,
   setAuthenticatedStudent,
@@ -150,6 +153,31 @@ describe('StudentCurriculumPage', () => {
     expect(noPriceDetail).toBeInTheDocument();
     expect(within(noPriceDetail).getByText('تواصل مع الإدارة لمعرفة السعر وتفعيل الوحدة')).toBeInTheDocument();
     expect(within(noPriceDetail).queryByRole('link', { name: 'تواصل لتفعيل الوحدة' })).not.toBeInTheDocument();
+  });
+
+  it('applies the voucher from a locked unit with explicit opt-in', async () => {
+    mockRpc(
+      'get_my_streak',
+      makeMyStreak({ voucher: { status: 'granted', expires_at: new Date(Date.now() + 20 * 86_400_000).toISOString() } }),
+    );
+    mockState.streakVouchers.push(makeVoucher());
+    mockState.unitCodes.push(makeUnitCode({ id: 'code-2', unit_id: 'unit-2' }));
+    renderApp('/student/curriculum');
+    await selectUnit('unit-2');
+
+    const unit2Detail = await screen.findByTestId('unit-detail-unit-2');
+    expect(within(unit2Detail).getByTestId('voucher-redeem-unit-2')).toBeInTheDocument();
+    fireEvent.click(within(unit2Detail).getByTestId('voucher-redeem-unit-2-checkbox'));
+    fireEvent.change(within(unit2Detail).getByLabelText('كود تفعيل الوحدة الثانية'), {
+      target: { value: 'WLDN-ABCD-EFGH-JKLM' },
+    });
+    fireEvent.click(within(unit2Detail).getByRole('button', { name: 'تفعيل بالكود' }));
+
+    expect(expectRpcCall('redeem_unit_code')).toEqual({
+      p_code: 'WLDN-ABCD-EFGH-JKLM',
+      p_use_voucher: true,
+    });
+    expect(await screen.findByText('تم تفعيل الوحدة مع إعفاء رسوم المنصة')).toBeInTheDocument();
   });
 
   it('prompts to set the grade when the student has no grade', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Clock, Eye, History, Search, Users, Trophy } from 'lucide-react';
+import { Activity, Clock, Eye, Flame, History, Search, Users, Trophy } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { AdminNav } from '../../components/AdminNav';
@@ -24,13 +24,15 @@ import {
   getMostActiveStudents,
   getOnlineStudents,
   getPresenceDailyCounts,
+  listStudentStreaks,
 } from '../../data/rpc';
-import { formatDateTime } from '../../lib/format';
+import { formatDate, formatDateTime } from '../../lib/format';
 import type {
   DailyActiveStudent,
   MostActiveStudent,
   OnlineStudent,
   PresenceDailyCount,
+  StreakBoardRow,
 } from '../../types/database';
 
 const POLL_INTERVAL_MS = 10_000;
@@ -73,7 +75,7 @@ export function PresencePage() {
   const [online, setOnline] = useState<OnlineStudent[] | null>(null);
   const [mostActive, setMostActive] = useState<MostActiveStudent[] | null>(null);
   const [error, setError] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'ranking' | 'daily'>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'ranking' | 'daily' | 'streaks'>('live');
   const [search, setSearch] = useState('');
   const [gradeFilter, setGradeFilter] = useState('');
 
@@ -84,6 +86,13 @@ export function PresencePage() {
   const [dailyError, setDailyError] = useState(false);
   const [dailyCounts, setDailyCounts] = useState<PresenceDailyCount[] | null>(null);
   const [dailySearch, setDailySearch] = useState('');
+
+  // Streak board state (0085 gentle streak, staff-only)
+  const [streakRows, setStreakRows] = useState<StreakBoardRow[] | null>(null);
+  const [streakLoading, setStreakLoading] = useState(false);
+  const [streakError, setStreakError] = useState(false);
+  const [streakSearch, setStreakSearch] = useState('');
+  const [streakFilter, setStreakFilter] = useState<'all' | 'stopped' | 'voucher'>('all');
 
   const loadLive = useCallback(async () => {
     try {
@@ -101,6 +110,19 @@ export function PresencePage() {
       setMostActive(data);
     } catch {
       // ranking is non-critical
+    }
+  }, []);
+
+  const loadStreaks = useCallback(async () => {
+    setStreakLoading(true);
+    setStreakError(false);
+    try {
+      setStreakRows(await listStudentStreaks());
+    } catch {
+      setStreakError(true);
+      setStreakRows([]);
+    } finally {
+      setStreakLoading(false);
     }
   }, []);
 
@@ -138,6 +160,13 @@ export function PresencePage() {
     }
   }, [activeTab, dailyDate, loadDaily]);
 
+  // Load streaks when tab becomes active
+  useEffect(() => {
+    if (activeTab === 'streaks') {
+      void loadStreaks();
+    }
+  }, [activeTab, loadStreaks]);
+
   const filteredOnline = useMemo(() => {
     if (!online) return null;
     let rows = online;
@@ -160,6 +189,26 @@ export function PresencePage() {
     if (!online) return [];
     return [...new Set(online.map((r) => r.grade_name).filter(Boolean))] as string[];
   }, [online]);
+
+  const filteredStreaks = useMemo(() => {
+    if (!streakRows) return null;
+    const q = streakSearch.trim().toLowerCase();
+    const rows = streakRows.filter((row) => {
+      if (q && !row.full_name.toLowerCase().includes(q)) return false;
+      if (streakFilter === 'stopped') {
+        if (row.current_days > 0 || !row.last_active_date) return false;
+        const daysSince = Math.floor(
+          (Date.now() - new Date(`${row.last_active_date}T12:00:00`).getTime()) / 86_400_000,
+        );
+        if (daysSince <= 3) return false;
+      }
+      if (streakFilter === 'voucher' && row.voucher_status !== 'granted' && row.voucher_status !== 'used') {
+        return false;
+      }
+      return true;
+    });
+    return [...rows].sort((a, b) => b.current_days - a.current_days);
+  }, [streakRows, streakSearch, streakFilter]);
 
   const stats = useMemo(() => {
     const onlineCount = online?.length ?? 0;
@@ -254,6 +303,22 @@ export function PresencePage() {
             data-testid="presence-tab-ranking"
           >
             الأكثر نشاطاً
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'streaks'}
+            onClick={() => {
+              setActiveTab('streaks');
+              void loadStreaks();
+            }}
+            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:flex-none ${
+              activeTab === 'streaks'
+                ? 'nav-pill-active font-bold'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+            data-testid="presence-tab-streaks"
+          >
+            السلاسل
           </button>
         </div>
 
@@ -724,6 +789,130 @@ export function PresencePage() {
             )}
           </Card>
         )}
+        {activeTab === 'streaks' ? (
+          <Card
+            title="سلاسل المذاكرة"
+            subtitle="السلسلة الحالية لكل طالب — للستاف فقط"
+            actions={
+              <button
+                onClick={() => void loadStreaks()}
+                className="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
+              >
+                تحديث الآن
+              </button>
+            }
+          >
+            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <Input
+                label="بحث بالاسم"
+                name="streak-search"
+                type="text"
+                value={streakSearch}
+                onChange={(e) => setStreakSearch(e.target.value)}
+                placeholder="ابحث عن طالب..."
+                icon={<Search className="h-4 w-4" />}
+              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-foreground-muted">تصفية</label>
+                <select
+                  value={streakFilter}
+                  onChange={(e) => setStreakFilter(e.target.value as 'all' | 'stopped' | 'voucher')}
+                  data-testid="streak-filter"
+                  className="h-11 rounded-xl border border-border bg-surface px-3 text-sm text-foreground focus:border-primary-strong focus:outline-none"
+                >
+                  <option value="all">الكل</option>
+                  <option value="stopped">سلاسل متوقفة (3+ أيام)</option>
+                  <option value="voucher">أصحاب القسائم</option>
+                </select>
+              </div>
+            </div>
+            {streakLoading || filteredStreaks === null ? (
+              <div className="flex flex-col gap-3" aria-hidden="true">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : streakError ? (
+              <ErrorState message="تعذر تحميل السلاسل" onRetry={() => void loadStreaks()} />
+            ) : filteredStreaks.length === 0 ? (
+              <EmptyState
+                title="لا توجد سلاسل مطابقة"
+                description="جرّب بحثًا مختلفًا أو غيّر التصفية."
+              />
+            ) : (
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeadCell>#</TableHeadCell>
+                    <TableHeadCell>الطالب</TableHeadCell>
+                    <TableHeadCell>الصف</TableHeadCell>
+                    <TableHeadCell>السلسلة</TableHeadCell>
+                    <TableHeadCell>آخر نشاط</TableHeadCell>
+                    <TableHeadCell>التجميد</TableHeadCell>
+                    <TableHeadCell>القسيمة</TableHeadCell>
+                    <TableHeadCell>الإجراء</TableHeadCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredStreaks.map((row, idx) => (
+                    <TableRow key={row.student_id} data-testid={`streak-row-${row.student_id}`}>
+                      <TableCell label="#">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                          {idx + 1}
+                        </span>
+                      </TableCell>
+                      <TableCell label="الطالب">
+                        <div className="flex items-center gap-2">
+                          {idx < 3 && row.current_days > 0 ? <Trophy className="h-4 w-4 text-amber-600" /> : null}
+                          <span className="font-medium text-foreground">{row.full_name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell label="الصف">{row.grade_name ?? '—'}</TableCell>
+                      <TableCell label="السلسلة">
+                        <span className="inline-flex items-center gap-1 font-display font-black tabular-nums text-foreground">
+                          <Flame
+                            aria-hidden="true"
+                            className={`h-4 w-4 ${row.current_days > 0 ? 'text-warning' : 'text-foreground-subtle'}`}
+                          />
+                          {row.current_days}
+                        </span>
+                      </TableCell>
+                      <TableCell label="آخر نشاط">
+                        {row.last_active_date ? formatDate(row.last_active_date) : '—'}
+                      </TableCell>
+                      <TableCell label="التجميد">
+                        {row.freeze_used_this_week ? (
+                          <Badge variant="neutral">مستخدم</Badge>
+                        ) : (
+                          <Badge variant="info" outline>متاح</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell label="القسيمة">
+                        {row.voucher_status === 'granted' ? (
+                          <Badge variant="success">سارية</Badge>
+                        ) : row.voucher_status === 'used' ? (
+                          <Badge variant="neutral">مستخدمة</Badge>
+                        ) : row.voucher_status === 'expired' ? (
+                          <Badge variant="warning">منتهية</Badge>
+                        ) : (
+                          <span className="text-foreground-subtle">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell label="الإجراء">
+                        <Link
+                          to={`/admin/presence/${row.student_id}`}
+                          className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-subtle hover:bg-surface-muted"
+                        >
+                          السجل
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+        ) : null}
       </div>
     </LayoutShell>
   );

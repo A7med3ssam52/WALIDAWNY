@@ -22,6 +22,7 @@ import type {
   LessonComment,
   LessonPdf,
   LessonVideo,
+  MyStreak,
   PdfAccessResponse,
   PlatformSuggestion,
   PlaybackResponse,
@@ -29,6 +30,7 @@ import type {
   Progress,
   PublicSettings,
   PublicUnitPrice,
+  StreakBoardRow,
   SuggestionKind,
   SuggestionStatus,
   Unit,
@@ -1233,14 +1235,47 @@ async function fetchGradeNames(gradeIds: string[]): Promise<Map<string, string>>
   return new Map((data ?? []).map((grade) => [grade.id, grade.name]));
 }
 
-export async function redeemUnitCode(code: string): Promise<UnitPurchase> {
-  const { data, error } = await getSupabaseClient().rpc('redeem_unit_code', {
-    p_code: code,
-  });
+export async function redeemUnitCode(code: string, useVoucher = false): Promise<UnitPurchase> {
+  const { data, error } = await getSupabaseClient().rpc(
+    'redeem_unit_code',
+    // Keep the legacy single-arg shape when no voucher is used so the
+    // server default (false) applies and existing callers are untouched.
+    useVoucher ? { p_code: code, p_use_voucher: true } : { p_code: code },
+  );
   if (error) {
     throw error;
   }
   return data as UnitPurchase;
+}
+
+/**
+ * Gentle streak (0085): current days, Cairo week, freeze + voucher state.
+ * Auto-claims the once-ever 30-day voucher server-side (with notification).
+ */
+export async function getMyStreak(): Promise<MyStreak> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_streak');
+  if (error) {
+    throw error;
+  }
+  return data as MyStreak;
+}
+
+/** Weekly freeze: covers the most recent missed day of the current week. Returns the covered date. */
+export async function useStreakFreeze(): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('use_streak_freeze');
+  if (error) {
+    throw error;
+  }
+  return data as string;
+}
+
+/** Staff-only streak board (admin/mr_walid/teacher). */
+export async function listStudentStreaks(): Promise<StreakBoardRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_student_streaks');
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as StreakBoardRow[];
 }
 
 export async function getMyUnitPurchases(): Promise<UnitPurchaseWithUnit[]> {

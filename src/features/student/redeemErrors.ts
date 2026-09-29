@@ -10,6 +10,9 @@ const REDEEM_ERROR_MESSAGES: Record<string, string> = {
   no_grade_assigned: 'لم يتم تحديد صفك الدراسي بعد — تواصل مع الأستاذ',
   unit_not_in_student_grade: 'هذه الوحدة ليست ضمن صفك الدراسي',
   unit_already_purchased: 'لقد قمت بتفعيل هذه الوحدة بالفعل',
+  voucher_not_found: 'لا توجد قسيمة إعفاء متاحة',
+  voucher_already_used: 'تم استخدام قسيمة الإعفاء بالفعل',
+  voucher_expired: 'انتهت صلاحية قسيمة الإعفاء',
   access_denied: 'ليست لديك صلاحية للتفعيل — تأكد من تفعيل حسابك',
 };
 

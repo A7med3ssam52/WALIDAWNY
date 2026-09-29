@@ -25,11 +25,13 @@ import { RedeemCodeForm } from '../../components/RedeemCodeForm';
 import { Skeleton } from '../../components/Skeleton';
 import { StudentNav } from '../../components/StudentNav';
 import { UnitCard } from '../../components/UnitCard';
+import { VoucherRedeemOption, voucherValidityLabel } from '../../components/VoucherRedeemOption';
 import { WhatsAppIcon } from '../../components/WhatsAppIcon';
 import { useToast } from '../../components/Toast';
 import { copyText } from '../../lib/clipboard';
 import { buildWhatsAppLink } from '../../lib/format';
 import {
+  getMyStreak,
   getMyUnitPurchases,
   getPublicSettings,
   getPublicUnitPrices,
@@ -38,6 +40,7 @@ import {
   redeemUnitCode,
 } from '../../data/rpc';
 import type {
+  MyStreak,
   Progress,
   PublicSettings,
   PublicUnitPrice,
@@ -84,6 +87,8 @@ export function UnitsPage() {
   const [error, setError] = useState(false);
   const [walletCopied, setWalletCopied] = useState(false);
   const [progressRows, setProgressRows] = useState<Progress[]>([]);
+  const [streak, setStreak] = useState<MyStreak | null>(null);
+  const [generalVoucherChecked, setGeneralVoucherChecked] = useState(false);
 
   const load = useCallback(async () => {
     setError(false);
@@ -94,12 +99,14 @@ export function UnitsPage() {
         getPublicUnitPrices(),
         getPublicSettings(),
         listMyProgress(),
+        getMyStreak(),
       ]);
       const unitsResult = settled[0].status === 'fulfilled' ? settled[0].value : [];
       const purchasesResult = settled[1].status === 'fulfilled' ? settled[1].value : [];
       const pricesResult = settled[2].status === 'fulfilled' ? settled[2].value : [];
       const settingsResult = settled[3].status === 'fulfilled' ? (settled[3].value as PublicSettings | null) : null;
       const progressResult = settled[4].status === 'fulfilled' ? (settled[4].value as Progress[]) : [];
+      const streakResult = settled[5].status === 'fulfilled' ? (settled[5].value as MyStreak) : null;
 
       if (settled[0].status === 'rejected' || settled[1].status === 'rejected') {
         // units or purchases are critical — show error if both failed, but still render what we have
@@ -113,6 +120,7 @@ export function UnitsPage() {
       setPurchases(purchasesResult);
       setPrices(pricesResult);
       setProgressRows(progressResult);
+      setStreak(streakResult);
       if (settingsResult) setSettings(settingsResult);
     } catch {
       setError(true);
@@ -146,12 +154,16 @@ export function UnitsPage() {
   const startedCount = progressRows.filter((p) => !p.is_completed && Number(p.percent_completed) > 0).length;
   const progressTotal = progressRows.length;
 
-  const handleRedeem = async (code: string): Promise<boolean> => {
+  const voucherGranted = streak?.voucher.status === 'granted';
+  const voucherValidity = voucherValidityLabel(streak?.voucher.expires_at);
+
+  const handleRedeem = async (code: string, useVoucher = false): Promise<boolean> => {
     setRedeemError(null);
     setRedeemBusy(true);
     try {
-      await redeemUnitCode(code);
-      showToast('تم تفعيل الوحدة بنجاح');
+      await redeemUnitCode(code, useVoucher);
+      showToast(useVoucher ? 'تم تفعيل الوحدة مع إعفاء رسوم المنصة' : 'تم تفعيل الوحدة بنجاح');
+      setGeneralVoucherChecked(false);
       await load();
       return true;
     } catch (err) {
@@ -162,11 +174,11 @@ export function UnitsPage() {
     }
   };
 
-  const handleRedeemUnit = async (unitId: string, code: string): Promise<boolean> => {
+  const handleRedeemUnit = async (unitId: string, code: string, useVoucher = false): Promise<boolean> => {
     setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: true, error: null } }));
     try {
-      await redeemUnitCode(code);
-      showToast('تم تفعيل الوحدة بنجاح');
+      await redeemUnitCode(code, useVoucher);
+      showToast(useVoucher ? 'تم تفعيل الوحدة مع إعفاء رسوم المنصة' : 'تم تفعيل الوحدة بنجاح');
       await load();
       setRedeemByUnit((prev) => ({ ...prev, [unitId]: { busy: false, error: null } }));
       return true;
@@ -355,9 +367,15 @@ export function UnitsPage() {
                         gradeName={price?.grade_name}
                         whatsappNumber={settings?.whatsapp_number ?? null}
                         whatsappMessage={`${settings?.whatsapp_default_message ?? ''} — وحدة ${unit.name}`}
-                        onRedeem={(code) => handleRedeemUnit(unit.id, code)}
+                        onRedeem={(code, useVoucher) => handleRedeemUnit(unit.id, code, useVoucher)}
                         redeemBusy={redeemByUnit[unit.id]?.busy ?? false}
                         redeemError={redeemByUnit[unit.id]?.error ?? null}
+                        voucher={{
+                          available: voucherGranted,
+                          waivedFee: price?.platform_fee ?? null,
+                          validityLabel: voucherValidity,
+                        }}
+                        voucherTestId={`voucher-redeem-${unit.id}`}
                       />
                     );
                   })}
@@ -475,8 +493,18 @@ export function UnitsPage() {
                 </p>
               </div>
 
+              {voucherGranted ? (
+                <div className="mb-3">
+                  <VoucherRedeemOption
+                    testId="voucher-redeem-general"
+                    validityLabel={voucherValidity}
+                    checked={generalVoucherChecked}
+                    onChange={setGeneralVoucherChecked}
+                  />
+                </div>
+              ) : null}
               <RedeemCodeForm
-                onSubmit={(code) => handleRedeem(code)}
+                onSubmit={(code) => handleRedeem(code, voucherGranted && generalVoucherChecked)}
                 busy={redeemBusy}
                 error={redeemError}
                 onSuccess={() => setRedeemError(null)}
