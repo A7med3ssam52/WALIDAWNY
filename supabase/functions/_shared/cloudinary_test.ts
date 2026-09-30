@@ -15,15 +15,20 @@ import {
   examImagePublicId,
   parseAvatarPath,
   parseExamImagePointer,
+  parseSuggestionImagePointer,
   sha1Hex,
   signDeliveryUrl,
   signUploadParams,
+  SUGGESTION_IMAGE_DELIVERY_TRANSFORMATION,
+  suggestionImagePointerFor,
+  suggestionImagePublicId,
   uploadEndpoint,
 } from './cloudinary.ts';
 
 const UID = '70000000-0000-0000-0000-000000000001';
 const EXAM_ID = '50000000-0000-0000-0000-000000000001';
 const IMAGE_ID = '60000000-0000-0000-0000-000000000001';
+const SUG_ID = '5a000000-0000-0000-0000-000000000001';
 
 Deno.test('cloudinary: avatarPublicId is avatars/<uid>/avatar', () => {
   assertEqual(avatarPublicId(UID), `avatars/${UID}/avatar`);
@@ -192,6 +197,78 @@ Deno.test('cloudinary: exam upload params match the reference vector', async () 
   assertEqual(
     await signUploadParams(params, 'test-secret'),
     'c9d4378c099f6947d859c3cc96c83eeedcf135c4',
+  );
+});
+
+Deno.test('cloudinary: suggestionImagePublicId is suggestion-images/<sug>/<uuid>', () => {
+  assertEqual(suggestionImagePublicId(SUG_ID, IMAGE_ID), `suggestion-images/${SUG_ID}/${IMAGE_ID}`);
+});
+
+Deno.test('cloudinary: suggestionImagePointerFor builds the pointer', () => {
+  assertEqual(
+    suggestionImagePointerFor(SUG_ID, IMAGE_ID, 'jpg', '1788000000'),
+    `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.jpg:1788000000`,
+  );
+});
+
+Deno.test('cloudinary: parseSuggestionImagePointer accepts all four extensions', () => {
+  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+    const parsed = parseSuggestionImagePointer(
+      `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.${ext}:1788000000`,
+    );
+    assert(parsed !== null, `expected ${ext} to parse`);
+    assertEqual(parsed.suggestionId, SUG_ID);
+    assertEqual(parsed.imageId, IMAGE_ID);
+    assertEqual(parsed.format, ext);
+    assertEqual(parsed.version, '1788000000');
+  }
+});
+
+Deno.test('cloudinary: parseSuggestionImagePointer rejects everything else', () => {
+  const bad = [
+    `${UID}/${SUG_ID}.jpg`, // legacy Supabase path
+    `cloudinary:${UID}/avatar.jpg:1788000000`, // avatar pointer
+    `cloudinary:exam-images/${EXAM_ID}/${IMAGE_ID}.png:1788000000`, // exam pointer
+    `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.gif:1788000000`, // bad ext
+    `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.jpg`, // missing version
+    `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.jpg:latest`, // non-numeric version
+    `cloudinary:suggestion-images/not-a-sug/${IMAGE_ID}.jpg:1788000000`, // bad suggestion id
+    `cloudinary:suggestion-images/${SUG_ID}/not-an-image.jpg:1788000000`, // bad image id
+    `cloudinary:boards/${SUG_ID}/${IMAGE_ID}.jpg:1788000000`, // wrong folder
+    `cloudinary:suggestion-images/${SUG_ID}/${IMAGE_ID}.jpg:1788000000/extra`, // trailing junk
+  ];
+  for (const input of bad) {
+    assertEqual(parseSuggestionImagePointer(input), null, `expected rejection: ${input}`);
+  }
+});
+
+Deno.test('cloudinary: suggestion upload params match the reference vector', async () => {
+  const params = {
+    type: 'authenticated',
+    timestamp: '1788000000',
+    public_id: `suggestion-images/${SUG_ID}/${IMAGE_ID}`,
+    overwrite: 'true',
+    invalidate: 'true',
+  };
+  assertEqual(
+    await signUploadParams(params, 'test-secret'),
+    '7e61652be3aa76e56e97e6f0ed1321fcfbef9ca6',
+  );
+});
+
+Deno.test('cloudinary: suggestion delivery URL uses the 1600px transformation', () => {
+  const url = buildAuthenticatedDeliveryUrl({
+    cloudName: 'demo-cloud',
+    publicId: `suggestion-images/${SUG_ID}/${IMAGE_ID}`,
+    format: 'jpg',
+    version: '1788000000',
+    transformation: SUGGESTION_IMAGE_DELIVERY_TRANSFORMATION,
+    signature: '4CeyPwGN',
+  });
+  assert(
+    url ===
+      `https://res.cloudinary.com/demo-cloud/image/authenticated/s--4CeyPwGN--/${SUGGESTION_IMAGE_DELIVERY_TRANSFORMATION}/v1788000000/suggestion-images/${SUG_ID}/${IMAGE_ID}.jpg`,
+    `unexpected url: ${url}`,
   );
 });
 

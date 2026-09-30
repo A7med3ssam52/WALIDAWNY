@@ -30,17 +30,26 @@ export const CLOUDINARY_AVATAR_FOLDER = 'avatars';
 /** Fixed Cloudinary folder for exam question images. */
 export const CLOUDINARY_EXAM_FOLDER = 'exam-images';
 
+/** Fixed Cloudinary folder for suggestion inbox images (0091, cutover from Supabase). */
+export const CLOUDINARY_SUGGESTION_FOLDER = 'suggestion-images';
+
 /** Single delivery transformation for avatars (downscale + auto quality). */
 export const AVATAR_DELIVERY_TRANSFORMATION = 'c_limit,w_512,h_512,q_auto';
 
 /** Delivery transformation for exam images (keeps question detail readable). */
 export const EXAM_IMAGE_DELIVERY_TRANSFORMATION = 'c_limit,w_1600,h_1600,q_auto';
 
+/** Delivery transformation for suggestion images (screenshot detail readable). */
+export const SUGGESTION_IMAGE_DELIVERY_TRANSFORMATION = 'c_limit,w_1600,h_1600,q_auto';
+
 /** Cloudinary free plan caps image uploads at 10MB; the platform caps at 8MB. */
 export const AVATAR_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Exam images keep the 5MiB platform cap (mirrors the exam-images bucket limit). */
 export const EXAM_IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Suggestion images keep the 5MiB platform cap (mirrors the legacy suggestion-images bucket limit). */
+export const SUGGESTION_IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,6 +63,13 @@ export interface ParsedAvatarPath {
 
 export interface ParsedExamImagePath {
   examId: string;
+  imageId: string;
+  format: string;
+  version: string;
+}
+
+export interface ParsedSuggestionImagePath {
+  suggestionId: string;
   imageId: string;
   format: string;
   version: string;
@@ -85,6 +101,24 @@ export function examImagePointerFor(
   version: string,
 ): string {
   return `cloudinary:${CLOUDINARY_EXAM_FOLDER}/${examId}/${imageId}.${format}:${version}`;
+}
+
+/** Server-minted public_id for a suggestion image (uuid per upload). */
+export function suggestionImagePublicId(suggestionId: string, imageId: string): string {
+  return `${CLOUDINARY_SUGGESTION_FOLDER}/${suggestionId}/${imageId}`;
+}
+
+/**
+ * platform_suggestions image pointer for a Cloudinary asset:
+ * cloudinary:suggestion-images/<suggestion_id>/<image_uuid>.<ext>:<version>.
+ */
+export function suggestionImagePointerFor(
+  suggestionId: string,
+  imageId: string,
+  format: string,
+  version: string,
+): string {
+  return `cloudinary:${CLOUDINARY_SUGGESTION_FOLDER}/${suggestionId}/${imageId}.${format}:${version}`;
 }
 
 /**
@@ -139,6 +173,35 @@ export function parseExamImagePointer(path: unknown): ParsedExamImagePath | null
   if (!AVATAR_EXT_RE.test(format)) return null;
   if (!/^[0-9]+$/.test(version)) return null;
   return { examId, imageId, format, version };
+}
+
+/**
+ * Parses a `cloudinary:suggestion-images/<suggestion_id>/<image_uuid>.<ext>:<version>`
+ * pointer. Returns null for anything else (including legacy Supabase
+ * paths, avatar pointers and exam pointers).
+ */
+export function parseSuggestionImagePointer(path: unknown): ParsedSuggestionImagePath | null {
+  if (typeof path !== 'string') return null;
+  const prefix = `cloudinary:${CLOUDINARY_SUGGESTION_FOLDER}/`;
+  if (!path.startsWith(prefix)) return null;
+  const rest = path.slice(prefix.length);
+  const versionSep = rest.lastIndexOf(':');
+  if (versionSep < 0) return null;
+  const version = rest.slice(versionSep + 1);
+  const head = rest.slice(0, versionSep);
+  const slash = head.indexOf('/');
+  if (slash < 0) return null;
+  const suggestionId = head.slice(0, slash);
+  const file = head.slice(slash + 1);
+  const dot = file.lastIndexOf('.');
+  if (dot < 0) return null;
+  const imageId = file.slice(0, dot);
+  const format = file.slice(dot + 1);
+  if (!UUID_RE.test(suggestionId)) return null;
+  if (!UUID_RE.test(imageId)) return null;
+  if (!AVATAR_EXT_RE.test(format)) return null;
+  if (!/^[0-9]+$/.test(version)) return null;
+  return { suggestionId, imageId, format, version };
 }
 
 /** SHA-1 digest of a UTF-8 string, lowercase hex (upload-API signatures). */

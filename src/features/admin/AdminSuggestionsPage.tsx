@@ -26,6 +26,7 @@ import { Toggle } from '../../components/Toggle';
 import { useToast } from '../../components/Toast';
 import {
   deleteSuggestion,
+  deleteSuggestionImage,
   getPublicSettings,
   getUnreadSuggestionsCount,
   listSuggestions,
@@ -269,6 +270,9 @@ export function AdminSuggestionsPage() {
     if (!deleteCandidate) return;
     setBusy(true);
     try {
+      // Best-effort Cloudinary destroy first (idempotent); the row
+      // delete below stays authoritative either way (0091).
+      await deleteSuggestionImage(deleteCandidate.image_path);
       await deleteSuggestion(deleteCandidate.id);
       showToast('تم حذف المشاركة');
       setDeleteCandidate(null);

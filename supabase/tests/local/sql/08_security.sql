@@ -5,14 +5,20 @@
 --   1. search_path hardening lock    (every public SECURITY DEFINER pins
 --                                     search_path = public -- B1, no
 --                                     regression lock existed before)
---   2. storage.objects policy lock   (exactly nine policies: the INSERT
+--   2. storage.objects policy lock   (exactly ten policies: the INSERT
 --                                     pdfs_insert_row_backed + the 0021
 --                                     SELECT pdfs_select_row_backed RETURNING
---                                     mirror + the 0036 boards_insert_row_backed
+--                                     mirror + the 0041 H1 pdfs DELETE +
+--                                     the 0036 boards_insert_row_backed
 --                                     INSERT + the 0041 C1 boards SELECT mirror
---                                     + the 0041 H1 boards/pdf DELETE pair, all
---                                     authenticated-only; no UPDATE/anon; RLS
+--                                     + the 0041 H1 boards DELETE + the 0082/
+--                                     0088 avatars quad (insert/update/select/
+--                                     delete), all authenticated-only;
+--                                     no UPDATE on pdfs/boards, no anon; RLS
 --                                     ENABLE-without-FORCE per 0021)
+--                                     (0091 drops the 0075 suggestion-images
+--                                     triple — suggestion images are on
+--                                     Cloudinary now)
 --   3. B2 belt-and-braces scope      (column-scoped notifications UPDATE:
 --                                     even with table-level UPDATE, only
 --                                     is_read/read_at are writable)
@@ -51,10 +57,11 @@ SELECT tests.assert(
     'sec: create_unit_codes_internal pins search_path=public, extensions (0032)');
 
 -- =====================================================================
--- Section 2: storage.objects policy inventory lock (REVISED, 0075)
+-- Section 2: storage.objects policy inventory lock (REVISED, 0091)
 -- The Storage API uploads with INSERT ... RETURNING *, so a SELECT
 -- policy covering the inserted row is REQUIRED (42501 without it).
--- Exactly NINE policies may exist:
+-- Exactly TEN policies may exist: 3x pdfs + 3x boards + 4x avatars
+-- (0091 drops the 0075 suggestion-images triple with the bucket):
 --   * pdfs_insert_row_backed FOR INSERT TO authenticated (0015/0020,
 --     pending-only: is_ready=false AND is_primary=false)
 --   * pdfs_select_row_backed FOR SELECT TO authenticated (0021, the
@@ -82,9 +89,9 @@ SELECT tests.assert(
 -- service role must not be subject to RLS on its own bookkeeping).
 -- =====================================================================
 SELECT tests.assert(
-    (SELECT count(*) = 9 FROM pg_policies
+    (SELECT count(*) = 10 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'),
-    'sec: exactly nine storage.objects policies (3x INSERT + 3x SELECT + 3x DELETE)');
+    'sec: exactly ten storage.objects policies (3x pdfs + 3x boards + 4x avatars; 0091 drops the suggestion triple)');
 
 SELECT tests.assert(
     (SELECT count(*) = 1 FROM pg_policies
@@ -215,60 +222,19 @@ SELECT tests.assert(
         AND policyname = 'pdfs_delete_row_backed'),
     'sec: pdfs_delete_row_backed = staff-only row-backed DELETE (0041 H1)');
 
--- 0075 suggestion-images triple: owner INSERT, owner-or-admin SELECT
--- mirror, admin-only DELETE - all row-backed on platform_suggestions
+-- 0091 Cloudinary cutover: the 0075/0078 suggestion-images triple is
+-- GONE (no suggestion_images_* policy may exist; reads/writes go
+-- through the signed Cloudinary Edge Functions instead).
 SELECT tests.assert(
-    (SELECT count(*) = 1 FROM pg_policies
+    (SELECT count(*) = 0 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_insert_own'
-        AND cmd = 'INSERT' AND permissive = 'PERMISSIVE'
-        AND roles::text = '{authenticated}'),
-    'sec: suggestion_images_insert_own FOR INSERT TO authenticated (0075)');
-
+        AND policyname LIKE 'suggestion\_images\_%'),
+    'sec: no suggestion_images_* policy on storage.objects (0091 cutover)');
 SELECT tests.assert(
-    (SELECT COALESCE(with_check, qual) LIKE '%bucket_id = ''suggestion-images''%'
-        AND COALESCE(with_check, qual) LIKE '%platform_suggestions%'
-        AND COALESCE(with_check, qual) LIKE '%auth.uid()%'
-        AND COALESCE(with_check, qual) LIKE '%jpg|jpeg|png|webp%'
-      FROM pg_policies
+    (SELECT count(*) = 0 FROM pg_policies
       WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_insert_own'),
-    'sec: suggestion_images_insert_own is the owner-bound row-backed INSERT (0075)');
-
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM pg_policies
-      WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_select_owner_admin'
-        AND cmd = 'SELECT' AND permissive = 'PERMISSIVE'
-        AND roles::text = '{authenticated}'),
-    'sec: suggestion_images_select_owner_admin FOR SELECT TO authenticated (0075)');
-
-SELECT tests.assert(
-    (SELECT qual LIKE '%bucket_id = ''suggestion-images''%'
-        AND qual LIKE '%platform_suggestions%'
-        AND qual LIKE '%is_admin()%'
-        AND qual LIKE '%student_id%'
-      FROM pg_policies
-      WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_select_owner_admin'),
-    'sec: suggestion_images_select_owner_admin is the owner-or-admin mirror (0075, INSERT-scope 0078)');
-
-SELECT tests.assert(
-    (SELECT count(*) = 1 FROM pg_policies
-      WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_delete_admin'
-        AND cmd = 'DELETE' AND permissive = 'PERMISSIVE'
-        AND roles::text = '{authenticated}'),
-    'sec: suggestion_images_delete_admin FOR DELETE TO authenticated (0075)');
-
-SELECT tests.assert(
-    (SELECT qual LIKE '%bucket_id = ''suggestion-images''%'
-        AND qual LIKE '%platform_suggestions%'
-        AND qual LIKE '%is_admin()%'
-      FROM pg_policies
-      WHERE schemaname = 'storage' AND tablename = 'objects'
-        AND policyname = 'suggestion_images_delete_admin'),
-    'sec: suggestion_images_delete_admin = admin-only row-backed DELETE (0075)');
+        AND COALESCE(with_check, qual) LIKE '%suggestion-images%'),
+    'sec: no storage.objects policy references the suggestion-images bucket (0091)');
 
 SELECT tests.assert(
     (SELECT count(*) = 0 FROM pg_policies

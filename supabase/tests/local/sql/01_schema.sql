@@ -405,9 +405,15 @@ SELECT tests.assert(
     'notify_new_content trigger on lessons');
 
 -- --- Storage buckets: private ----------------------------------------
+-- (0091: the suggestion-images bucket was dropped — suggestion images
+-- live on Cloudinary now. Remaining: pdfs + audit-exports (0011),
+-- boards (0036), exam-images (0045), avatars (0082).)
 SELECT tests.assert(
-    (SELECT count(*) = 4 FROM storage.buckets WHERE id IN ('pdfs','audit-exports','boards','suggestion-images') AND NOT public),
-    'pdfs, audit-exports, boards and suggestion-images buckets exist and are private');
+    (SELECT count(*) = 5 FROM storage.buckets WHERE id IN ('pdfs','audit-exports','boards','exam-images','avatars') AND NOT public),
+    'pdfs, audit-exports, boards, exam-images and avatars buckets exist and are private (0091 drops suggestion-images)');
+SELECT tests.assert(
+    (SELECT count(*) = 0 FROM storage.buckets WHERE id = 'suggestion-images'),
+    'suggestion-images bucket is gone (0091 Cloudinary cutover)');
 
 -- --- B1: SECURITY DEFINER ownership -----------------------------------
 SELECT tests.assert(

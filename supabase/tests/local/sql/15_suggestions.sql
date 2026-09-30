@@ -1,12 +1,14 @@
 -- =====================================================================
--- 15_suggestions.sql — Phase (0075) platform_suggestions assertions
+-- 15_suggestions.sql — Phase (0075, Cloudinary 0091)
+-- platform_suggestions assertions
 -- ---------------------------------------------------------------------
 -- submit_suggestion / attach_suggestion_image / list_my_suggestions /
 -- list_suggestions / update_suggestion_status / delete_suggestion,
 -- kill-switch (suggestions_open), validation limits, RLS matrix
 -- (students own-only, no student update/delete; staff excluded;
--- admin full), suggestion_status notifications, row-backed
--- suggestion-images storage policies, audit capture and grant posture.
+-- admin full), suggestion_status notifications, Cloudinary pointer
+-- shape lock (0091 — no storage.objects coupling), audit capture and
+-- grant posture.
 -- Fixture users (02_roles): A ...0001 active student, E ...0005 active
 -- student, B ...0002 disabled, T ...000b teacher, W ...0009 mr_walid,
 -- AD ...000a admin. Fixture rows use 5a000000-... ids, removed at end.
@@ -148,56 +150,42 @@ SELECT tests.assert(
     's: suggestions keys exposed via get_public_settings');
 
 -- ---------------------------------------------------------------------
--- Image attach flow (A): missing bytes -> invalid path -> success ->
--- duplicate refused. Storage object planted as harness superuser.
+-- Image attach flow (A, Cloudinary 0091): legacy path rejected ->
+-- foreign suggestion pointer rejected -> malformed pointer rejected ->
+-- success -> duplicate refused. No storage.objects coupling.
 -- ---------------------------------------------------------------------
-INSERT INTO storage.objects (bucket_id, name)
-SELECT 'suggestion-images', '70000000-0000-0000-0000-000000000001/' || s.id::text || '.jpg'
-FROM public.platform_suggestions s
-WHERE s.title = 'عنوان ديناميكي';
-
 SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
 SET LOCAL ROLE student;
 SELECT tests.expect_error(
     'SELECT public.attach_suggestion_image(''5a000000-0000-0000-0000-000000000001'', ''70000000-0000-0000-0000-000000000001/5a000000-0000-0000-0000-000000000001.jpg'')',
-    'P0001', 'suggestion_image_missing');
+    'P0001', 'invalid_image');
 SELECT tests.expect_error(
-    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), ''70000000-0000-0000-0000-000000000001/evil.png'')',
+    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), ''cloudinary:suggestion-images/5a000000-0000-0000-0000-000000000001/70000000-0000-0000-0000-0000000000aa.png:1788000000'')',
+    'P0001', 'invalid_image');
+SELECT tests.expect_error(
+    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), ''cloudinary:suggestion-images/'' || (SELECT id::text FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي'') || ''/not-an-image.jpg:1788000000'')',
     'P0001', 'invalid_image');
 SELECT tests.expect_rows(
-    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), (SELECT ''70000000-0000-0000-0000-000000000001/'' || id::text || ''.jpg'' FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''))',
-    1, 's: attach succeeds once bytes exist');
+    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), (SELECT ''cloudinary:suggestion-images/'' || id::text || ''/70000000-0000-0000-0000-0000000000aa.jpg:1788000000'' FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''))',
+    1, 's: attach succeeds with the own Cloudinary pointer (0091)');
 SELECT tests.expect_error(
-    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), (SELECT ''70000000-0000-0000-0000-000000000001/'' || id::text || ''.jpg'' FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''))',
+    'SELECT public.attach_suggestion_image((SELECT id FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''), (SELECT ''cloudinary:suggestion-images/'' || id::text || ''/70000000-0000-0000-0000-0000000000aa.jpg:1788000000'' FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي''))',
     'P0001', 'suggestion_image_exists');
 SELECT tests.expect_count(
-    'SELECT count(*) FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي'' AND image_path IS NOT NULL',
-    1, 's: image_path bound to the row');
+    'SELECT count(*) FROM public.platform_suggestions WHERE title = ''عنوان ديناميكي'' AND image_path LIKE ''cloudinary:%''',
+    1, 's: Cloudinary image_path bound to the row');
 RESET ROLE;
 
 -- ---------------------------------------------------------------------
--- Storage INSERT policy probe: owner-bound to image-less own rows.
--- Correct path succeeds; foreign uid or foreign row -> 42501.
+-- CHECK lock (0091): legacy Supabase paths are rejected at the
+-- constraint level, all four Cloudinary extensions accepted.
 -- ---------------------------------------------------------------------
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
-SET LOCAL ROLE student;
-SELECT tests.expect_rows(
-    'INSERT INTO storage.objects (bucket_id, name) SELECT ''suggestion-images'', ''70000000-0000-0000-0000-000000000001/'' || id::text || ''.png'' FROM public.platform_suggestions WHERE title = ''عنوان تخزين'' RETURNING *',
-    1, 's: owner upload to own image-less row allowed');
 SELECT tests.expect_error(
-    'INSERT INTO storage.objects (bucket_id, name) VALUES (''suggestion-images'', ''70000000-0000-0000-0000-000000000005/5a000000-0000-0000-0000-000000000001.png'')',
-    '42501', 'violates row-level security policy');
-RESET ROLE;
--- E probing A's row with a constant path: the uid matches E but the
--- row is not theirs -> 42501. (A constant VALUES path is used on
--- purpose: an inner SELECT would be RLS-filtered to zero rows and the
--- INSERT would succeed vacuously.)
-SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000005';
-SET LOCAL ROLE student;
-SELECT tests.expect_error(
-    'INSERT INTO storage.objects (bucket_id, name) VALUES (''suggestion-images'', ''70000000-0000-0000-0000-000000000005/5a000000-0000-0000-0000-000000000001.png'')',
-    '42501', 'violates row-level security policy');
-RESET ROLE;
+    'UPDATE public.platform_suggestions SET image_path = ''70000000-0000-0000-0000-000000000001/5a000000-0000-0000-0000-000000000001.jpg'' WHERE title = ''عنوان تخزين''',
+    '23514', 'platform_suggestions_image_path_check');
+SELECT tests.assert(
+    (SELECT count(*) = 0 FROM public.platform_suggestions WHERE image_path NOT LIKE 'cloudinary:%' AND image_path IS NOT NULL),
+    's: no legacy image_path survives the 0091 cutover');
 
 -- ---------------------------------------------------------------------
 -- Admin inbox: list + filters + status workflow + notifications
@@ -344,7 +332,6 @@ SELECT tests.assert(
 -- ---------------------------------------------------------------------
 RESET "app.current_user_id";
 DELETE FROM public.notifications WHERE entity_type = 'suggestion';
-DELETE FROM storage.objects WHERE bucket_id = 'suggestion-images';
 DELETE FROM public.platform_suggestions
 WHERE student_id IN ('70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000005');
 DELETE FROM public.audit_logs WHERE entity_type = 'platform_suggestions';

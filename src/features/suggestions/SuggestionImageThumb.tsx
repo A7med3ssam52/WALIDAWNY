@@ -12,8 +12,8 @@ interface SuggestionImageThumbProps {
 }
 
 /**
- * Signed-URL thumbnail that opens an in-app preview popup (0075).
- * The Supabase URL is never exposed as an external link.
+ * Signed-URL thumbnail that opens an in-app preview popup (0075, Cloudinary 0091).
+ * The signed URL is never exposed as an external link.
  */
 export function SuggestionImageThumb({ path, title, className }: SuggestionImageThumbProps) {
   const [url, setUrl] = useState<string | null>(null);

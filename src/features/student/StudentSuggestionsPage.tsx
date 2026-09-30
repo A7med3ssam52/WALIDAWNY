@@ -17,7 +17,7 @@ import {
   getRpcErrorCode,
   listMySuggestions,
   submitSuggestion,
-  uploadSuggestionImage,
+  uploadSuggestionImageToCloudinary,
 } from '../../data/rpc';
 import { compressSuggestionImage, validateSuggestionImage } from '../../lib/imageCompress';
 import { formatDateTime } from '../../lib/format';
@@ -131,7 +131,12 @@ export function StudentSuggestionsPage() {
       if (imageFile && user) {
         try {
           const blob = await compressSuggestionImage(imageFile);
-          const path = await uploadSuggestionImage(user.id, row.id, blob);
+          const path = await uploadSuggestionImageToCloudinary(
+            row.id,
+            blob,
+            imageFile.name,
+            imageFile.type || 'image/jpeg',
+          );
           await attachSuggestionImage(row.id, path);
         } catch {
           showToast('تم إرسال مشاركتك لكن تعذر إرفاق الصورة', 'error');

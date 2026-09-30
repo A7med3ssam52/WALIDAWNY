@@ -2407,12 +2407,14 @@ function createMockClient() {
       if (row.image_path) {
         return error('suggestion_image_exists');
       }
+      // Cloudinary cutover (0091): pointer must be
+      // cloudinary:suggestion-images/<own-suggestion-id>/<uuid>.<ext>:<version>.
       const path = String(args?.p_path ?? '');
-      if (path !== `${uid}/${row.id}.jpg`) {
+      const match = /^cloudinary:suggestion-images\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.(jpg|jpeg|png|webp):([0-9]+)$/i.exec(
+        path,
+      );
+      if (!match || match[1].toLowerCase() !== String(row.id).toLowerCase()) {
         return error('invalid_image');
-      }
-      if (!state.storageUploads.some((item) => item.path === path)) {
-        return error('suggestion_image_missing');
       }
       row.image_path = path;
       return { data: null, error: null };

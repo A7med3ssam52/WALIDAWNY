@@ -2595,33 +2595,230 @@ export async function setAppSetting(key: string, value: unknown): Promise<void> 
   }
 }
 
-const SUGGESTION_IMAGE_BUCKET = 'suggestion-images';
+// ---------------------------------------------------------------------
+// Suggestion image helpers (Phase 13, Cloudinary — 0091 cutover)
+/** Prefix of Cloudinary suggestion pointers: cloudinary:suggestion-images/<sug>/<uuid>.<ext>:<version>. */
+export const CLOUDINARY_SUGGESTION_PREFIX = 'cloudinary:suggestion-images/';
 
-/** Direct Storage upload of a compressed suggestion image (0075 row-backed INSERT policy). */
-export async function uploadSuggestionImage(
-  studentId: string,
+const SUGGESTION_SIGNED_URL_TTL_SECONDS = 3600;
+
+/** In-memory cache of suggestion signed URLs (path -> { url, expiresAt }). */
+const suggestionUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
+/** In-flight signed URL requests (path -> promise) so concurrent thumbs never double-fetch. */
+const suggestionUrlPending = new Map<string, Promise<string | null>>();
+
+export function invalidateSuggestionUrl(path?: string | null): void {
+  if (path) {
+    suggestionUrlCache.delete(path);
+    suggestionUrlPending.delete(path);
+  } else {
+    suggestionUrlCache.clear();
+    suggestionUrlPending.clear();
+  }
+}
+
+/** True for Cloudinary suggestion pointers (cloudinary:suggestion-images/...). */
+export function isCloudinarySuggestionImagePath(path: string | null | undefined): boolean {
+  return typeof path === 'string' && path.startsWith(CLOUDINARY_SUGGESTION_PREFIX);
+}
+
+export interface SuggestionImagePointer {
+  suggestionId: string;
+  imageId: string;
+  format: string;
+  version: string;
+}
+
+/**
+ * Parses a Cloudinary suggestion pointer. Returns null for anything else
+ * (including legacy Supabase paths). Mirrors parseSuggestionImagePointer()
+ * in supabase/functions/_shared/cloudinary.ts.
+ */
+export function parseSuggestionImagePointer(path: string): SuggestionImagePointer | null {
+  if (!isCloudinarySuggestionImagePath(path)) {
+    return null;
+  }
+  const rest = path.slice(CLOUDINARY_SUGGESTION_PREFIX.length);
+  const versionSep = rest.lastIndexOf(':');
+  if (versionSep < 0) {
+    return null;
+  }
+  const version = rest.slice(versionSep + 1);
+  const head = rest.slice(0, versionSep);
+  const slash = head.indexOf('/');
+  if (slash < 0) {
+    return null;
+  }
+  const suggestionId = head.slice(0, slash);
+  const file = head.slice(slash + 1);
+  const dot = file.lastIndexOf('.');
+  if (dot < 0) {
+    return null;
+  }
+  const imageId = file.slice(0, dot);
+  const format = file.slice(dot + 1);
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(suggestionId) || !uuidRe.test(imageId)) {
+    return null;
+  }
+  if (format !== 'jpg' && format !== 'jpeg' && format !== 'png' && format !== 'webp') {
+    return null;
+  }
+  if (!/^[0-9]+$/.test(version)) {
+    return null;
+  }
+  return { suggestionId, imageId, format, version };
+}
+
+export interface SuggestionImageUploadSession {
+  upload_url: string;
+  cloud_name: string;
+  api_key: string;
+  timestamp: string;
+  signature: string;
+  public_id: string;
+  suggestion_id: string;
+  image_id: string;
+}
+
+export async function uploadSuggestionImageSession(input: {
+  suggestionId: string;
+  fileName: string;
+  fileSize?: number;
+}): Promise<SuggestionImageUploadSession> {
+  return invokeFunction<SuggestionImageUploadSession>('upload-suggestion-image', {
+    method: 'POST',
+    body: {
+      suggestion_id: input.suggestionId,
+      file_name: input.fileName,
+      ...(input.fileSize !== undefined ? { file_size: input.fileSize } : {}),
+    },
+  });
+}
+
+/** Normalizes a Cloudinary upload-response format to the allow-listed set. */
+function normalizeSuggestionFormat(format: string, fallbackMime: string): string {
+  const normalized = format.trim().toLowerCase();
+  if (normalized === 'png') return 'png';
+  if (normalized === 'webp') return 'webp';
+  if (normalized === 'jpeg') return 'jpeg';
+  if (normalized === 'jpg') return 'jpg';
+  if (fallbackMime === 'image/png') return 'png';
+  if (fallbackMime === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
+/**
+ * Uploads a (compressed) suggestion image to Cloudinary
+ * (type=authenticated, server-minted public_id) and returns the pointer
+ * to bind via attachSuggestionImage(). The caller passes the compressed
+ * blob plus the ORIGINAL file name/mime for the grant + format fallback.
+ */
+export async function uploadSuggestionImageToCloudinary(
   suggestionId: string,
   blob: Blob,
+  fileName: string,
+  mimeType = 'image/jpeg',
 ): Promise<string> {
-  const path = `${studentId}/${suggestionId}.jpg`;
-  const { error } = await getSupabaseClient()
-    .storage.from(SUGGESTION_IMAGE_BUCKET)
-    .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-  if (error) {
-    throw error;
+  const grant = await uploadSuggestionImageSession({
+    suggestionId,
+    fileName,
+    fileSize: typeof blob.size === 'number' ? blob.size : undefined,
+  });
+  if (grant.suggestion_id !== suggestionId || !grant.public_id || !grant.image_id) {
+    throw codeError('function_error');
   }
+  const form = new FormData();
+  form.append('file', blob, fileName);
+  form.append('api_key', grant.api_key);
+  form.append('timestamp', grant.timestamp);
+  form.append('public_id', grant.public_id);
+  form.append('type', 'authenticated');
+  form.append('overwrite', 'true');
+  form.append('invalidate', 'true');
+  form.append('signature', grant.signature);
+  let response: Response;
+  try {
+    response = await fetch(grant.upload_url, { method: 'POST', body: form });
+  } catch {
+    throw codeError('network_error');
+  }
+  if (!response.ok) {
+    throw codeError('function_error');
+  }
+  let payload: { format?: unknown; version?: unknown };
+  try {
+    payload = (await response.json()) as { format?: unknown; version?: unknown };
+  } catch {
+    throw codeError('function_error');
+  }
+  const version = String(payload.version ?? '');
+  if (!/^[0-9]+$/.test(version)) {
+    throw codeError('function_error');
+  }
+  const format = normalizeSuggestionFormat(String(payload.format ?? ''), mimeType);
+  const path = `${CLOUDINARY_SUGGESTION_PREFIX}${suggestionId}/${grant.image_id}.${format}:${version}`;
+  invalidateSuggestionUrl();
   return path;
 }
 
-/** Signed read URL for a suggestion image (owner + admin SELECT policy). */
+/**
+ * Cached read URL for a suggestion image.
+ * Cloudinary pointers resolve via the suggestion-image-signed-url Edge
+ * Function (owner + admin gate). Legacy Supabase paths resolve to null
+ * (cutover — 0091 nulled them server-side).
+ */
 export async function getSuggestionImageSignedUrl(path: string): Promise<string | null> {
-  const { data, error } = await getSupabaseClient()
-    .storage.from(SUGGESTION_IMAGE_BUCKET)
-    .createSignedUrl(path, 3600);
-  if (error) {
+  if (!isCloudinarySuggestionImagePath(path)) {
     return null;
   }
-  return data?.signedUrl ?? null;
+  const cached = suggestionUrlCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+  const inFlight = suggestionUrlPending.get(path);
+  if (inFlight) {
+    return inFlight;
+  }
+  const request = invokeFunction<{ signed_url: string }>('suggestion-image-signed-url', {
+    method: 'POST',
+    body: { path },
+  })
+    .then((res) => {
+      const url = typeof res?.signed_url === 'string' ? res.signed_url : null;
+      if (url) {
+        suggestionUrlCache.set(path, {
+          url,
+          expiresAt: Date.now() + (SUGGESTION_SIGNED_URL_TTL_SECONDS - 300) * 1000,
+        });
+      }
+      return url;
+    })
+    .catch(() => null)
+    .finally(() => {
+      suggestionUrlPending.delete(path);
+    });
+  suggestionUrlPending.set(path, request);
+  return request;
+}
+
+/**
+ * Best-effort destroy of a Cloudinary suggestion image (admin flows call
+ * this before deleteSuggestion()). Never throws — the suggestion DML
+ * stays authoritative.
+ */
+export async function deleteSuggestionImage(path: string | null | undefined): Promise<void> {
+  if (!isCloudinarySuggestionImagePath(path)) {
+    return;
+  }
+  try {
+    await invokeFunction('suggestion-image-delete', { method: 'POST', body: { path } });
+  } catch {
+    /* orphaned asset is harmless — never block the suggestion delete */
+  } finally {
+    invalidateSuggestionUrl(path);
+  }
 }
 
 const AVATAR_IMAGE_BUCKET = 'avatars'; // legacy reads only (dual-read window, 0089)
