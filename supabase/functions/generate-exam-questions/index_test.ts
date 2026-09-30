@@ -63,9 +63,12 @@ function adminCfg(overrides?: Partial<StubConfig>): StubConfig {
 function deps(cfg: StubConfig, geminiBody: unknown = GEMINI_OK, geminiKey = 'test-key') {
   const { client } = makeStubClient(cfg);
   const fetchCalls: Array<{ url: string; body: unknown }> = [];
-  const fetchImpl = async (input: string, init?: RequestInit) => {
+  const fetchImpl = (input: string, init?: RequestInit) => {
     fetchCalls.push({ url: input, body: init?.body ? JSON.parse(String(init.body)) : null });
-    return new Response(JSON.stringify(geminiBody), { status: 200 });
+    if (input.includes('res.cloudinary.com')) {
+      return Promise.resolve(new Response(new Uint8Array([1, 2, 3, 4]).buffer, { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify(geminiBody), { status: 200 }));
   };
   return {
     dep: {
@@ -74,6 +77,7 @@ function deps(cfg: StubConfig, geminiBody: unknown = GEMINI_OK, geminiKey = 'tes
       makeServiceClient: () => client,
       fetchImpl,
       geminiKey,
+      cloudinary: { cloudName: 'test-cloud', apiKey: 'test-key', apiSecret: 'test-secret' },
     },
     fetchCalls,
   };
@@ -142,6 +146,65 @@ Deno.test('generate-exam-questions: cross-exam image rejected', async () => {
   await expectStatus(res, 422);
   const body = await res.json();
   assertEqual(body.error.code, 'invalid_image');
+});
+
+Deno.test('generate-exam-questions: cross-exam cloudinary pointer rejected', async () => {
+  const { dep } = deps(adminCfg());
+  const res = await handle(
+    post(
+      {
+        ...GEN_BODY,
+        images: [
+          {
+            storage_path:
+              'cloudinary:exam-images/ffffffff-ffff-ffff-ffff-ffffffffffff/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png:1788000000',
+          },
+        ],
+      },
+      USER_ADMIN,
+    ),
+    dep,
+  );
+  await expectStatus(res, 422);
+  const body = await res.json();
+  assertEqual(body.error.code, 'invalid_image');
+});
+
+Deno.test('generate-exam-questions: cloudinary pointer downloaded for Vision', async () => {
+  const withImage = {
+    candidates: [
+      {
+        content: {
+          parts: [
+            {
+              text: JSON.stringify({
+                questions: [
+                  {
+                    type: 'essay', prompt: 'Q about image', choices: null, correct_index: null,
+                    max_score: 3, needs_review: false, prompt_image: 1, choice_images: null,
+                  },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const pointer =
+    `cloudinary:exam-images/${EXAM_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png:1788000000`;
+  const { dep, fetchCalls } = deps(adminCfg(), withImage);
+  const res = await handle(post({ ...GEN_BODY, images: [{ storage_path: pointer }] }, USER_ADMIN), dep);
+  await expectStatus(res, 200);
+  const body = (await res.json()) as { questions: Array<{ prompt_image_path: string | null }> };
+  assertEqual(body.questions.length, 1);
+  assertEqual(body.questions[0].prompt_image_path, pointer);
+  const cloudCalls = fetchCalls.filter((c) => String(c.url).includes('res.cloudinary.com'));
+  assertEqual(cloudCalls.length, 1);
+  assert(
+    String(cloudCalls[0].url).includes(`/exam-images/${EXAM_ID}/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png`),
+    `delivery url must target the pointer asset: ${cloudCalls[0].url}`,
+  );
 });
 
 Deno.test('generate-exam-questions: success normalizes + drops invalid', async () => {

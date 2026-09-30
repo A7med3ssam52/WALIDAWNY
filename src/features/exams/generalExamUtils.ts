@@ -135,6 +135,7 @@ export const GENERAL_EXAM_ERROR_MESSAGES: Record<string, string> = {
   file_too_large: 'حجم الصورة يتجاوز الحد المسموح (5 ميجابايت)',
   forbidden: 'ليست لديك صلاحية لهذا الإجراء',
   upload_url_failed: 'فشل تجهيز رفع الصورة — حاول مرة أخرى',
+  misconfigured: 'خدمة الصور غير مهيأة — تواصل مع الإدارة',
   exam_image_upload_failed: 'فشل رفع الصورة — تحقق من الاتصال وحاول مجدداً',
   // Admin-only AI generation codes
   ai_not_configured: 'خدمة الذكاء الاصطناعي غير مفعلة بعد — أضف مفتاح Gemini أولاً',

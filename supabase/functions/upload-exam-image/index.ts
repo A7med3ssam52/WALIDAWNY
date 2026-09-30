@@ -1,54 +1,62 @@
 // =====================================================================
 // upload-exam-image — Phase 12 | Edge Function | Exam Question Images
+// (Cloudinary, Phase 10 — Supabase Storage capped at 1GB).
 // POST, JWT-verified (config.toml: [functions.upload-exam-image]
 // verify_jwt = true).
 //
 // Starts the exam image upload flow for a specific exam:
 //   1. validates the request (exam exists + not soft-deleted, sanitized
 //      original filename, optional declared size cap),
-//   2. checks the caller is staff (admin / mr_walid / teacher) + active,
-//   3. generates storage_path server-side as '{exam_id}/{uuid}.{ext}'
-//      (client NEVER supplies a path component),
-//   4. issues short-lived signed upload URL on the private `exam-images`
-//      bucket via service-role createSignedUploadUrl,
-//   5. returns { uploadUrl, storage_path, exam_id }.
-//   The client uploads bytes directly to uploadUrl, then stores
-//   storage_path in exam_questions.prompt_image_path or
-//   exam_questions.choice_image_paths via the normal question DML
-//   (staff RLS on exam_questions).
+//   2. checks the caller is staff (admin / mr_walid / teacher /
+//      assistant) + active,
+//   3. mints an image id server-side and signs a Cloudinary upload
+//      grant for public_id `exam-images/<exam_id>/<image_uuid>`
+//      (type=authenticated — private delivery; client NEVER supplies a
+//      path component),
+//   4. returns { upload_url, cloud_name, api_key, timestamp, signature,
+//      public_id, exam_id, image_id }.
+//   The client uploads bytes directly to upload_url, then stores the
+//   pointer `cloudinary:exam-images/<exam_id>/<uuid>.<ext>:<version>`
+//   (format + version from the upload response) in
+//   exam_questions.prompt_image_path or choice_image_paths via the
+//   normal question DML (staff RLS on exam_questions).
 //
-// File-name/MIME/size policy mirrors upload-board:
+// File-name/size policy mirrors the legacy flow:
 //   * original filename: basename only, Arabic/Latin letters, digits,
-//     spaces, dots, hyphens, underscores, max 255, .jpg/.jpeg/.png/.webp
-//   * MIME derived from extension and pinned on signed upload URL
-//   * Size: bucket limit 5MiB (config.toml), EF fails fast if declared
-//     file_size > 5MiB
-//
-// Actor plumbing: caller-scoped client for auth/DB checks, service-role
-// client for storage signing (bypasses RLS — exam-images has no row-backed
-// INSERT policy).
+//     spaces and common gallery separators, max 255,
+//     .jpg/.jpeg/.png/.webp — the extension is validated but the
+//     stored format comes from Cloudinary's detection.
+//   * Size: 5MiB fail-fast on the declared file_size (platform cap);
+//     Cloudinary still enforces the real bytes.
 //
 // Error envelope: { error: { code, message } } with stable codes:
 //   unauthorized, forbidden, account_inactive_or_deleted, invalid_json,
 //   validation_error, invalid_file_name, file_too_large, exam_not_found,
-//   exam_deleted, upload_url_failed
+//   exam_deleted, misconfigured
+//
+// No secrets are logged anywhere in this module.
 // =====================================================================
 
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
+import {
+  EXAM_IMAGE_UPLOAD_MAX_BYTES,
+  examImagePublicId,
+  signUploadParams,
+  uploadEndpoint,
+} from '../_shared/cloudinary.ts';
 
-export const MAX_EXAM_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MiB
+export const MAX_EXAM_IMAGE_SIZE_BYTES = EXAM_IMAGE_UPLOAD_MAX_BYTES; // 5 MiB (platform cap)
 export const MAX_FILE_NAME_LENGTH = 255;
-export const EXAM_IMAGES_BUCKET = 'exam-images';
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Original names from phone galleries commonly contain parentheses,
 // brackets and separators (e.g. "Screenshot (1).png", "IMG_2026 (2).JPG").
-// The name is NEVER used as a storage path (the server mints
-// "{exam_id}/{uuid}.{ext}"), so these characters are harmless — only the
-// extension matters. Path separators are stripped by basename logic and
-// control characters are rejected separately below.
+// The name is NEVER used as a storage path (the server mints the
+// public_id), so these characters are harmless — only the extension
+// matters. Path separators are stripped by basename logic and control
+// characters are rejected separately below.
 const FILE_NAME_RE = /^[\p{L}\p{N} _.\-()\[\]+,@&'!~]+$/u;
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp)$/i;
 
@@ -67,16 +75,6 @@ export interface SvcQueryResult extends Promise<{
   maybeSingle(): Promise<{ data: unknown; error: DbError | null }>;
 }
 
-export interface SvcStorageFrom {
-  createSignedUploadUrl(
-    path: string,
-    options?: { contentType?: string },
-  ): Promise<{
-    data: { signedUrl: string; path: string; token: string } | null;
-    error: DbError | null;
-  }>;
-}
-
 export interface SvcClient {
   auth: {
     getUser(jwt?: string): Promise<{
@@ -89,15 +87,20 @@ export interface SvcClient {
     fn: string,
     args?: Record<string, unknown>,
   ): Promise<{ data: unknown; error: DbError | null }>;
-  storage: {
-    from(bucket: string): SvcStorageFrom;
-  };
+}
+
+export interface CloudinaryEnv {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
 }
 
 export interface Deps {
   url: string;
   makeClient: (url: string, jwt: string) => SvcClient;
-  makeServiceClient: (url: string) => SvcClient;
+  cloudinary: CloudinaryEnv;
+  nowSec?: () => number;
+  newImageId?: () => string;
 }
 
 export function defaultDeps(): Deps {
@@ -108,10 +111,12 @@ export function defaultDeps(): Deps {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
-    makeServiceClient: (url) =>
-      createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', {
-        auth: { persistSession: false, autoRefreshToken: false },
-      }) as unknown as SvcClient,
+    cloudinary: {
+      cloudName: Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '',
+      apiKey: Deno.env.get('CLOUDINARY_API_KEY') ?? '',
+      apiSecret: Deno.env.get('CLOUDINARY_API_SECRET') ?? '',
+    },
+    newImageId: () => crypto.randomUUID(),
   };
 }
 
@@ -148,14 +153,6 @@ export function sanitizeImageFileName(raw: string):
     return { ok: false, message: 'file_name must end with .jpg, .jpeg, .png or .webp.' };
   }
   return { ok: true, name };
-}
-
-export function imageContentType(name: string): string {
-  const dot = name.lastIndexOf('.');
-  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  return 'image/jpeg';
 }
 
 function parseUploadBody(raw: unknown):
@@ -262,7 +259,7 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   if (!parsed.ok) {
     return jsonResponse({ error: { code: parsed.code, message: parsed.message } }, 422);
   }
-  const { exam_id: examId, file_name: fileName } = parsed.body;
+  const { exam_id: examId } = parsed.body;
 
   const { data: exam, error: examError } = await client
     .from('exams')
@@ -283,27 +280,44 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     return jsonResponse({ error: { code: 'exam_deleted', message: 'Exam is deleted.' } }, 422);
   }
 
-  const ext = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
-  const path = `${examId}/${crypto.randomUUID()}.${ext}`;
-  const contentType = imageContentType(fileName);
-
-  const service = deps.makeServiceClient(deps.url);
-  const { data: signed, error: storageError } = await service.storage
-    .from(EXAM_IMAGES_BUCKET)
-    .createSignedUploadUrl(path, { contentType });
-  if (storageError || !signed?.signedUrl) {
-    console.error('upload-exam-image: createSignedUploadUrl failed', storageError?.code ?? 'unknown');
+  const { cloudName, apiKey, apiSecret } = deps.cloudinary;
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.error('upload-exam-image: Cloudinary env secrets missing');
     return jsonResponse(
-      { error: { code: 'upload_url_failed', message: 'Failed to create the upload URL.' } },
-      502,
+      { error: { code: 'misconfigured', message: 'Exam image uploads are not configured.' } },
+      500,
     );
   }
 
+  const imageId = (deps.newImageId ?? (() => crypto.randomUUID()))();
+  if (!UUID_RE.test(imageId)) {
+    console.error('upload-exam-image: minted image id is not a UUID');
+    return jsonResponse(
+      { error: { code: 'internal_error', message: 'Failed to prepare the upload.' } },
+      500,
+    );
+  }
+  const publicId = examImagePublicId(examId, imageId);
+  const timestamp = String((deps.nowSec ?? (() => Math.floor(Date.now() / 1000)))());
+  const params: Record<string, string> = {
+    invalidate: 'true',
+    overwrite: 'true',
+    public_id: publicId,
+    timestamp,
+    type: 'authenticated',
+  };
+  const signature = await signUploadParams(params, apiSecret);
+
   return jsonResponse(
     {
-      uploadUrl: signed.signedUrl,
-      storage_path: path,
+      upload_url: uploadEndpoint(cloudName),
+      cloud_name: cloudName,
+      api_key: apiKey,
+      timestamp,
+      signature,
+      public_id: publicId,
       exam_id: examId,
+      image_id: imageId,
     },
     200,
   );

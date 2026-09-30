@@ -43,6 +43,7 @@ export default defineConfig(({ mode }) => ({
       ? {
           'import.meta.env.VITE_SUPABASE_URL': '"https://test-project.supabase.co"',
           'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': '"test-publishable-key"',
+          'import.meta.env.VITE_CLOUDINARY_CLOUD_NAME': '"test-cloud"',
         }
       : {}),
   },
@@ -61,6 +62,7 @@ export default defineConfig(({ mode }) => ({
     env: {
       VITE_SUPABASE_URL: 'https://test-project.supabase.co',
       VITE_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key',
+      VITE_CLOUDINARY_CLOUD_NAME: 'test-cloud',
     },
   },
 }));

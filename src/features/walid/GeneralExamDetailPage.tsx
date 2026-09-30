@@ -15,7 +15,9 @@ import { Select } from '../../components/Select';
 import { Skeleton } from '../../components/Skeleton';
 import { useToast } from '../../components/Toast';
 import {
+  cleanupReplacedExamImages,
   createExamQuestion,
+  deleteExamImage,
   deleteExamQuestion,
   generateExamQuestions,
   getExamImageSignedUrls,
@@ -29,8 +31,7 @@ import {
   listGeneralExams,
   resetGeneralExamAttempt,
   updateExamQuestion,
-  uploadExamImage,
-  uploadExamImageBytes,
+  uploadExamImageToCloudinary,
   type AiDifficulty,
   type AiGenerateMode,
 } from '../../data/rpc';
@@ -74,9 +75,7 @@ function normalizeDraftCorrect(value: unknown): string {
 type Tab = 'questions' | 'attempts' | 'leaderboard';
 
 async function uploadImageFile(examId: string, file: File): Promise<string> {
-  const session = await uploadExamImage({ examId, fileName: file.name, fileSize: file.size });
-  await uploadExamImageBytes(session.uploadUrl, file);
-  return session.storage_path;
+  return uploadExamImageToCloudinary(examId, file);
 }
 
 function isValidExamImage(file: File): string | null {
@@ -435,6 +434,13 @@ export function GeneralExamDetailPage() {
         choiceImagePaths: choicePaths,
       });
       showToast('تم حفظ السؤال', 'success');
+      // Best-effort cleanup of replaced/removed images (never blocks the save).
+      await cleanupReplacedExamImages(
+        editingQ.prompt_image_path,
+        ((editingQ.choice_image_paths ?? []) as (string | null)[]).slice(0, 4),
+        promptPath,
+        qType === 'mcq' ? choicePaths : null,
+      );
       setEditingQ(null);
       restoreCreateSnapshot();
       await loadQuestions();
@@ -449,7 +455,15 @@ export function GeneralExamDetailPage() {
     if (!deletingQ) return;
     setDeleteQBusy(true);
     try {
-      await deleteExamQuestion(deletingQ.id);
+      const removed = deletingQ;
+      await deleteExamQuestion(removed.id);
+      // Best-effort cleanup of the question's images (never blocks).
+      await deleteExamImage(removed.prompt_image_path);
+      await Promise.all(
+        ((((removed.choice_image_paths ?? []) as (string | null)[]).filter(Boolean)) as string[]).map(
+          (path) => deleteExamImage(path),
+        ),
+      );
       showToast('تم حذف السؤال', 'success');
       setDeletingQ(null);
       await Promise.all([loadQuestions(), loadExam()]);

@@ -8,9 +8,11 @@
 --   * grants (set_my_avatar / remove_my_avatar executable by
 --     authenticated, NOT by anon)
 --   * set_my_avatar negatives: no uid, disabled student, foreign path,
---     missing storage object
+--     disallowed extension, missing storage object
 --   * happy path: object exists -> bind; remove_my_avatar clears the
 --     binding and deletes the object
+--   * original-format path (0088): png object binds the same way, and
+--     removal deletes the stored (non-jpg) object
 --   * storage SELECT matrix (owner sees own / other student sees
 --     nothing / teacher sees / anon sees nothing)
 -- Fixture ids use aa000000-... and are removed at the end. Student A
@@ -100,6 +102,11 @@ SELECT tests.expect_error(
 SELECT tests.expect_error(
     'SELECT public.set_my_avatar(''avatars/evil.png'')',
     'P0001', 'invalid_avatar_path');
+-- Own uid but a non-allow-listed extension (0088 allows only
+-- jpg/jpeg/png/webp) is rejected the same way.
+SELECT tests.expect_error(
+    'SELECT public.set_my_avatar(''70000000-0000-0000-0000-000000000001/avatar.gif'')',
+    'P0001', 'invalid_avatar_path');
 SELECT tests.expect_error(
     'SELECT public.set_my_avatar(NULL)',
     'P0001', 'invalid_avatar_path');
@@ -175,7 +182,34 @@ RESET ROLE;
 RESET "app.current_user_id";
 
 -- ---------------------------------------------------------------------
+-- Section 5: original-format path (0088) — png binds + removes cleanly
+-- ---------------------------------------------------------------------
+INSERT INTO storage.objects (id, bucket_id, name, owner)
+VALUES ('aa000000-0000-0000-0000-000000000002', 'avatars',
+        '70000000-0000-0000-0000-000000000001/avatar.png',
+        '70000000-0000-0000-0000-000000000001')
+ON CONFLICT (id) DO NOTHING;
+
+SET LOCAL "app.current_user_id" = '70000000-0000-0000-0000-000000000001';
+SET LOCAL ROLE student;
+SELECT public.set_my_avatar('70000000-0000-0000-0000-000000000001/avatar.png');
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.profiles WHERE id = ''70000000-0000-0000-0000-000000000001'' AND avatar_path = ''70000000-0000-0000-0000-000000000001/avatar.png''',
+    1, 'rpc: set_my_avatar binds the original-format (png) path');
+SELECT public.remove_my_avatar();
+SELECT tests.expect_count(
+    'SELECT count(*) FROM public.profiles WHERE id = ''70000000-0000-0000-0000-000000000001'' AND avatar_path IS NULL',
+    1, 'rpc: remove_my_avatar clears the png binding');
+SELECT tests.expect_count(
+    'SELECT count(*) FROM storage.objects WHERE bucket_id = ''avatars'' AND name = ''70000000-0000-0000-0000-000000000001/avatar.png''',
+    0, 'rpc: remove_my_avatar deletes the png object');
+RESET ROLE;
+RESET "app.current_user_id";
+
+-- ---------------------------------------------------------------------
 -- Cleanup
 -- ---------------------------------------------------------------------
 DELETE FROM storage.objects WHERE id = 'aa000000-0000-0000-0000-000000000001';
+DELETE FROM storage.objects WHERE id = 'aa000000-0000-0000-0000-000000000002';
+DELETE FROM public.notifications WHERE type = 'avatar_updated';
 UPDATE public.profiles SET avatar_path = NULL WHERE id = '70000000-0000-0000-0000-000000000001';

@@ -1925,12 +1925,19 @@ export async function updateExamQuestion(input: UpdateExamQuestionInput): Promis
 }
 
 // ---------------------------------------------------------------------
-// Exam image helpers (Phase 12)
-// ---------------------------------------------------------------------
+// Exam image helpers (Phase 12, Cloudinary)
+/** Prefix of Cloudinary exam pointers: cloudinary:exam-images/<exam>/<uuid>.<ext>:<version>. */
+export const CLOUDINARY_EXAM_PREFIX = 'cloudinary:exam-images/';
+
 export interface ExamImageUploadSession {
-  uploadUrl: string;
-  storage_path: string;
+  upload_url: string;
+  cloud_name: string;
+  api_key: string;
+  timestamp: string;
+  signature: string;
+  public_id: string;
   exam_id: string;
+  image_id: string;
 }
 
 export async function uploadExamImage(input: {
@@ -1948,29 +1955,145 @@ export async function uploadExamImage(input: {
   });
 }
 
-function examImageContentType(file: File): string {
-  const dot = file.name.lastIndexOf('.');
-  const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-  return file.type || 'application/octet-stream';
+/** True for Cloudinary exam pointers (cloudinary:exam-images/...). */
+export function isCloudinaryExamImagePath(path: string | null | undefined): boolean {
+  return typeof path === 'string' && path.startsWith(CLOUDINARY_EXAM_PREFIX);
 }
 
-export async function uploadExamImageBytes(uploadUrl: string, file: File): Promise<void> {
+export interface ExamImagePointer {
+  examId: string;
+  imageId: string;
+  format: string;
+  version: string;
+}
+
+/**
+ * Parses a Cloudinary exam pointer. Returns null for anything else
+ * (including legacy Supabase paths). Mirrors parseExamImagePointer()
+ * in supabase/functions/_shared/cloudinary.ts.
+ */
+export function parseExamImagePointer(path: string): ExamImagePointer | null {
+  if (!isCloudinaryExamImagePath(path)) {
+    return null;
+  }
+  const rest = path.slice(CLOUDINARY_EXAM_PREFIX.length);
+  const versionSep = rest.lastIndexOf(':');
+  if (versionSep < 0) {
+    return null;
+  }
+  const version = rest.slice(versionSep + 1);
+  const head = rest.slice(0, versionSep);
+  const slash = head.indexOf('/');
+  if (slash < 0) {
+    return null;
+  }
+  const examId = head.slice(0, slash);
+  const file = head.slice(slash + 1);
+  const dot = file.lastIndexOf('.');
+  if (dot < 0) {
+    return null;
+  }
+  const imageId = file.slice(0, dot);
+  const format = file.slice(dot + 1);
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(examId) || !uuidRe.test(imageId)) {
+    return null;
+  }
+  if (format !== 'jpg' && format !== 'jpeg' && format !== 'png' && format !== 'webp') {
+    return null;
+  }
+  if (!/^[0-9]+$/.test(version)) {
+    return null;
+  }
+  return { examId, imageId, format, version };
+}
+
+/**
+ * Uploads an exam question image to Cloudinary (type=authenticated,
+ * server-minted public_id) and returns the pointer to store in
+ * prompt_image_path / choice_image_paths.
+ */
+export async function uploadExamImageToCloudinary(examId: string, file: File): Promise<string> {
+  if (!cloudinaryCloudName) {
+    throw codeError('misconfigured');
+  }
+  const grant = await uploadExamImage({ examId, fileName: file.name, fileSize: file.size });
+  if (grant.exam_id !== examId || !grant.public_id || !grant.image_id) {
+    throw codeError('function_error');
+  }
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', grant.api_key);
+  form.append('timestamp', grant.timestamp);
+  form.append('public_id', grant.public_id);
+  form.append('type', 'authenticated');
+  form.append('overwrite', 'true');
+  form.append('invalidate', 'true');
+  form.append('signature', grant.signature);
   let response: Response;
   try {
-    response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': examImageContentType(file) },
-      body: file,
-    });
+    response = await fetch(grant.upload_url, { method: 'POST', body: form });
   } catch {
     throw codeError('network_error');
   }
   if (!response.ok) {
-    throw codeError(response.status >= 500 || response.status === 429 ? 'internal_error' : 'exam_image_upload_failed');
+    throw codeError('function_error');
   }
+  let payload: { format?: unknown; version?: unknown };
+  try {
+    payload = (await response.json()) as { format?: unknown; version?: unknown };
+  } catch {
+    throw codeError('function_error');
+  }
+  const version = String(payload.version ?? '');
+  if (!/^[0-9]+$/.test(version)) {
+    throw codeError('function_error');
+  }
+  const rawFormat = String(payload.format ?? '').trim().toLowerCase();
+  const format =
+    rawFormat === 'png' ? 'png' : rawFormat === 'webp' ? 'webp' : 'jpg';
+  return `${CLOUDINARY_EXAM_PREFIX}${examId}/${grant.image_id}.${format}:${version}`;
+}
+
+/**
+ * Best-effort destroy of a Cloudinary exam image (staff flows call this
+ * when an image is removed/replaced or its question deleted). Never
+ * throws — the question DML stays authoritative.
+ */
+export async function deleteExamImage(path: string | null | undefined): Promise<void> {
+  if (!isCloudinaryExamImagePath(path)) {
+    return;
+  }
+  try {
+    await invokeFunction('exam-image-delete', { method: 'POST', body: { path } });
+  } catch {
+    /* orphaned asset is harmless — never block the question save */
+  }
+}
+
+/**
+ * Best-effort destroy of exam image pointers that a question save
+ * stopped referencing (replaced or removed). `undefined` means "field
+ * untouched" and resolves to the previous value. Never throws.
+ */
+export async function cleanupReplacedExamImages(
+  prevPrompt: string | null | undefined,
+  prevChoices: (string | null)[],
+  nextPrompt: string | null | undefined,
+  nextChoices: (string | null)[] | null | undefined,
+): Promise<void> {
+  const finalPrompt = nextPrompt !== undefined ? nextPrompt : (prevPrompt ?? null);
+  const finalChoices = nextChoices !== undefined ? (nextChoices ?? []) : prevChoices;
+  const obsolete = new Set<string>();
+  if (prevPrompt && prevPrompt !== finalPrompt) {
+    obsolete.add(prevPrompt);
+  }
+  for (const path of prevChoices) {
+    if (path && !finalChoices.includes(path)) {
+      obsolete.add(path);
+    }
+  }
+  await Promise.all([...obsolete].map((path) => deleteExamImage(path)));
 }
 
 export type ExamQuestionImageUrls = {
@@ -2501,8 +2624,14 @@ export async function getSuggestionImageSignedUrl(path: string): Promise<string 
   return data?.signedUrl ?? null;
 }
 
-const AVATAR_IMAGE_BUCKET = 'avatars';
+const AVATAR_IMAGE_BUCKET = 'avatars'; // legacy reads only (dual-read window, 0089)
 const AVATAR_SIGNED_URL_TTL_SECONDS = 3600;
+
+/** Prefix of Cloudinary avatar pointers: cloudinary:<uid>/avatar.<ext>:<version>. */
+export const CLOUDINARY_AVATAR_PREFIX = 'cloudinary:';
+
+const cloudinaryCloudName =
+  (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string | undefined)?.trim() ?? '';
 
 /** In-memory cache of avatar signed URLs (path -> { url, expiresAt }). */
 const avatarUrlCache = new Map<string, { url: string; expiresAt: number }>();
@@ -2520,22 +2649,140 @@ export function invalidateAvatarUrl(path?: string | null): void {
   }
 }
 
-/** Fixed storage path for a user's avatar — one object per user, overwritten on re-upload. */
-export function avatarPathFor(userId: string): string {
-  return `${userId}/avatar.jpg`;
+/** Storage extension for an avatar MIME type (validated upstream to jpeg/png/webp). */
+export function avatarExtensionFor(mimeType: string): string {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'jpg';
 }
 
-/** Direct Storage upload of a compressed avatar (0082 fixed-path INSERT/UPDATE policy). */
-export async function uploadMyAvatar(userId: string, blob: Blob): Promise<string> {
-  const path = avatarPathFor(userId);
-  const { error } = await getSupabaseClient()
-    .storage.from(AVATAR_IMAGE_BUCKET)
-    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-  if (error) {
-    throw error;
+/** True for Cloudinary pointers (cloudinary:<uid>/avatar.<ext>:<version>). */
+export function isCloudinaryAvatarPath(path: string | null | undefined): boolean {
+  return typeof path === 'string' && path.startsWith(CLOUDINARY_AVATAR_PREFIX);
+}
+
+export interface CloudinaryAvatarPointer {
+  uid: string;
+  format: string;
+  version: string;
+}
+
+/**
+ * Parses a Cloudinary avatar pointer. Returns null for anything else
+ * (including legacy Supabase paths). Mirrors parseAvatarPath() in
+ * supabase/functions/_shared/cloudinary.ts.
+ */
+export function parseCloudinaryAvatarPath(path: string): CloudinaryAvatarPointer | null {
+  if (!isCloudinaryAvatarPath(path)) {
+    return null;
   }
-  invalidateAvatarUrl(path);
+  const rest = path.slice(CLOUDINARY_AVATAR_PREFIX.length);
+  const versionSep = rest.lastIndexOf(':');
+  if (versionSep < 0) {
+    return null;
+  }
+  const version = rest.slice(versionSep + 1);
+  const head = rest.slice(0, versionSep);
+  const slash = head.indexOf('/');
+  if (slash < 0) {
+    return null;
+  }
+  const uid = head.slice(0, slash);
+  const file = head.slice(slash + 1);
+  if (!file.startsWith('avatar.')) {
+    return null;
+  }
+  const format = file.slice('avatar.'.length);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) {
+    return null;
+  }
+  if (format !== 'jpg' && format !== 'jpeg' && format !== 'png' && format !== 'webp') {
+    return null;
+  }
+  if (!/^[0-9]+$/.test(version)) {
+    return null;
+  }
+  return { uid, format, version };
+}
+
+interface AvatarUploadSignature {
+  upload_url: string;
+  cloud_name: string;
+  api_key: string;
+  timestamp: string;
+  signature: string;
+  public_id: string;
+}
+
+/** Signed-upload grant for the caller's own avatar (active students only). */
+export async function requestAvatarUploadSignature(file: File): Promise<AvatarUploadSignature> {
+  return invokeFunction<AvatarUploadSignature>('avatar-upload-signature', {
+    body: { content_type: file.type || undefined, file_size: file.size },
+  });
+}
+
+/** Normalizes a Cloudinary upload-response format to the allow-listed set. */
+function normalizeAvatarFormat(format: string, fallbackMime: string): string {
+  const normalized = format.trim().toLowerCase();
+  if (normalized === 'jpg' || normalized === 'jpeg') return 'jpg';
+  if (normalized === 'png') return 'png';
+  if (normalized === 'webp') return 'webp';
+  return avatarExtensionFor(fallbackMime);
+}
+
+/**
+ * Uploads the avatar bytes to Cloudinary (type=authenticated, fixed
+ * owner-only public_id) and returns the pointer to bind via
+ * setMyAvatar(). Original file bytes are uploaded untouched (full
+ * quality preserved), like the legacy flow.
+ */
+export async function uploadAvatarToCloudinary(userId: string, file: File): Promise<string> {
+  if (!cloudinaryCloudName) {
+    throw codeError('misconfigured');
+  }
+  const grant = await requestAvatarUploadSignature(file);
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', grant.api_key);
+  form.append('timestamp', grant.timestamp);
+  form.append('public_id', grant.public_id);
+  form.append('type', 'authenticated');
+  form.append('overwrite', 'true');
+  form.append('invalidate', 'true');
+  form.append('signature', grant.signature);
+  let response: Response;
+  try {
+    response = await fetch(grant.upload_url, { method: 'POST', body: form });
+  } catch {
+    throw codeError('network_error');
+  }
+  if (!response.ok) {
+    throw codeError('function_error');
+  }
+  let payload: { format?: unknown; version?: unknown };
+  try {
+    payload = (await response.json()) as { format?: unknown; version?: unknown };
+  } catch {
+    throw codeError('function_error');
+  }
+  const version = String(payload.version ?? '');
+  if (!/^[0-9]+$/.test(version)) {
+    throw codeError('function_error');
+  }
+  const format = normalizeAvatarFormat(String(payload.format ?? ''), file.type);
+  const path = `${CLOUDINARY_AVATAR_PREFIX}${userId}/avatar.${format}:${version}`;
+  invalidateAvatarUrl();
   return path;
+}
+
+/** Fixed storage path for a user's avatar — one object per user, overwritten on re-upload. */
+export function avatarPathFor(userId: string, mimeType = 'image/jpeg'): string {
+  return `${userId}/avatar.${avatarExtensionFor(mimeType)}`;
+}
+
+/** Direct upload of the avatar file (0089: Cloudinary, owner-only public_id). */
+export async function uploadMyAvatar(userId: string, file: File): Promise<string> {
+  return uploadAvatarToCloudinary(userId, file);
 }
 
 /** Binds the uploaded avatar to the caller's profile (server-pinned path). */
@@ -2547,8 +2794,15 @@ export async function setMyAvatar(path: string): Promise<void> {
   invalidateAvatarUrl(path);
 }
 
-/** Clears the avatar binding and removes the object best-effort. */
+/** Clears the avatar binding and removes the bytes best-effort. */
 export async function removeMyAvatar(): Promise<void> {
+  // Best-effort Cloudinary destroy first (idempotent — a missing asset
+  // still succeeds); the binding clear below is authoritative either way.
+  try {
+    await invokeFunction('avatar-delete', {});
+  } catch {
+    /* binding clear below still runs; an orphaned asset is overwritten on next upload */
+  }
   const { error } = await getSupabaseClient().rpc('remove_my_avatar');
   if (error) {
     throw error;
@@ -2568,7 +2822,12 @@ export async function remindMissingAvatars(): Promise<number> {
   return Number(data ?? 0);
 }
 
-/** Cached signed read URL for an avatar (owner + staff SELECT policy). */
+/**
+ * Cached read URL for an avatar.
+ * Cloudinary pointers resolve via the avatar-signed-url Edge Function
+ * (owner + staff gate); legacy Supabase paths resolve straight from
+ * the private `avatars` bucket (dual-read window, 0089).
+ */
 export async function getAvatarSignedUrl(path: string): Promise<string | null> {
   const cached = avatarUrlCache.get(path);
   if (cached && cached.expiresAt > Date.now()) {
@@ -2578,25 +2837,39 @@ export async function getAvatarSignedUrl(path: string): Promise<string | null> {
   if (inFlight) {
     return inFlight;
   }
-  const request = getSupabaseClient()
-    .storage.from(AVATAR_IMAGE_BUCKET)
-    .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS)
-    .then(({ data, error }) => {
-      if (error) {
-        return null;
-      }
-      const url = data?.signedUrl ?? null;
-      if (url) {
-        avatarUrlCache.set(path, {
-          url,
-          expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000,
-        });
-      }
-      return url;
-    })
-    .finally(() => {
-      avatarUrlPending.delete(path);
-    });
+  const request = (isCloudinaryAvatarPath(path)
+    ? invokeFunction<{ signed_url: string }>('avatar-signed-url', { body: { path } }).then(
+        (res) => {
+          const url = typeof res?.signed_url === 'string' ? res.signed_url : null;
+          if (url) {
+            avatarUrlCache.set(path, {
+              url,
+              expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000,
+            });
+          }
+          return url;
+        },
+        () => null,
+      )
+    : getSupabaseClient()
+        .storage.from(AVATAR_IMAGE_BUCKET)
+        .createSignedUrl(path, AVATAR_SIGNED_URL_TTL_SECONDS)
+        .then(({ data, error }) => {
+          if (error) {
+            return null;
+          }
+          const url = data?.signedUrl ?? null;
+          if (url) {
+            avatarUrlCache.set(path, {
+              url,
+              expiresAt: Date.now() + (AVATAR_SIGNED_URL_TTL_SECONDS - 300) * 1000,
+            });
+          }
+          return url;
+        })
+  ).finally(() => {
+    avatarUrlPending.delete(path);
+  });
   avatarUrlPending.set(path, request);
   return request;
 }

@@ -44,10 +44,22 @@ verify_jwt = true
 [functions.upload-exam-image]
 verify_jwt = true
 
+[functions.exam-image-delete]
+verify_jwt = true
+
 [functions.get-exam-image-signed-urls]
 verify_jwt = true
 
 [functions.generate-exam-questions]
+verify_jwt = true
+
+[functions.avatar-upload-signature]
+verify_jwt = true
+
+[functions.avatar-signed-url]
+verify_jwt = true
+
+[functions.avatar-delete]
 verify_jwt = true
 
 [storage.buckets.boards]

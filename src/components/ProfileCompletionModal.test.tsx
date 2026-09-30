@@ -1,6 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   expectRpcCall,
@@ -100,6 +100,39 @@ describe('ProfileCompletionModal (mandatory)', () => {
   });
 
   it('uploads the photo from the modal and closes once complete', async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      const target = String(url);
+      if (target.includes('/functions/v1/avatar-upload-signature')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            upload_url: 'https://api.cloudinary.com/v1_1/test-cloud/image/upload',
+            cloud_name: 'test-cloud',
+            api_key: 'test-key',
+            timestamp: '1788000000',
+            signature: 'test-signature',
+            public_id: 'avatars/user-test-1/avatar',
+          }),
+        };
+      }
+      if (target.includes('api.cloudinary.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ format: 'jpg', version: 1788000000 }),
+        };
+      }
+      if (target.includes('/functions/v1/avatar-signed-url')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ signed_url: 'https://res.cloudinary.test/avatar.jpg?signed=1' }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
     setAuthenticatedStudent({
       full_name: 'أحمد محمد علي',
     });
@@ -113,8 +146,11 @@ describe('ProfileCompletionModal (mandatory)', () => {
     });
 
     expect(await screen.findByText('تم رفع الصورة الشخصية بنجاح', {}, { timeout: 10000 })).toBeInTheDocument();
-    expect(expectRpcCall('set_my_avatar')).toEqual({ p_path: 'user-test-1/avatar.jpg' });
+    expect(expectRpcCall('set_my_avatar')).toEqual({
+      p_path: 'cloudinary:user-test-1/avatar.jpg:1788000000',
+    });
     await screen.findByRole('heading', { name: 'لوحة الطالب' }, { timeout: 10000 });
     expect(screen.queryByTestId('profile-completion-modal')).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, HelpCircle, ShieldCheck } from 'lucide-react';
 
 import { getAvatarSignedUrl, setMyAvatar, updateOwnProfile, uploadMyAvatar } from '../data/rpc';
-import { compressAvatarImage, validateAvatarImage } from '../lib/imageCompress';
+import { validateAvatarImage } from '../lib/imageCompress';
 import { formatDateTime } from '../lib/format';
 import { isProfileComplete, isStudentNameComplete } from '../lib/profileCompletion';
 import { validateArabicFullName } from '../lib/validation';
@@ -118,8 +118,8 @@ export function ProfileCompletionModal() {
     setPhotoError(null);
     setPhotoBusy(true);
     try {
-      const blob = await compressAvatarImage(file);
-      const path = await uploadMyAvatar(user.id, blob);
+      // Original file bytes are uploaded untouched (full quality preserved).
+      const path = await uploadMyAvatar(user.id, file);
       await setMyAvatar(path);
       await refreshProfile();
       showToast('تم رفع الصورة الشخصية بنجاح');

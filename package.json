@@ -19,6 +19,8 @@
     "lint": "eslint .",
     "invoice": "node invoices/generate-invoice.mjs",
     "codes-report": "node invoices/generate-codes-report.mjs",
+    "migrate-avatars": "node scripts/migrate-avatars-to-cloudinary.mjs",
+    "migrate-exam-images": "node scripts/migrate-exam-images-to-cloudinary.mjs",
     "students-statement": "node invoices/generate-students-statement.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

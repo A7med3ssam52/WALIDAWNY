@@ -64,8 +64,8 @@ SELECT tests.expect_count(
     'SELECT count(*) FROM public.notifications WHERE type = ''avatar_updated'' AND user_id = ''70000000-0000-0000-0000-00000000000a''',
     1, 'rpc: active admin AD notified on first avatar set');
 SELECT tests.expect_count(
-    'SELECT count(*) FROM public.notifications WHERE type = ''avatar_updated'' AND entity_type = ''profiles'' AND entity_id = ''70000000-0000-0000-0000-000000000001''',
-    1, 'rpc: notification links the student via entity_id');
+    'SELECT count(*) FROM public.notifications WHERE type = ''avatar_updated'' AND user_id = ''70000000-0000-0000-0000-00000000000a'' AND entity_type = ''profiles'' AND entity_id = ''70000000-0000-0000-0000-000000000001''',
+    1, 'rpc: AD notification links the student via entity_id');
 SELECT tests.expect_count(
     'SELECT count(*) FROM public.notifications WHERE type = ''avatar_updated'' AND user_id IN (''70000000-0000-0000-0000-000000000009'', ''70000000-0000-0000-0000-00000000000b'', ''aa000000-0000-0000-0000-0000000000a3'')',
     0, 'rpc: mr_walid, teacher and disabled admin get nothing');

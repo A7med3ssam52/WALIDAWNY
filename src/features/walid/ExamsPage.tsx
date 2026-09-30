@@ -13,9 +13,11 @@ import { Skeleton } from '../../components/Skeleton';
 import { RoleNav } from '../../components/RoleNav';
 import { useToast } from '../../components/Toast';
 import {
+  cleanupReplacedExamImages,
   createExam,
   createExamQuestion,
   deleteExam,
+  deleteExamImage,
   deleteExamQuestion,
   getExamImageSignedUrls,
   getExamQuestions,
@@ -30,8 +32,7 @@ import {
   listUnitsForGrade,
   updateExam,
   updateExamQuestion,
-  uploadExamImage,
-  uploadExamImageBytes,
+  uploadExamImageToCloudinary,
 } from '../../data/rpc';
 import { formatDateTime } from '../../lib/format';
 import type {
@@ -88,7 +89,7 @@ const EXAM_IMAGE_ERROR_MESSAGES: Record<string, string> = {
   invalid_file_name: 'صيغة الصورة غير مدعومة (JPG/PNG/WebP فقط)',
   exam_not_found: 'الاختبار غير موجود',
   exam_deleted: 'الاختبار محذوف',
-  upload_url_failed: 'فشل إنشاء رابط الرفع',
+  misconfigured: 'خدمة الصور غير مهيأة — تواصل مع الإدارة',
   exam_image_upload_failed: 'فشل رفع الصورة',
   network_error: 'تعذر الاتصال بالخادم',
   internal_error: 'حدث خطأ في الخادم',
@@ -101,9 +102,7 @@ function examImageErrorMessage(error: unknown): string {
 }
 
 async function uploadImageFile(examId: string, file: File): Promise<string> {
-  const session = await uploadExamImage({ examId, fileName: file.name, fileSize: file.size });
-  await uploadExamImageBytes(session.uploadUrl, file);
-  return session.storage_path;
+  return uploadExamImageToCloudinary(examId, file);
 }
 
 function isValidExamImage(file: File): string | null {
@@ -646,6 +645,13 @@ export function ExamsPage() {
         ...(choiceImagePaths !== undefined ? { choiceImagePaths } : {}),
       });
       showToast('تم تحديث السؤال بنجاح');
+      // Best-effort cleanup of replaced/removed images (never blocks the save).
+      await cleanupReplacedExamImages(
+        editingQuestion.question.prompt_image_path,
+        (editingQuestion.question.choice_image_paths ?? []) as (string | null)[],
+        promptImagePath !== undefined ? promptImagePath : undefined,
+        choiceImagePaths !== undefined ? choiceImagePaths : undefined,
+      );
       setEditingQuestion(null);
       await loadDetails();
     } catch (err) {
@@ -661,7 +667,15 @@ export function ExamsPage() {
     }
     setDeleteQuestionBusy(true);
     try {
-      await deleteExamQuestion(deletingQuestion.question.id);
+      const removed = deletingQuestion.question;
+      await deleteExamQuestion(removed.id);
+      // Best-effort cleanup of the question's images (never blocks).
+      await deleteExamImage(removed.prompt_image_path);
+      await Promise.all(
+        (((removed.choice_image_paths ?? []) as (string | null)[]).filter(Boolean) as string[]).map(
+          (path) => deleteExamImage(path),
+        ),
+      );
       showToast('تم حذف السؤال');
       setDeletingQuestion(null);
       await loadDetails();

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  compressAvatarImage,
   compressSuggestionImage,
   validateAvatarImage,
   validateSuggestionImage,
@@ -39,7 +38,7 @@ describe('compressSuggestionImage', () => {
 });
 
 describe('validateAvatarImage', () => {
-  it('accepts jpeg/png/webp within the 2MB limit', () => {
+  it('accepts jpeg/png/webp within the 8MB limit', () => {
     expect(validateAvatarImage(makeFile('image/jpeg', 1024))).toBeNull();
     expect(validateAvatarImage(makeFile('image/png', 1024))).toBeNull();
     expect(validateAvatarImage(makeFile('image/webp', 1024))).toBeNull();
@@ -51,14 +50,7 @@ describe('validateAvatarImage', () => {
 
   it('rejects empty and oversized files', () => {
     expect(validateAvatarImage(new File([], 'empty.jpg', { type: 'image/jpeg' }))).toMatch(/فارغ/);
-    const big = new File([new Uint8Array(3 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
-    expect(validateAvatarImage(big)).toMatch(/2MB/);
-  });
-});
-
-describe('compressAvatarImage', () => {
-  it('falls back to the original file when canvas is unavailable (jsdom)', async () => {
-    const file = makeFile('image/jpeg', 2048);
-    await expect(compressAvatarImage(file)).resolves.toBe(file);
+    const big = new File([new Uint8Array(9 * 1024 * 1024)], 'big.jpg', { type: 'image/jpeg' });
+    expect(validateAvatarImage(big)).toMatch(/8MB/);
   });
 });

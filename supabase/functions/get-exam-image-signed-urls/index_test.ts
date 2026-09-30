@@ -12,6 +12,13 @@ const Q2 = 'ab000000-0000-0000-0000-000000000003';
 const P1_PATH = `${EXAM_ID}/prompt1.jpg`;
 const C1_PATH = `${EXAM_ID}/choice1.png`;
 const _C2_PATH = `${EXAM_ID}/choice2.webp`;
+const CLOUD = { cloudName: 'test-cloud', apiKey: 'test-key', apiSecret: 'test-secret' };
+// Reference vector: toSign =
+// 'c_limit,w_1600,h_1600,q_auto/v1788000000/exam-images/<EXAM>/<IMG>.png'
+// + 'test-secret'.
+const IMG_ID = '60000000-0000-0000-0000-000000000001';
+const CLOUD_PROMPT = `cloudinary:exam-images/${EXAM_ID}/${IMG_ID}.png:1788000000`;
+const CLOUD_SIGNATURE = 'rUW9xxhL';
 
 function post(examId: string, user: { id: string }): Request {
   return new Request('https://example.supabase.co/functions/v1/get-exam-image-signed-urls', {
@@ -47,12 +54,13 @@ function cfg(overrides?: Partial<StubConfig>): StubConfig {
   };
 }
 
-function deps(cfg: StubConfig, ttl?: number) {
+function deps(cfg: StubConfig, ttl?: number, cloud = CLOUD) {
   const { client, storageCalls, rpcCalls } = makeStubClient(cfg);
   const dep = {
     url: 'https://example.supabase.co',
     makeClient: () => client,
     makeServiceClient: () => client,
+    cloudinary: cloud,
     ttlSeconds: ttl,
   };
   return { dep, storageCalls, rpcCalls };
@@ -131,6 +139,74 @@ Deno.test('get-exam-image-signed-urls: storage error -> 500', async () => {
   await expectStatus(res, 500);
   const body = await res.json();
   assertEqual(body.error.code, 'internal_error');
+});
+
+Deno.test('get-exam-image-signed-urls: cloudinary pointer resolves without storage', async () => {
+  const { dep, storageCalls } = deps(
+    cfg({
+      tables: {
+        exam_questions: {
+          rows: [
+            { id: Q1, exam_id: EXAM_ID, prompt_image_path: CLOUD_PROMPT, choice_image_paths: [P1_PATH, null] },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(post(EXAM_ID, USER_STUDENT), dep);
+  await expectStatus(res, 200);
+  const body = (await res.json()) as { images: Array<{ question_id: string; prompt_image_url: string | null; choice_image_urls: (string | null)[] | null }> };
+  const q1 = body.images.find((x) => x.question_id === Q1)!;
+  assertEqual(
+    q1.prompt_image_url,
+    `https://res.cloudinary.com/test-cloud/image/authenticated/s--${CLOUD_SIGNATURE}--/c_limit,w_1600,h_1600,q_auto/v1788000000/exam-images/${EXAM_ID}/${IMG_ID}.png`,
+  );
+  assert(q1.choice_image_urls?.[0] !== null, 'legacy choice still signs via storage');
+  // Only the legacy choice path touched storage.
+  assertEqual(storageCalls.length, 1);
+});
+
+Deno.test('get-exam-image-signed-urls: cross-exam pointer resolves to null', async () => {
+  const otherExam = 'ab000000-0000-0000-0000-000000000099';
+  const { dep, storageCalls } = deps(
+    cfg({
+      tables: {
+        exam_questions: {
+          rows: [
+            {
+              id: Q1,
+              exam_id: EXAM_ID,
+              prompt_image_path: `cloudinary:exam-images/${otherExam}/${IMG_ID}.png:1788000000`,
+              choice_image_paths: null,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const res = await handle(post(EXAM_ID, USER_STUDENT), dep);
+  await expectStatus(res, 200);
+  const body = (await res.json()) as { images: Array<{ prompt_image_url: string | null }> };
+  assertEqual(body.images[0].prompt_image_url, null);
+  assertEqual(storageCalls.length, 0);
+});
+
+Deno.test('get-exam-image-signed-urls: missing Cloudinary secrets -> 500 misconfigured', async () => {
+  const { dep } = deps(
+    cfg({
+      tables: {
+        exam_questions: {
+          rows: [{ id: Q1, exam_id: EXAM_ID, prompt_image_path: CLOUD_PROMPT, choice_image_paths: null }],
+        },
+      },
+    }),
+    undefined,
+    { cloudName: '', apiKey: '', apiSecret: '' },
+  );
+  const res = await handle(post(EXAM_ID, USER_STUDENT), dep);
+  await expectStatus(res, 500);
+  const body = await res.json();
+  assertEqual(body.error.code, 'misconfigured');
 });
 
 // ---------------------------------------------------------------------

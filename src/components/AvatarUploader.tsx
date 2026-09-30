@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Camera, Trash2 } from 'lucide-react';
 
 import { removeMyAvatar, setMyAvatar, uploadMyAvatar } from '../data/rpc';
-import { compressAvatarImage, validateAvatarImage } from '../lib/imageCompress';
+import { validateAvatarImage } from '../lib/imageCompress';
 import { isProfileComplete } from '../lib/profileCompletion';
 import { useToast } from './Toast';
 import { useAuth } from '../features/auth/AuthContext';
@@ -41,8 +41,8 @@ export function AvatarUploader() {
     setAvatarError(null);
     setAvatarBusy(true);
     try {
-      const blob = await compressAvatarImage(file);
-      const path = await uploadMyAvatar(user.id, blob);
+      // Original file bytes are uploaded untouched (full quality preserved).
+      const path = await uploadMyAvatar(user.id, file);
       await setMyAvatar(path);
       await refreshProfile();
       showToast('تم تحديث صورتك الشخصية بنجاح');

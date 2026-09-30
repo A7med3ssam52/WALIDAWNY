@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   expectRpcCall,
@@ -11,6 +11,46 @@ import {
 } from '../../test/supabase-mock';
 import { renderWithProviders } from '../../test/utils';
 import { StudentProfilePage } from './StudentProfilePage';
+
+function stubAvatarFetch(cloudFormat = 'jpg', cloudVersion = 1788000000) {
+  const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+    const target = String(url);
+    if (target.includes('/functions/v1/avatar-upload-signature')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          upload_url: 'https://api.cloudinary.com/v1_1/test-cloud/image/upload',
+          cloud_name: 'test-cloud',
+          api_key: 'test-key',
+          timestamp: '1788000000',
+          signature: 'test-signature',
+          public_id: 'avatars/user-test-1/avatar',
+        }),
+      };
+    }
+    if (target.includes('api.cloudinary.com')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ format: cloudFormat, version: cloudVersion }),
+      };
+    }
+    if (target.includes('/functions/v1/avatar-signed-url')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ signed_url: 'https://res.cloudinary.test/avatar.jpg?signed=1' }),
+      };
+    }
+    if (target.includes('/functions/v1/avatar-delete')) {
+      return { ok: true, status: 200, json: async () => ({ deleted: true }) };
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
 
 describe('StudentProfilePage', () => {
   beforeEach(() => {
@@ -101,6 +141,7 @@ describe('StudentProfilePage', () => {
   });
 
   it('uploads a new avatar and shows it in the profile and the header', async () => {
+    const fetchMock = stubAvatarFetch('jpg', 1788000000);
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
@@ -114,8 +155,15 @@ describe('StudentProfilePage', () => {
     });
 
     await waitFor(() => {
-      expect(expectRpcCall('set_my_avatar')).toEqual({ p_path: 'user-test-1/avatar.jpg' });
+      expect(expectRpcCall('set_my_avatar')).toEqual({
+        p_path: 'cloudinary:user-test-1/avatar.jpg:1788000000',
+      });
     }, { timeout: 10000 });
+    // Bytes went to Cloudinary (signed upload), not Supabase Storage.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://test-project.supabase.co/functions/v1/avatar-upload-signature',
+      expect.anything(),
+    );
     expect(await screen.findByText('تم تحديث صورتك الشخصية بنجاح')).toBeInTheDocument();
     // Profile preview + dashboard header both render the photo.
     await waitFor(
@@ -126,7 +174,34 @@ describe('StudentProfilePage', () => {
     );
   });
 
+  it('uploads the original png bytes untouched with the matching pointer', async () => {
+    stubAvatarFetch('png', 1788000001);
+    renderWithProviders(<StudentProfilePage />, '/student/profile');
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('الاسم الكامل')).toHaveValue('أحمد محمد علي');
+    });
+
+    const file = new File([new Uint8Array([9, 8, 7])], 'photo.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('اختيار صورة شخصية'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(expectRpcCall('set_my_avatar')).toEqual({
+        p_path: 'cloudinary:user-test-1/avatar.png:1788000001',
+      });
+    }, { timeout: 10000 });
+    // The Cloudinary response format/version decide the bound pointer —
+    // no Supabase Storage upload happened.
+    expect(
+      mockState.storageUploads.some((item) => item.bucket === 'avatars'),
+    ).toBe(false);
+    expect(await screen.findByText('تم تحديث صورتك الشخصية بنجاح')).toBeInTheDocument();
+  });
+
   it('rejects an invalid avatar file without uploading', async () => {
+    const fetchMock = stubAvatarFetch();
     renderWithProviders(<StudentProfilePage />, '/student/profile');
 
     await waitFor(() => {
@@ -140,12 +215,14 @@ describe('StudentProfilePage', () => {
 
     expect(await screen.findByText('الصورة يجب أن تكون JPG أو PNG أو WEBP')).toBeInTheDocument();
     expect(expectRpcCall('set_my_avatar')).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('removes the avatar and falls back to the initial', async () => {
+    const fetchMock = stubAvatarFetch();
     const existing = mockState.profiles.find((row) => row.id === 'user-test-1');
     if (existing) {
-      existing.avatar_path = 'user-test-1/avatar.jpg';
+      existing.avatar_path = 'cloudinary:user-test-1/avatar.jpg:1788000000';
     }
     const { getRpcCalls } = await import('../../test/supabase-mock');
     renderWithProviders(<StudentProfilePage />, '/student/profile');
@@ -162,6 +239,11 @@ describe('StudentProfilePage', () => {
     await waitFor(() => {
       expect(getRpcCalls().some((call) => call.fn === 'remove_my_avatar')).toBe(true);
     });
+    // Cloudinary bytes are destroyed best-effort before the binding clears.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://test-project.supabase.co/functions/v1/avatar-delete',
+      expect.anything(),
+    );
     expect(await screen.findByText('تم حذف صورتك الشخصية')).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByTestId('avatar-image')).not.toBeInTheDocument();

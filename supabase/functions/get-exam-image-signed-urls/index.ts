@@ -11,9 +11,16 @@
 //   POST { "exam_id": "<uuid>" }
 //   -> { exam_id, images: [{ question_id, prompt_image_url, choice_image_urls }] }
 //
-// Each `*_url` is a Supabase Storage short-lived signed URL
-// (service-role createSignedUrl, TTL 15 minutes) on the PRIVATE
-// `exam-images` bucket — content only ever leaves via this EF.
+// Each `*_url` is resolved per stored pointer (dual-read window):
+//   * legacy Supabase paths (`<exam_id>/<uuid>.<ext>`) via service-role
+//     createSignedUrl (TTL 15 minutes) on the PRIVATE `exam-images`
+//     bucket;
+//   * Cloudinary pointers
+//     (`cloudinary:exam-images/<exam_id>/<uuid>.<ext>:<version>`) via a
+//     server-signed `authenticated`-type delivery URL (fixed
+//     transformation + stored version). Pointers whose exam segment
+//     does not match the requested exam resolve to null.
+// Content only ever leaves via this EF.
 //
 // Access control:
 //   * Lesson exams: the exam's lesson must be reachable (not soft-deleted)
@@ -35,9 +42,15 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
+import {
+  buildAuthenticatedDeliveryUrl,
+  EXAM_IMAGE_DELIVERY_TRANSFORMATION,
+  parseExamImagePointer,
+  signDeliveryUrl,
+} from '../_shared/cloudinary.ts';
 
 export const DEFAULT_TTL_SECONDS = 900; // 15 minutes
-export const EXAM_IMAGES_BUCKET = 'exam-images';
+export const EXAM_IMAGES_BUCKET = 'exam-images'; // legacy reads only (dual-read window)
 export const STAFF_ROLES: ReadonlySet<string> = new Set(['admin', 'mr_walid', 'teacher', 'assistant']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -83,10 +96,17 @@ export interface SvcClient {
   };
 }
 
+export interface CloudinaryEnv {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+}
+
 export interface Deps {
   url: string;
   makeClient: (url: string, jwt: string) => SvcClient;
   makeServiceClient: (url: string) => SvcClient;
+  cloudinary: CloudinaryEnv;
   ttlSeconds?: number;
 }
 
@@ -102,6 +122,11 @@ export function defaultDeps(): Deps {
       createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', {
         auth: { persistSession: false, autoRefreshToken: false },
       }) as unknown as SvcClient,
+    cloudinary: {
+      cloudName: Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '',
+      apiKey: Deno.env.get('CLOUDINARY_API_KEY') ?? '',
+      apiSecret: Deno.env.get('CLOUDINARY_API_SECRET') ?? '',
+    },
   };
 }
 
@@ -320,7 +345,42 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
   try {
     const service = deps.makeServiceClient(deps.url);
     const ttl = deps.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const { cloudName, apiSecret } = deps.cloudinary;
     for (const path of distinct) {
+      const parsed = parseExamImagePointer(path);
+      if (parsed) {
+        // Cloudinary pointer: must belong to THIS exam (cross-exam
+        // pointers resolve to null rather than failing the request).
+        if (parsed.examId.toLowerCase() !== examId.toLowerCase()) {
+          console.error('get-exam-image-signed-urls: cross-exam pointer skipped');
+          pathToUrl.set(path, '');
+          continue;
+        }
+        if (!cloudName || !apiSecret) {
+          console.error('get-exam-image-signed-urls: Cloudinary env secrets missing');
+          return jsonResponse(
+            { error: { code: 'misconfigured', message: 'Exam image viewing is not configured.' } },
+            500,
+          );
+        }
+        const publicId = `exam-images/${parsed.examId}/${parsed.imageId}`;
+        const toSign =
+          `${EXAM_IMAGE_DELIVERY_TRANSFORMATION}/v${parsed.version}/${publicId}.${parsed.format}`;
+        const signature = await signDeliveryUrl(toSign, apiSecret);
+        pathToUrl.set(
+          path,
+          buildAuthenticatedDeliveryUrl({
+            cloudName,
+            publicId,
+            format: parsed.format,
+            version: parsed.version,
+            transformation: EXAM_IMAGE_DELIVERY_TRANSFORMATION,
+            signature,
+          }),
+        );
+        continue;
+      }
+      // Legacy Supabase object (dual-read window).
       const { data: signed, error: storageError } = await service.storage
         .from(EXAM_IMAGES_BUCKET)
         .createSignedUrl(path, ttl);
@@ -338,11 +398,16 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     }
 
     const images = questions.map((q) => {
-      const promptUrl = q.prompt_image_path ? (pathToUrl.get(q.prompt_image_path) ?? null) : null;
+      // A '' entry means "skipped pointer" (e.g. cross-exam) — render as null.
+      const urlOrNull = (p: string): string | null => {
+        const url = pathToUrl.get(p);
+        return url ? url : null;
+      };
+      const promptUrl = q.prompt_image_path ? urlOrNull(q.prompt_image_path) : null;
       let choiceUrls: (string | null)[] | null = null;
       if (Array.isArray(q.choice_image_paths)) {
         choiceUrls = (q.choice_image_paths as unknown[]).map((p) => {
-          if (typeof p === 'string' && p) return pathToUrl.get(p) ?? null;
+          if (typeof p === 'string' && p) return urlOrNull(p);
           return null;
         });
       }

@@ -19,8 +19,9 @@ interface AvatarPreviewDialogProps {
 
 /**
  * Admin-only avatar preview + download (0082 private bucket).
- * Resolves a fresh signed URL on open; download fetches it as a blob
- * and saves `avatar-<id>.jpg` on the device.
+ * Resolves a fresh signed URL on open; download fetches the stored bytes
+ * untouched (full original quality) and saves `avatar-<id>.<ext>` — the
+ * extension mirrors the stored object so the file keeps its real format.
  */
 export function AvatarPreviewDialog({ student, onClose }: AvatarPreviewDialogProps) {
   const { showToast } = useToast();
@@ -78,7 +79,9 @@ export function AvatarPreviewDialog({ student, onClose }: AvatarPreviewDialogPro
       try {
         const anchor = document.createElement('a');
         anchor.href = objectUrl;
-        anchor.download = `avatar-${student.id}.jpg`;
+        const storedExt = path.split('.').pop()?.toLowerCase();
+        const ext = storedExt === 'png' || storedExt === 'webp' ? storedExt : 'jpg';
+        anchor.download = `avatar-${student.id}.${ext}`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();

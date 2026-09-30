@@ -239,6 +239,12 @@ describe('StudentDetailPage', () => {
     const origRevoke = URL.revokeObjectURL;
     URL.createObjectURL = createSpy as unknown as typeof URL.createObjectURL;
     URL.revokeObjectURL = revokeSpy as unknown as typeof URL.revokeObjectURL;
+    let clickedDownload: string | null = null;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedDownload = this.download;
+      });
     try {
       const user = userEvent.setup();
       renderApp('/walid/students/s1');
@@ -252,10 +258,54 @@ describe('StudentDetailPage', () => {
         expect(fetchSpy).toHaveBeenCalledWith('https://storage.test/avatars/s1/avatar.jpg?signed=1');
       });
       expect(createSpy).toHaveBeenCalledWith(blob);
+      await waitFor(() => {
+        expect(clickedDownload).toBe('avatar-s1.jpg');
+      });
       expect(await screen.findByText('تم تحميل الصورة على جهازك')).toBeInTheDocument();
     } finally {
       URL.createObjectURL = origCreate;
       URL.revokeObjectURL = origRevoke;
+      clickSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the stored extension in the download filename for original-format photos', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب التفاصيل', phone: '01001234567', avatar_path: 's1/avatar.png' }),
+    );
+    const blob = new Blob(['fake-image'], { type: 'image/png' });
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, blob: () => Promise.resolve(blob) });
+    vi.stubGlobal('fetch', fetchSpy);
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url') as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
+    let clickedDownload: string | null = null;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedDownload = this.download;
+      });
+    try {
+      const user = userEvent.setup();
+      renderApp('/walid/students/s1');
+
+      await screen.findByRole('heading', { name: 'طالب التفاصيل' });
+      await user.click(screen.getByRole('button', { name: 'معاينة / تحميل الصورة' }));
+      await screen.findByTestId('avatar-preview-dialog');
+      await user.click(screen.getByTestId('avatar-download'));
+
+      await waitFor(() => {
+        expect(clickedDownload).toBe('avatar-s1.png');
+      });
+      expect(await screen.findByText('تم تحميل الصورة على جهازك')).toBeInTheDocument();
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      clickSpy.mockRestore();
       vi.unstubAllGlobals();
     }
   });

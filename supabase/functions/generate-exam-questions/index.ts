@@ -13,9 +13,10 @@
 //     answers like ✓/*/صح, otherwise picks from knowledge + needs_review).
 // Optional images (max 3, already uploaded via upload-exam-image):
 //   the model reads them (Vision) and references them by 1-based index;
-//   this function maps the references back to the verified storage paths
-//   (paths MUST live under the target exam_id/ prefix — cross-exam
-//   references are rejected).
+//   this function maps the references back to the verified pointers
+//   (legacy Supabase paths or Cloudinary exam-images pointers — both
+//   MUST live under the target exam_id/ — cross-exam references are
+//   rejected).
 //
 // Human-in-the-loop is a UI decision; this function only PROPOSES —
 // saving goes through the normal staff question DML afterwards.
@@ -47,6 +48,12 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2.112.2';
 import { jsonResponse, preflightResponse } from '../_shared/cors.ts';
+import {
+  buildAuthenticatedDeliveryUrl,
+  EXAM_IMAGE_DELIVERY_TRANSFORMATION,
+  parseExamImagePointer,
+  signDeliveryUrl,
+} from '../_shared/cloudinary.ts';
 
 export const EXAM_IMAGES_BUCKET = 'exam-images';
 // Verified live against the project key: versioned 2.x models are retired
@@ -100,12 +107,19 @@ export interface SvcClient {
 
 export type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
+export interface CloudinaryEnv {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+}
+
 export interface Deps {
   url: string;
   makeClient: (url: string, jwt: string) => SvcClient;
   makeServiceClient: (url: string) => SvcClient;
   fetchImpl: FetchImpl;
   geminiKey: string;
+  cloudinary: CloudinaryEnv;
 }
 
 export function defaultDeps(): Deps {
@@ -122,6 +136,11 @@ export function defaultDeps(): Deps {
       }) as unknown as SvcClient,
     fetchImpl: (input, init) => fetch(input, init),
     geminiKey: Deno.env.get('GEMINI_API_KEY') ?? '',
+    cloudinary: {
+      cloudName: Deno.env.get('CLOUDINARY_CLOUD_NAME') ?? '',
+      apiKey: Deno.env.get('CLOUDINARY_API_KEY') ?? '',
+      apiSecret: Deno.env.get('CLOUDINARY_API_SECRET') ?? '',
+    },
   };
 }
 
@@ -176,7 +195,19 @@ export function parseBody(raw: unknown):
   const imagePaths: string[] = [];
   for (const item of imagesRaw) {
     const path = (item as { storage_path?: unknown } | null)?.storage_path;
-    if (typeof path !== 'string' || !IMAGE_PATH_RE.test(path)) {
+    if (typeof path !== 'string') {
+      return { ok: false, code: 'invalid_image', message: 'Invalid image storage_path.' };
+    }
+    const cloudPointer = parseExamImagePointer(path);
+    if (cloudPointer) {
+      // Cloudinary pointer: must live under this exam.
+      if (cloudPointer.examId.toLowerCase() !== examId.toLowerCase()) {
+        return { ok: false, code: 'invalid_image', message: 'Image does not belong to this exam.' };
+      }
+      imagePaths.push(path);
+      continue;
+    }
+    if (!IMAGE_PATH_RE.test(path)) {
       return { ok: false, code: 'invalid_image', message: 'Invalid image storage_path.' };
     }
     // Cross-exam references are rejected: the path must live under exam_id/.
@@ -372,7 +403,9 @@ export function base64Encode(bytes: ArrayBuffer): string {
 }
 
 export function mimeFromPath(path: string): string {
-  const lower = path.toLowerCase();
+  // Cloudinary pointers carry the format before ':<version>'.
+  const withoutVersion = path.split(':')[0];
+  const lower = withoutVersion.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.webp')) return 'image/webp';
   return 'image/jpeg';
@@ -478,22 +511,57 @@ export async function handle(req: Request, deps: Deps = defaultDeps()): Promise<
     );
   }
 
-  // Fetch attached images (service role) for Vision input.
+  // Fetch attached images (service role for Supabase objects,
+  // server-signed Cloudinary URLs for pointers) for Vision input.
   const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
   try {
     const service = deps.makeServiceClient(deps.url);
     for (const path of body.imagePaths) {
-      const { data: blob, error: dlError } = await service.storage
-        .from(EXAM_IMAGES_BUCKET)
-        .download(path);
-      if (dlError || !blob) {
-        console.error('generate-exam-questions: image download failed', dlError?.code ?? 'unknown');
-        return jsonResponse(
-          { error: { code: 'invalid_image', message: 'Failed to read an attached image.' } },
-          422,
-        );
+      const cloudPointer = parseExamImagePointer(path);
+      let bytes: ArrayBuffer;
+      if (cloudPointer) {
+        const { cloudName, apiSecret } = deps.cloudinary;
+        if (!cloudName || !apiSecret) {
+          console.error('generate-exam-questions: Cloudinary env secrets missing');
+          return jsonResponse(
+            { error: { code: 'misconfigured', message: 'Exam images are not configured.' } },
+            500,
+          );
+        }
+        const publicId = `exam-images/${cloudPointer.examId}/${cloudPointer.imageId}`;
+        const toSign =
+          `${EXAM_IMAGE_DELIVERY_TRANSFORMATION}/v${cloudPointer.version}/${publicId}.${cloudPointer.format}`;
+        const signature = await signDeliveryUrl(toSign, apiSecret);
+        const deliveryUrl = buildAuthenticatedDeliveryUrl({
+          cloudName,
+          publicId,
+          format: cloudPointer.format,
+          version: cloudPointer.version,
+          transformation: EXAM_IMAGE_DELIVERY_TRANSFORMATION,
+          signature,
+        });
+        const dlRes = await deps.fetchImpl(deliveryUrl, { method: 'GET' });
+        if (!dlRes.ok) {
+          console.error('generate-exam-questions: cloudinary download failed', dlRes.status);
+          return jsonResponse(
+            { error: { code: 'invalid_image', message: 'Failed to read an attached image.' } },
+            422,
+          );
+        }
+        bytes = await dlRes.arrayBuffer();
+      } else {
+        const { data: blob, error: dlError } = await service.storage
+          .from(EXAM_IMAGES_BUCKET)
+          .download(path);
+        if (dlError || !blob) {
+          console.error('generate-exam-questions: image download failed', dlError?.code ?? 'unknown');
+          return jsonResponse(
+            { error: { code: 'invalid_image', message: 'Failed to read an attached image.' } },
+            422,
+          );
+        }
+        bytes = await blob.arrayBuffer();
       }
-      const bytes = await blob.arrayBuffer();
       if (bytes.byteLength > MAX_IMAGE_BYTES_FOR_AI) {
         return jsonResponse(
           { error: { code: 'image_too_large', message: 'Attached image is too large (max 4MB for AI).' } },

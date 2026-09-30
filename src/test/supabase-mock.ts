@@ -2265,10 +2265,24 @@ function createMockClient() {
         return error('permission_denied');
       }
       const path = String(args?.p_path ?? '');
-      if (path !== `${uid}/avatar.jpg`) {
+      // Mirror 0089: <own-uid>/avatar.<ext> with an allow-listed
+      // original-format extension, OR a caller-owned Cloudinary pointer
+      // (cloudinary:<own-uid>/avatar.<ext>:<version>) — nothing else.
+      // Legacy paths require the uploaded storage row (avatar_missing);
+      // Cloudinary bytes live outside Supabase (no row required).
+      const legacyOk = ['jpg', 'jpeg', 'png', 'webp'].some((ext) => path === `${uid}/avatar.${ext}`);
+      const cloudinaryOk =
+        path.startsWith('cloudinary:') &&
+        ['jpg', 'jpeg', 'png', 'webp'].some((ext) =>
+          new RegExp(`^cloudinary:${uid}/avatar\\.${ext}:[0-9]+$`).test(path),
+        );
+      if (!legacyOk && !cloudinaryOk) {
         return error('invalid_avatar_path');
       }
-      if (!state.storageUploads.some((item) => item.bucket === 'avatars' && item.path === path)) {
+      if (
+        legacyOk &&
+        !state.storageUploads.some((item) => item.bucket === 'avatars' && item.path === path)
+      ) {
         return error('avatar_missing');
       }
       profile.avatar_path = path;

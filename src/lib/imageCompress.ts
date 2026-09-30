@@ -1,12 +1,15 @@
-/** Client-side image validation + compression for uploads (suggestions inbox 0075, student avatars 0082). */
+/** Client-side image validation for uploads (suggestions inbox 0075, student avatars 0082).
+ *
+ * Avatars are stored at full original quality: the original file bytes and
+ * MIME type are uploaded untouched (no canvas downscale / re-encode), so
+ * what the student uploads is byte-identical to what staff download.
+ */
 
 export const SUGGESTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const SUGGESTION_IMAGE_MAX_DIMENSION = 1600;
 export const SUGGESTION_IMAGE_QUALITY = 0.82;
 
-export const AVATAR_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-export const AVATAR_IMAGE_MAX_DIMENSION = 512;
-export const AVATAR_IMAGE_QUALITY = 0.8;
+export const AVATAR_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -58,17 +61,9 @@ export function validateAvatarImage(file: File): string | null {
     return 'ملف الصورة فارغ';
   }
   if (file.size > AVATAR_IMAGE_MAX_BYTES) {
-    return 'حجم الصورة كبير — الحد الأقصى 2MB';
+    return 'حجم الصورة كبير — الحد الأقصى 8MB';
   }
   return null;
-}
-
-/**
- * Downscales to {@link AVATAR_IMAGE_MAX_DIMENSION} and re-encodes as
- * JPEG. Falls back to the original file on any canvas failure.
- */
-export async function compressAvatarImage(file: File): Promise<Blob> {
-  return compressImage(file, AVATAR_IMAGE_MAX_DIMENSION, AVATAR_IMAGE_QUALITY);
 }
 
 async function compressImage(file: File, maxDimension: number, quality: number): Promise<Blob> {
