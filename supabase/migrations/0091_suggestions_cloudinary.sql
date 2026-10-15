@@ -143,16 +143,40 @@ GRANT  EXECUTE ON FUNCTION public.delete_suggestion(uuid) TO authenticated;
 -- ---------------------------------------------------------------------
 -- 5) Storage cleanup: drop the suggestion-images policies, objects and
 --    bucket (cutover — reads/writes no longer touch Supabase Storage).
+--    Hosted Supabase forbids direct DML on storage tables (42501), so
+--    each step is best-effort: a hosted restriction becomes a NOTICE
+--    and the migration continues (leftover bucket/objects can be
+--    removed from the dashboard; nothing reads them anymore).
 -- ---------------------------------------------------------------------
 DO $$
 BEGIN
     IF to_regclass('storage.objects') IS NOT NULL THEN
-        DROP POLICY IF EXISTS suggestion_images_insert_own ON storage.objects;
-        DROP POLICY IF EXISTS suggestion_images_select_owner_admin ON storage.objects;
-        DROP POLICY IF EXISTS suggestion_images_delete_admin ON storage.objects;
-        DELETE FROM storage.objects WHERE bucket_id = 'suggestion-images';
+        BEGIN
+            DROP POLICY IF EXISTS suggestion_images_insert_own ON storage.objects;
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE '0091: cannot drop storage policy suggestion_images_insert_own on hosted (skipped)';
+        END;
+        BEGIN
+            DROP POLICY IF EXISTS suggestion_images_select_owner_admin ON storage.objects;
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE '0091: cannot drop storage policy suggestion_images_select_owner_admin on hosted (skipped)';
+        END;
+        BEGIN
+            DROP POLICY IF EXISTS suggestion_images_delete_admin ON storage.objects;
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE '0091: cannot drop storage policy suggestion_images_delete_admin on hosted (skipped)';
+        END;
+        BEGIN
+            DELETE FROM storage.objects WHERE bucket_id = 'suggestion-images';
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE '0091: cannot delete storage.objects rows on hosted (skipped)';
+        END;
     END IF;
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
-        DELETE FROM storage.buckets WHERE id = 'suggestion-images';
+        BEGIN
+            DELETE FROM storage.buckets WHERE id = 'suggestion-images';
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE '0091: cannot delete storage bucket on hosted (skipped)';
+        END;
     END IF;
 END$$;
