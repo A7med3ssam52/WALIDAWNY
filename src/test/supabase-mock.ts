@@ -163,6 +163,7 @@ export function makeProfile(overrides: Partial<AnyRecord> = {}): AnyRecord {
     role: 'student',
     status: 'active',
     suspension_reason: null,
+    is_guest: false,
     avatar_path: null,
     deleted_at: null,
     created_at: '2026-01-01T10:00:00.000Z',
@@ -893,6 +894,8 @@ function createMockClient() {
     } else if (fn === 'soft_delete_student') {
       profile.status = 'disabled';
       profile.deleted_at = nowIso();
+    } else if (fn === 'set_guest_status') {
+      profile.is_guest = Boolean(args?.p_is_guest);
     } else if (fn === 'restore_student') {
       profile.status = 'active';
       profile.suspension_reason = null;
@@ -1611,8 +1614,13 @@ function createMockClient() {
     }
     if (fn === 'list_codes_by_unit') {
       const unitId = String(args?.p_unit_id ?? '');
+      // 0092: codes redeemed by guests never appear in the main list.
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
       const rows = state.unitCodes
         .filter((item) => item.unit_id === unitId)
+        .filter((item) => !item.used_by || !guestIds.has(item.used_by))
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .map((item) => ({
           ...item,
@@ -1764,7 +1772,11 @@ function createMockClient() {
     }
     if (fn === 'list_all_unit_purchases') {
       const studentId = (args?.p_student_id as string | null) ?? null;
-      let rows = state.unitPurchases;
+      // 0092: guest purchases live in list_guest_purchases.
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
+      let rows = state.unitPurchases.filter((item) => !guestIds.has(item.student_id));
       if (studentId) {
         rows = rows.filter((item) => item.student_id === studentId);
       }
@@ -1798,6 +1810,78 @@ function createMockClient() {
         },
         error: null,
       };
+    }
+    if (fn === 'list_guest_purchases') {
+      const studentId = (args?.p_student_id as string | null) ?? null;
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
+      let rows = state.unitPurchases.filter((item) => guestIds.has(item.student_id));
+      if (studentId) {
+        rows = rows.filter((item) => item.student_id === studentId);
+      }
+      const enriched = rows
+        .map((item) => {
+          const unit = state.units.find((candidate) => candidate.id === item.unit_id);
+          return {
+            ...item,
+            unit_name: unit?.name ?? item.unit_id,
+            grade_name: unit
+              ? (state.grades.find((g) => g.id === unit.grade_id)?.name ?? null)
+              : null,
+            purchased_at: item.purchased_at ?? '',
+          } as AnyRecord;
+        })
+        .sort((a, b) => String(b.purchased_at).localeCompare(String(a.purchased_at)));
+      return { data: enriched, error: null };
+    }
+    if (fn === 'grant_guest_access') {
+      const studentId = String(args?.p_student_id ?? '');
+      const unitId = String(args?.p_unit_id ?? '');
+      const profile = state.profiles.find((item) => item.id === studentId);
+      const unit = state.units.find((item) => item.id === unitId);
+      if (!profile || profile.is_guest !== true) {
+        return error('guest_not_found');
+      }
+      if (!unit) {
+        return error('unit_not_found');
+      }
+      if (profile.grade_id && unit.grade_id !== profile.grade_id) {
+        return error('unit_not_in_student_grade');
+      }
+      let purchase = state.unitPurchases.find(
+        (item) => item.student_id === studentId && item.unit_id === unitId,
+      );
+      if (purchase) {
+        purchase.status = 'active';
+      } else {
+        purchase = {
+          id: `purchase-created-${++state.idSeq}`,
+          student_id: studentId,
+          unit_id: unitId,
+          base_price: 0,
+          platform_fee: 0,
+          total_price: 0,
+          code_id: null,
+          status: 'active',
+          purchased_at: nowIso(),
+          created_at: nowIso(),
+        };
+        state.unitPurchases.push(purchase);
+      }
+      return { data: purchase, error: null };
+    }
+    if (fn === 'revoke_guest_access') {
+      const studentId = String(args?.p_student_id ?? '');
+      const unitId = String(args?.p_unit_id ?? '');
+      const purchase = state.unitPurchases.find(
+        (item) => item.student_id === studentId && item.unit_id === unitId && item.status === 'active',
+      );
+      if (!purchase) {
+        return error('purchase_not_found');
+      }
+      purchase.status = 'void';
+      return { data: null, error: null };
     }
     return null;
   };
@@ -2442,8 +2526,42 @@ function createMockClient() {
       }
       const limit = Math.max(1, Math.min(Number(args?.p_limit ?? 50), 100));
       const offset = Math.max(0, Number(args?.p_offset ?? 0));
+      // 0092: guest rows live in list_guest_suggestions.
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
       const rows = state.suggestions
         .filter((item) => (!kind || item.kind === kind) && (!status || item.status === status))
+        .filter((item) => !guestIds.has(item.student_id))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(offset, offset + limit)
+        .map((item) => {
+          const student = state.profiles.find((candidate) => candidate.id === item.student_id);
+          const grade = state.grades.find((candidate) => candidate.id === student?.grade_id);
+          return {
+            ...item,
+            student_name: student?.full_name ?? '',
+            student_phone: student?.phone ?? '',
+            grade_name: grade?.name ?? null,
+          };
+        });
+      return { data: rows, error: null };
+    }
+    if (fn === 'list_guest_suggestions') {
+      if (!uid || !isAdmin) {
+        return error('permission_denied');
+      }
+      const status = (args?.p_status as string | null) ?? null;
+      if (status && !SUGGESTION_STATUSES.includes(status)) {
+        return error('invalid_status');
+      }
+      const limit = Math.max(1, Math.min(Number(args?.p_limit ?? 50), 100));
+      const offset = Math.max(0, Number(args?.p_offset ?? 0));
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
+      const rows = state.suggestions
+        .filter((item) => guestIds.has(item.student_id) && (!status || item.status === status))
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .slice(offset, offset + limit)
         .map((item) => {
@@ -2506,8 +2624,12 @@ function createMockClient() {
         return error('permission_denied');
       }
       const watermark = state.inboxLastSeenAt;
+      // 0092: guest suggestions are counted in get_guest_stats instead.
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
       const unread = state.suggestions.filter(
-        (item) => !watermark || String(item.created_at) > watermark,
+        (item) => (!watermark || String(item.created_at) > watermark) && !guestIds.has(item.student_id),
       );
       return { data: [{ unread_count: unread.length, last_seen_at: watermark }], error: null };
     }
@@ -2516,8 +2638,11 @@ function createMockClient() {
         return error('permission_denied');
       }
       const watermark = state.inboxLastSeenAt;
+      const guestIds = new Set(
+        state.profiles.filter((profile) => profile.is_guest === true).map((profile) => profile.id),
+      );
       const marked = state.suggestions.filter(
-        (item) => !watermark || String(item.created_at) > watermark,
+        (item) => (!watermark || String(item.created_at) > watermark) && !guestIds.has(item.student_id),
       ).length;
       state.inboxLastSeenAt = nowIso();
       return { data: marked, error: null };
@@ -2644,7 +2769,34 @@ function createMockClient() {
       return { data: mockedResult, error: null };
     }
     if (fn === 'list_trash') {
-      return { data: state.profiles.filter((profile) => profile.deleted_at !== null), error: null };
+      // 0092: guest rows live in list_guests, never in the main trash.
+      return { data: state.profiles.filter((profile) => profile.deleted_at !== null && !profile.is_guest), error: null };
+    }
+    if (fn === 'list_guests') {
+      const includeDeleted = Boolean(args?.p_include_deleted);
+      return {
+        data: state.profiles
+          .filter((profile) => profile.is_guest === true && (includeDeleted || profile.deleted_at === null))
+          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))),
+        error: null,
+      };
+    }
+    if (fn === 'get_guest_stats') {
+      const guests = state.profiles.filter((profile) => profile.is_guest === true && !profile.deleted_at);
+      const guestIds = new Set(guests.map((profile) => profile.id));
+      return {
+        data: {
+          total_guests: guests.length,
+          active_guests: guests.filter((profile) => profile.status === 'active').length,
+          guest_purchases: state.unitPurchases.filter(
+            (item) => item.status === 'active' && guestIds.has(item.student_id),
+          ).length,
+          new_guest_suggestions: state.suggestions.filter(
+            (item) => item.status === 'new' && guestIds.has(item.student_id),
+          ).length,
+        },
+        error: null,
+      };
     }
     if (fn === 'list_active_grades') {
       return {

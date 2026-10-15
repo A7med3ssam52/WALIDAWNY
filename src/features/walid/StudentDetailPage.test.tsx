@@ -335,3 +335,71 @@ describe('StudentDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'معاينة / تحميل الصورة' })).not.toBeInTheDocument();
   });
 });
+
+describe('StudentDetailPage (guest mode)', () => {
+  beforeEach(() => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({
+        id: 'g1',
+        full_name: 'ضيف التفاصيل',
+        phone: '01009999999',
+        grade_id: 'g1',
+        is_guest: true,
+      }),
+    );
+    mockState.grades = [
+      {
+        id: 'g1',
+        name: 'الصف الأول الثانوي',
+        sort_order: 1,
+        is_active: true,
+        deleted_at: null,
+        created_at: '2026-01-01T10:00:00.000Z',
+        updated_at: '2026-01-01T10:00:00.000Z',
+      },
+    ];
+    mockState.units.push({
+      id: 'unit-1',
+      grade_id: 'g1',
+      name: 'الوحدة الأولى',
+      sort_order: 1,
+      status: 'published',
+      deleted_at: null,
+      created_at: '2026-01-01T10:00:00.000Z',
+      updated_at: '2026-01-01T10:00:00.000Z',
+    });
+  });
+
+  it('shows the guest badge and units card to admin and grants access', async () => {
+    const user = userEvent.setup();
+    renderApp('/walid/students/g1');
+
+    expect(await screen.findByText('ضيف')).toBeInTheDocument();
+    expect(await screen.findByText('وحدات الضيف')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'إلغاء وضع الضيف' })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('الوحدة'), 'unit-1');
+    await user.click(screen.getByRole('button', { name: 'تفعيل الوحدة' }));
+
+    await waitFor(() => {
+      expect(expectRpcCall('grant_guest_access')).toEqual({
+        p_student_id: 'g1',
+        p_unit_id: 'unit-1',
+      });
+    });
+  });
+
+  it('blocks non-admin staff from viewing a guest', async () => {
+    resetMockState();
+    setAuthenticatedWalid();
+    mockState.profiles.push(
+      makeProfile({ id: 'g1', full_name: 'ضيف التفاصيل', phone: '01009999999', is_guest: true }),
+    );
+    renderApp('/walid/students/g1');
+
+    expect(await screen.findByText('الطالب غير موجود')).toBeInTheDocument();
+    expect(screen.queryByText('وحدات الضيف')).not.toBeInTheDocument();
+  });
+});

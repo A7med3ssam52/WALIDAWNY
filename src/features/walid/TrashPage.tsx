@@ -35,7 +35,9 @@ export function TrashPage() {
     setError(false);
     setStudents(null);
     try {
-      setStudents(await listTrash());
+      // 0092: list_trash already excludes guests server-side; filter again
+      // as defense in depth (guest trash is managed on the Guests page).
+      setStudents((await listTrash()).filter((student) => !student.is_guest));
     } catch {
       setError(true);
     }

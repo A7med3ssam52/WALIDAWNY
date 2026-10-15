@@ -86,7 +86,7 @@ const AnnouncementsListPage = lazyWithRetry(() => import('../features/admin/Anno
 const AdminSuggestionsPage = lazyWithRetry(() => import('../features/admin/AdminSuggestionsPage').then((m) => ({ default: m.AdminSuggestionsPage })));
 const AnnouncementFormPage = lazyWithRetry(() => import('../features/admin/AnnouncementFormPage').then((m) => ({ default: m.AnnouncementFormPage })));
 const PresencePage = lazyWithRetry(() => import('../features/admin/PresencePage').then((m) => ({ default: m.PresencePage })));
-const StudentPresenceHistoryPage = lazyWithRetry(() =>
+const GuestsPage = lazyWithRetry(() => import('../features/admin/GuestsPage').then((m) => ({ default: m.GuestsPage })));const StudentPresenceHistoryPage = lazyWithRetry(() =>
   import('../features/admin/StudentPresenceHistoryPage').then((m) => ({ default: m.StudentPresenceHistoryPage })),
 );
 
@@ -222,6 +222,7 @@ export function AppRoutes() {
             <Route path="dashboard" element={<WalidDashboardPage />} />
             <Route path="notifications" element={<AdminNotificationsPage />} />
             <Route path="presence" element={<PresencePage />} />
+            <Route path="guests" element={<GuestsPage />} />
             <Route path="presence/:studentId" element={<StudentPresenceHistoryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="audit" element={<AuditLogPage />} />

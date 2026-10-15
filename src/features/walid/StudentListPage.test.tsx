@@ -258,4 +258,18 @@ describe('StudentListPage (staff lifecycle)', () => {
     const row = await screen.findByTestId('student-row-s1');
     expect(within(row).queryByRole('button', { name: /معاينة صورة/ })).not.toBeInTheDocument();
   });
+
+  it('excludes guests from the main list even for admin', async () => {
+    resetMockState();
+    setAuthenticatedAdmin();
+    mockState.profiles.push(
+      makeProfile({ id: 's1', full_name: 'طالب واحد', phone: '01001111111' }),
+      makeProfile({ id: 'g9', full_name: 'ضيف مخفي', phone: '01009999999', is_guest: true }),
+    );
+    renderApp('/walid/students');
+
+    expect(await screen.findByText('طالب واحد')).toBeInTheDocument();
+    expect(screen.queryByText('ضيف مخفي')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('student-row-g9')).not.toBeInTheDocument();
+  });
 });

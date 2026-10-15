@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Tag,
   Trophy,
+  UserRoundX,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ interface AdminNavItem {
 
 const adminItems: AdminNavItem[] = [
   { to: '/admin/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
+  { to: '/admin/guests', label: 'وضع الضيف', icon: UserRoundX },
   { to: '/admin/notifications', label: 'إشعارات الصور', icon: Camera, avatarBadge: true },
   { to: '/admin/presence', label: 'المتواجدون الآن', icon: Radio },
   { to: '/admin/reports', label: 'التقارير المالية', icon: BarChart3 },

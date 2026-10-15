@@ -15,6 +15,7 @@ import type {
   GeneralExamRow,
   GeneralExamStatus,
   Grade,
+  GuestStats,
   Lesson,
   LessonAccessInfo,
   LessonBoard,
@@ -182,6 +183,81 @@ export async function listTrash(): Promise<Profile[]> {
     throw error;
   }
   return (data ?? []) as Profile[];
+}
+
+export async function setGuestStatus(studentId: string, isGuest: boolean): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_guest_status', {
+    p_student_id: studentId,
+    p_is_guest: isGuest,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listGuests(includeDeleted = false): Promise<Profile[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_guests', {
+    p_include_deleted: includeDeleted,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as Profile[];
+}
+
+export async function grantGuestAccess(studentId: string, unitId: string): Promise<UnitPurchase> {
+  const { data, error } = await getSupabaseClient().rpc('grant_guest_access', {
+    p_student_id: studentId,
+    p_unit_id: unitId,
+  });
+  if (error) {
+    throw error;
+  }
+  return data as UnitPurchase;
+}
+
+export async function revokeGuestAccess(studentId: string, unitId: string): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('revoke_guest_access', {
+    p_student_id: studentId,
+    p_unit_id: unitId,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function listGuestPurchases(studentId?: string | null): Promise<UnitPurchaseWithUnit[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_guest_purchases', {
+    p_student_id: studentId ?? null,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as UnitPurchaseWithUnit[];
+}
+
+export async function getGuestStats(): Promise<GuestStats> {
+  const { data, error } = await getSupabaseClient().rpc('get_guest_stats');
+  if (error) {
+    throw error;
+  }
+  return data as GuestStats;
+}
+
+export async function listGuestSuggestions(
+  status?: SuggestionStatus | null,
+  limit = 50,
+  offset = 0,
+): Promise<AdminSuggestionRow[]> {
+  const { data, error } = await getSupabaseClient().rpc('list_guest_suggestions', {
+    p_status: status ?? null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as AdminSuggestionRow[];
 }
 
 export async function setUserRole(userId: string, role: UserRole): Promise<void> {

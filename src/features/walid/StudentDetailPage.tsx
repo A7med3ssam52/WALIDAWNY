@@ -18,6 +18,7 @@ import { PurchaseBadge, StatusBadge } from '../../components/StatusBadge';
 import { Textarea } from '../../components/Textarea';
 import { useToast } from '../../components/Toast';
 import { useAuth } from '../auth/AuthContext';
+import { GuestBadge, GuestToggleButton, GuestUnitsCard } from '../admin/GuestManager';
 import {
   disableStudent,
   enableStudent,
@@ -285,6 +286,16 @@ export function StudentDetailPage() {
     );
   }
 
+  // 0092: guests are admin-only. RLS already hides them from non-admins;
+  // this is defense in depth (e.g. stale caches, direct navigation).
+  if (student.is_guest && !isAdmin) {
+    return (
+      <LayoutShell title="بيانات الطالب">
+        <ErrorState message="الطالب غير موجود" onRetry={() => void load()} />
+      </LayoutShell>
+    );
+  }
+
   const gradeName = grades.find((grade) => grade.id === student.grade_id)?.name;
   const isDeleted = Boolean(student.deleted_at);
 
@@ -296,11 +307,11 @@ export function StudentDetailPage() {
       nav={<RoleNav />}
       actions={
         <Link
-          to="/walid/students"
+          to={student.is_guest ? '/admin/guests' : '/walid/students'}
           className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-subtle transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong focus-visible:ring-offset-1 sm:h-10"
         >
           <DirectionalArrow direction="back" />
-          العودة إلى قائمة الطلاب
+          {student.is_guest ? 'العودة إلى الضيوف' : 'العودة إلى قائمة الطلاب'}
         </Link>
       }
     >
@@ -341,7 +352,10 @@ export function StudentDetailPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <DetailItem label="الحالة">
-              <StatusBadge status={student.status} deleted={isDeleted} />
+              <span className="inline-flex items-center gap-2">
+                <StatusBadge status={student.status} deleted={isDeleted} />
+                {student.is_guest ? <GuestBadge /> : null}
+              </span>
             </DetailItem>
             <DetailItem label="الصف الدراسي">{gradeName ?? 'بدون صف'}</DetailItem>
             <DetailItem label="رقم الهاتف" ltr>
@@ -382,6 +396,9 @@ export function StudentDetailPage() {
 
         <Card title="إجراءات الحساب">
           <div className="flex flex-wrap gap-3">
+            {isAdmin ? (
+              <GuestToggleButton student={student} onChanged={() => void load()} />
+            ) : null}
             {isDeleted ? (
               <Button
                 variant="primary"
@@ -424,6 +441,10 @@ export function StudentDetailPage() {
             )}
           </div>
         </Card>
+
+        {isAdmin && student.is_guest && !isDeleted ? (
+          <GuestUnitsCard student={student} />
+        ) : null}
 
         <Card title="الوحدات المشتراة" subtitle="وحدات مُفعّلة مدى الحياة لهذا الطالب">
           {purchases.length === 0 ? (

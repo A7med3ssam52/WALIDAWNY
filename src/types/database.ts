@@ -12,6 +12,8 @@ export type Profile = {
   role: UserRole;
   status: AccountStatus;
   suspension_reason: string | null;
+  /** Guest mode (0092): hidden student, visible to admin only. */
+  is_guest: boolean;
   /** Storage path inside the private avatars bucket (<user_id>/avatar.jpg). NULL = no photo. */
   avatar_path: string | null;
   deleted_at: string | null;
@@ -709,6 +711,13 @@ export interface DashboardStats {
   daily_completions?: DashboardDailyCompletion[];
 }
 
+export interface GuestStats {
+  total_guests: number;
+  active_guests: number;
+  guest_purchases: number;
+  new_guest_suggestions: number;
+}
+
 export type StudentSession = {
   id: string;
   student_id: string;
@@ -943,6 +952,19 @@ export interface Database {
       list_trash: { Args: never; Returns: Profile[] };
       set_user_role: { Args: { p_user_id: string; p_role: UserRole }; Returns: void };
       set_role_by_email: { Args: { p_email: string; p_role: UserRole }; Returns: void };
+      set_guest_status: { Args: { p_student_id: string; p_is_guest: boolean }; Returns: void };
+      list_guests: { Args: { p_include_deleted?: boolean | null }; Returns: Profile[] };
+      grant_guest_access: { Args: { p_student_id: string; p_unit_id: string }; Returns: UnitPurchase };
+      revoke_guest_access: { Args: { p_student_id: string; p_unit_id: string }; Returns: void };
+      list_guest_purchases: {
+        Args: { p_student_id?: string | null };
+        Returns: UnitPurchaseWithUnit[];
+      };
+      get_guest_stats: { Args: never; Returns: GuestStats };
+      list_guest_suggestions: {
+        Args: { p_status?: SuggestionStatus | null; p_limit?: number | null; p_offset?: number | null };
+        Returns: AdminSuggestionRow[];
+      };
       list_active_grades: { Args: never; Returns: ActiveGrade[] };
       get_public_settings: { Args: never; Returns: PublicSettings };
       get_current_role: { Args: never; Returns: UserRole };

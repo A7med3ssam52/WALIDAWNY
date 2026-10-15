@@ -112,6 +112,10 @@ export function StudentListPage() {
   }, [isAdmin, statusFilter]);
 
   const filtered = (students ?? []).filter((student) => {
+    // 0092: guests live on the separate admin Guests page, never here.
+    if (student.is_guest) {
+      return false;
+    }
     if (statusFilter === 'noavatar') {
       if (student.avatar_path) {
         return false;
@@ -136,7 +140,9 @@ export function StudentListPage() {
     setPending({ kind, student });
   };
 
-  const missingAvatarCount = (students ?? []).filter((student) => !student.avatar_path).length;
+  const missingAvatarCount = (students ?? []).filter(
+    (student) => !student.is_guest && !student.avatar_path,
+  ).length;
 
   const runAction = async (action: NonNullable<PendingAction>) => {
     if (action.kind === 'disable' && reason.trim().length === 0) {
