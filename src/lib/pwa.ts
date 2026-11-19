@@ -87,7 +87,7 @@ export function registerServiceWorker(): void {
   }
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js?v=3')
+      .register('/sw.js?v=4')
       .then((reg) => {
         // Check for update immediately and on visibility change — forces v2 for already-installed clients
         const checkUpdate = () => {

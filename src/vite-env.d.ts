@@ -8,6 +8,8 @@ interface Navigator {
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  /** Full-screen security lockdown notice; baked at build time. "true" = locked. */
+  readonly VITE_MAINTENANCE_MODE?: string;
 }
 
 interface ImportMeta {

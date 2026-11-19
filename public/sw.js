@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `walid-aurora-${CACHE_VERSION}`;
 const APP_SHELL = [
   '/',
