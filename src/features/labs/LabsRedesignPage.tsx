@@ -418,7 +418,7 @@ export function LabsRedesignPage() {
               تسجيل الدخول
             </Link>
             <Link
-              to="/register"
+              to="/login"
               data-testid="redesign-signup"
               className="hidden h-10 items-center gap-1.5 rounded-xl bg-[#B89B4E] px-4 text-sm font-black text-[#182016] shadow-[0_8px_20px_-10px_rgba(0,0,0,0.5)] transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#93B884] sm:flex"
             >
@@ -469,7 +469,7 @@ export function LabsRedesignPage() {
                 </Link>
               ))}
               <Link
-                to="/register"
+                to="/login"
                 onClick={() => setMenuOpen(false)}
                 className="mt-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[#B89B4E] text-base font-black text-[#182016] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#93B884]"
               >
@@ -498,7 +498,7 @@ export function LabsRedesignPage() {
             </p>
             <div className="mt-6 flex flex-col gap-2 sm:flex-row">
               <Link
-                to="/register"
+                to="/login"
                 className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-[#B89B4E] px-6 text-base font-black text-[#182016] shadow-[0_12px_28px_-10px_rgba(0,0,0,0.5)] transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#93B884]"
               >
                 ابدأ مجاناً
@@ -758,7 +758,7 @@ export function LabsRedesignPage() {
           <h2 id="redesign-cta-title" className="font-display text-2xl font-black sm:text-3xl">دعوة تجريبية أخيرة</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm font-bold text-foreground-muted">سطر تجريبي واحد قبل الزر — لا محتوى حقيقي.</p>
           <Link
-            to="/register"
+            to="/login"
             className="mt-5 inline-flex h-11 items-center gap-1.5 rounded-2xl bg-[#29312B] px-8 text-sm font-black text-[#E8E6DA] transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
             ابدأ مجاناً

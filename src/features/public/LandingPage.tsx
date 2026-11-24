@@ -183,7 +183,7 @@ export function LandingPage() {
               تسجيل الدخول
             </Link>
             <Link
-              to="/register"
+              to="/login"
               className="btn-primary flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
             >
               <UserPlus aria-hidden="true" className="h-4 w-4" />
@@ -278,7 +278,7 @@ export function LandingPage() {
                 تسجيل الدخول
               </Link>
               <Link
-                to="/register"
+                to="/login"
                 className="btn-primary mt-1 flex h-11 items-center justify-center rounded-full px-3 text-center text-sm font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
                 onClick={() => setMenuOpen(false)}
               >
@@ -331,7 +331,7 @@ export function LandingPage() {
                     فتح محادثة واتساب
                   </a>
                   <Link
-                    to="/register"
+                    to="/login"
                     className="btn-primary inline-flex h-11 items-center justify-center gap-1.5 rounded-full px-6 text-sm font-black sm:text-base"
                   >
                     <Rocket aria-hidden="true" className="h-4 w-4" />
@@ -570,7 +570,7 @@ export function LandingPage() {
                           </a>
                         ) : price.is_free ? (
                           <Link
-                            to="/register"
+                            to="/login"
                             className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 text-sm font-bold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
                           >
                             افتح مجاناً — سجّل الآن
@@ -794,7 +794,7 @@ export function LandingPage() {
             أنشئ حسابك مجاناً وفعّل أول وحدة بكود WLDN — مدى الحياة
           </p>
           <Link
-            to="/register"
+            to="/login"
             className="health-dark-card mt-5 inline-flex h-11 items-center gap-1.5 rounded-full px-8 text-sm font-black transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-strong"
           >
             <Rocket aria-hidden="true" className="h-4 w-4 text-primary" />
@@ -816,7 +816,7 @@ export function LandingPage() {
               <WhatsAppIcon className="h-5 w-5" /> واتساب
             </a>
             <Link
-              to="/register"
+              to="/login"
               className="btn-primary inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl text-sm font-black active:scale-95"
             >
               اشترك الآن

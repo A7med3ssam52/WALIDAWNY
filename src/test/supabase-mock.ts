@@ -2697,7 +2697,11 @@ function createMockClient() {
       return { data: { subscription: { unsubscribe: vi.fn() } } };
     }),
     signUp: vi.fn(
-      async (params: { email: string; password: string; options?: { data?: AnyRecord } }) => {
+      async (params: {
+        email: string;
+        password: string;
+        options?: { data?: AnyRecord; captchaToken?: string };
+      }) => {
         state.authCalls.push({ method: 'signUp', params });
         if (state.signUpError) {
           return { data: { user: null, session: null }, error: { message: state.signUpError } };

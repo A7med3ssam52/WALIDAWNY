@@ -128,12 +128,9 @@ export function LoginPage() {
             </form>
           </main>
           <div className="mt-6">
-            <Link
-              to="/register"
-              className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-border bg-surface px-6 text-sm font-bold text-foreground"
-            >
-              معنديش حساب — إنشاء حساب جديد
-            </Link>
+            <p className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-border bg-surface px-6 text-sm font-bold text-foreground-muted">
+              إنشاء الحسابات الجديدة متوقف مؤقتًا
+            </p>
           </div>
         </div>
       </div>

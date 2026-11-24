@@ -82,7 +82,7 @@ export function HowItWorksPage() {
             فريق الدعم متاح عبر واتساب للرد على أسئلة التفعيل والمنهج. متوسط الرد دقائق في ساعات العمل. يمكنك أيضاً زيارة صفحة الأسئلة الشائعة.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
-            <Link to="/register" className="btn-primary inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-bold">
+            <Link to="/login" className="btn-primary inline-flex h-11 items-center justify-center rounded-full px-6 text-sm font-bold">
               أنشئ حسابك الآن
             </Link>
             <Link to="/faq" className="inline-flex h-11 items-center justify-center rounded-full border border-white/25 px-6 text-sm font-bold text-white hover:border-white/60">

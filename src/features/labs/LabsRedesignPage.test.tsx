@@ -11,7 +11,7 @@ describe('LabsRedesignPage', () => {
     expect(await screen.findByTestId('labs-redesign', {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /عنوان تجريبي ضخم/ })).toBeInTheDocument();
     expect(screen.getByTestId('redesign-hero')).toBeInTheDocument();
-    expect(screen.getByTestId('redesign-signup')).toHaveAttribute('href', '/register');
+    expect(screen.getByTestId('redesign-signup')).toHaveAttribute('href', '/login');
   });
 
   it('renders all mock units, quotes and sections', async () => {

@@ -42,7 +42,6 @@ const LabsRegister5 = lazyWithRetry(() => import('../features/labs/auth/variant5
 
 // Auth — keep lazy too but small
 const LoginPage = lazyWithRetry(() => import('../features/auth/LoginPage').then((m) => ({ default: m.LoginPage })));
-const RegisterPage = lazyWithRetry(() => import('../features/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })));
 
 // Student
 const StudentDashboardPage = lazyWithRetry(() => import('../features/student/StudentDashboardPage').then((m) => ({ default: m.StudentDashboardPage })));
@@ -158,14 +157,7 @@ export function AppRoutes() {
             </GuestOnly>
           }
         />
-        <Route
-          path="/register"
-          element={
-            <GuestOnly>
-              <RegisterPage />
-            </GuestOnly>
-          }
-        />
+        <Route path="/register" element={<Navigate to="/login" replace />} />
 
         {/* Protected */}
         <Route element={<ProtectedRoute />}>

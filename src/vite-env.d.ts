@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   /** Full-screen security lockdown notice; baked at build time. "true" = locked. */
   readonly VITE_MAINTENANCE_MODE?: string;
+  /** Cloudflare Turnstile site key for signup captcha (public). When unset, captcha is skipped. */
+  readonly VITE_TURNSTILE_SITE_KEY?: string;
 }
 
 interface ImportMeta {
